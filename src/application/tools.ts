@@ -1,12 +1,11 @@
 import { z } from 'zod';
 import type { SourceReference, ToolMetadata } from '@domain/intelligence';
+import type { WorkspaceGateway } from '@application/ports';
 
 export type ToolExecutionContext = {
   workspaceId: string;
   signal: AbortSignal;
-  workspaceGateway?: {
-    readFile(workspaceId: string, relativePath: string): Promise<{ content: string; source: string }>;
-  };
+  workspaceGateway?: WorkspaceGateway;
 };
 
 export type AgentTool<TInput, TOutput> = {
@@ -33,6 +32,12 @@ export type ToolResult = { output: unknown; sourceReferences: SourceReference[] 
 
 export class ToolExecutor {
   constructor(private readonly registry: ToolRegistry) {}
+
+  getMetadata(toolName: string): ToolMetadata {
+    const tool = this.registry.get(toolName);
+    if (!tool) throw new Error(`Unknown tool: ${toolName}`);
+    return tool.metadata;
+  }
 
   async execute(toolName: string, input: unknown, context: ToolExecutionContext): Promise<ToolResult> {
     const tool = this.registry.get(toolName);
