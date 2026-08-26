@@ -1,4 +1,4 @@
-import type { IntelligencePort, ModelRequest, ModelResponse, SourceReference } from '@domain/intelligence';
+import type { IntelligencePort, ModelRequest, SourceReference } from '@domain/intelligence';
 import type { ToolMetadata } from '@domain/intelligence';
 
 export type ExecutionLimits = {
