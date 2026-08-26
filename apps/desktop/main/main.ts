@@ -5,8 +5,17 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function createWindow() {
-  const win = new BrowserWindow({ width: 1280, height: 900, webPreferences: { preload: join(__dirname, 'preload.js') } });
-  win.loadURL('http://localhost:5173');
+ const win = new BrowserWindow({
+   width: 1280,
+   height: 900,
+   webPreferences: { preload: join(__dirname, 'preload.js') },
+ });
+ const isDev = !app.isPackaged;
+ if (isDev) {
+   win.loadURL('http://localhost:5173');
+ } else {
+   win.loadFile(join(__dirname, '../../dist/index.html'));
+ }
 }
 
 app.whenReady().then(createWindow);
