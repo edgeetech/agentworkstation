@@ -44,3 +44,32 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=moderate
+
+  macos-compat:
+    name: macOS compatibility gate
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate unit/integration/security suites
+        run: npm test -- tests/unit tests/integration tests/security
+
+      - name: Check architecture
+        run: npm run check:architecture
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Compile Electron main process
+        run: npm run electron:build-main

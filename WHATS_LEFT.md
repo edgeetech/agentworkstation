@@ -59,6 +59,7 @@ Working branch: `main`
 ## In Progress
 
 - Release 0.4 compatibility verification (macOS packaging/validation) pending execution on a macOS runner/host.
+- macOS CI compatibility gate prepared in `.github/workflows/ci.yml` (unit/integration/security, architecture, renderer build, Electron main compile) and pending first successful run on `main`.
 
 ## Explicitly Deferred Beyond Release 0.2
 
