@@ -2,17 +2,27 @@
 
 Local Career Agent workstation for evidence-backed profile audits.
 
-## Release 0.1 scope
+## Current status
+
+**Windows MVP is complete** (Release 0.1 + 0.2 + 0.3):
 
 - Windows-first Electron + React + TypeScript desktop shell
 - Clean Architecture modular monolith (`domain`, `application`, `infrastructure`, `apps/desktop`)
-- Owned minimal `AgentRuntime` with tool loop and execution limits
+- `AgentRuntime` with tool loop, execution limits, and provenance-aware tracing
 - `WorkspaceGateway` security boundary for file access
 - Local-only intelligence flow with:
   - deterministic Mock adapter
   - OpenAI-compatible local endpoint adapter (Ollama tested runtime)
-- SQLite operational persistence foundation
-- Architecture, unit, security, and integration test foundations
+- Multi-workspace Career Audit with deterministic acceptance harness
+- Safe-editing flow:
+  - `filesystem.proposeWrite`
+  - pending-approval lifecycle
+  - stale-file protection
+  - atomic file apply
+  - approval/reject UI
+- Architecture, unit, integration, security, and evaluation coverage
+
+macOS-specific manual runtime/package validation is intentionally deferred for now.
 
 ## Prerequisites
 
@@ -27,7 +37,6 @@ Local Career Agent workstation for evidence-backed profile audits.
 ```powershell
 git clone https://github.com/edgeetech/agentworkstation.git
 cd agentworkstation
-git checkout asozyurt-release-0-1-bootstrap
 npm install
 ```
 
