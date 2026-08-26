@@ -4,10 +4,13 @@ import type { WorkspaceGateway } from '@application/ports';
 
 const denied = ['.env', '.env.', '.pem', '.key', 'id_rsa', 'id_ed25519', 'credentials.', 'secrets.'];
 
-function isSensitivePath(target: string): boolean {
-  const normalized = target.toLowerCase();
-  const basename = path.basename(normalized);
-  return denied.some((part) => basename.includes(part) || normalized.includes(part));
+function isSensitiveName(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return denied.some((part) => normalized.includes(part));
+}
+
+function isSensitiveRelativePath(relativePath: string): boolean {
+  return relativePath.split(/[\\/]+/).some(isSensitiveName);
 }
 
 export class DefaultWorkspaceGateway implements WorkspaceGateway {
@@ -24,7 +27,7 @@ export class DefaultWorkspaceGateway implements WorkspaceGateway {
     const entries = await fs.readdir(resolved, { withFileTypes: true });
     return entries
       .map((entry) => entry.name)
-      .filter((name) => !isSensitivePath(path.join(resolved, name)));
+      .filter((name) => !isSensitiveName(name));
   }
 
   async readFile(workspaceId: string, relativePath: string): Promise<{ content: string; source: string }> {
@@ -43,7 +46,7 @@ export class DefaultWorkspaceGateway implements WorkspaceGateway {
     const root = path.resolve(await fs.realpath(this.getWorkspaceRoot(workspaceId)));
     const target = path.resolve(await fs.realpath(path.join(root, relativePath)));
     if (target !== root && !target.startsWith(root + path.sep)) throw new Error('Path escapes workspace');
-    if (isSensitivePath(target)) throw new Error('Sensitive file denied');
+    if (isSensitiveRelativePath(relativePath)) throw new Error('Sensitive file denied');
     return target;
   }
 }

@@ -41,14 +41,16 @@ describe('openai-compatible local adapter', () => {
   });
 
   it('serializes tool definitions and tool results using the OpenAI-compatible protocol', async () => {
+    let sentUrl = '';
     let sentBody = '';
     const mockGateway: NetworkGateway = {
       async send(request) {
+        sentUrl = request.url;
         sentBody = request.body ?? '';
         return { status: 200, body: JSON.stringify({ choices: [{ message: { content: 'done' } }] }), activity };
       },
     };
-    const adapter = new OpenAICompatibleLocalAdapter('http://localhost:11434', mockGateway);
+    const adapter = new OpenAICompatibleLocalAdapter('http://localhost:11434/', mockGateway);
     await adapter.execute({
       messages: [
         { role: 'user', content: 'recent work' },
@@ -66,6 +68,7 @@ describe('openai-compatible local adapter', () => {
     expect(body.messages[1].tool_calls).toBeDefined();
     expect(body.messages[2].tool_call_id).toBe('call-1');
     expect(body.tools[0].function.parameters).toEqual({ type: 'object', required: ['limit'] });
+    expect(sentUrl).toBe('http://localhost:11434/v1/chat/completions');
   });
 });
 

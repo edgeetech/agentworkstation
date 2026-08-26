@@ -16,5 +16,7 @@ describe('Electron security policy', () => {
 
   it('disables object embedding in the CSP', () => {
     expect(CONTENT_SECURITY_POLICY).toContain("object-src 'none'");
+    expect(CONTENT_SECURITY_POLICY).toContain('ws://localhost:*');
+    expect(CONTENT_SECURITY_POLICY).toContain('ws://127.0.0.1:*');
   });
 });

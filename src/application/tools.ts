@@ -39,6 +39,18 @@ export class ToolRegistry {
 
 export type ToolResult = { output: unknown; sourceReferences: SourceReference[] };
 
+function isSourceReference(value: unknown): value is SourceReference {
+  if (value === null || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  if (!['file', 'git_commit', 'git_diff', 'memory'].includes(String(candidate.type))) return false;
+  return ['workspaceId', 'relativePath', 'commitSha', 'label']
+    .every((key) => candidate[key] === undefined || typeof candidate[key] === 'string');
+}
+
+function hasToolResultKeys(value: object): boolean {
+  return 'output' in value || 'sourceReferences' in value;
+}
+
 export class ToolExecutor {
   constructor(private readonly registry: ToolRegistry) {}
 
@@ -53,9 +65,14 @@ export class ToolExecutor {
     if (!tool) throw new Error(`Unknown tool: ${toolName}`);
     const parsed = tool.inputSchema.parse(input);
     const rawOutput = await tool.execute(parsed, context);
-    // If tool returned enriched result with provenance, extract it
-    if (rawOutput !== null && typeof rawOutput === 'object' && 'output' in rawOutput && 'sourceReferences' in rawOutput) {
-      return rawOutput as ToolResult;
+    if (rawOutput !== null && typeof rawOutput === 'object' && hasToolResultKeys(rawOutput)) {
+      if (!('output' in rawOutput)
+        || !('sourceReferences' in rawOutput)
+        || !Array.isArray(rawOutput.sourceReferences)
+        || !rawOutput.sourceReferences.every(isSourceReference)) {
+        throw new Error(`Malformed ToolResult from tool: ${toolName}`);
+      }
+      return { output: rawOutput.output, sourceReferences: rawOutput.sourceReferences };
     }
     return { output: rawOutput, sourceReferences: [] };
   }

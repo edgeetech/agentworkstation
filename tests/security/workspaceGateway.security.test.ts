@@ -59,6 +59,23 @@ describe('workspace gateway security', () => {
     expect(entries).not.toContain('.env');
   });
 
+  it('does not treat a sensitive-looking workspace parent as a sensitive file', async () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'secrets.repo-'));
+    const root = path.join(parent, 'workspace');
+    fs.mkdirSync(root);
+    fs.writeFileSync(path.join(root, 'README.md'), '# allowed');
+    const gateway = new DefaultWorkspaceGateway({ a: root });
+    await expect(gateway.readFile('a', 'README.md')).resolves.toMatchObject({ content: '# allowed' });
+  });
+
+  it('blocks files nested under a sensitive directory name', async () => {
+    const root = makeTempDir();
+    fs.mkdirSync(path.join(root, '.env'));
+    fs.writeFileSync(path.join(root, '.env', 'values.txt'), 'SECRET=x');
+    const gateway = new DefaultWorkspaceGateway({ a: root });
+    await expect(gateway.readFile('a', '.env/values.txt')).rejects.toThrow('Sensitive file denied');
+  });
+
   it('blocks a symlink or junction that escapes the workspace', async () => {
     const root = makeTempDir();
     const outside = makeTempDir();

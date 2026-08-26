@@ -3,7 +3,7 @@ export const CONTENT_SECURITY_POLICY = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
-  "connect-src 'self' http://localhost:* http://127.0.0.1:*",
+  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
   "font-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",

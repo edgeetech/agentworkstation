@@ -2,10 +2,14 @@ import type { IntelligencePort, ModelRequest, ModelResponse } from '@domain/inte
 import type { NetworkGateway } from '@application/ports/NetworkGateway';
 
 export class OpenAICompatibleLocalAdapter implements IntelligencePort {
+  private readonly endpointUrl: string;
+
   constructor(
-    private readonly baseUrl: string,
+    baseUrl: string,
     private readonly networkGateway: NetworkGateway,
-  ) {}
+  ) {
+    this.endpointUrl = `${baseUrl.replace(/\/+$/, '')}/v1/chat/completions`;
+  }
 
   async execute(
     request: ModelRequest,
@@ -40,7 +44,7 @@ export class OpenAICompatibleLocalAdapter implements IntelligencePort {
     });
     const resp = await this.networkGateway.send(
       {
-        url: `${this.baseUrl}/v1/chat/completions`,
+        url: this.endpointUrl,
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ model: context.modelId, messages, ...(tools ? { tools } : {}) }),
