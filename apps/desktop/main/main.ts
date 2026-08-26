@@ -1,6 +1,6 @@
 import { app, BrowserWindow, session } from 'electron';
 import { join } from 'node:path';
-import { CONTENT_SECURITY_POLICY, isAllowedNavigation } from './security';
+import { getContentSecurityPolicy, isAllowedNavigation } from './security';
 
 function createWindow(): void {
   const isDev = !app.isPackaged;
@@ -34,11 +34,12 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  const isDev = !app.isPackaged;
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [CONTENT_SECURITY_POLICY],
+        'Content-Security-Policy': [getContentSecurityPolicy(isDev)],
       },
     });
   });
