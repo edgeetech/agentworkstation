@@ -22,11 +22,29 @@ export type ModelCapabilities = {
 };
 
 export type ModelRequest = {
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
-  tools?: Array<{ name: string; description: string }>;
+  messages: ModelMessage[];
+  tools?: ModelToolDefinition[];
+};
+
+export type ModelToolCall = {
+  id: string;
+  toolName: string;
+  input: unknown;
+};
+
+export type ModelMessage =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string; toolCalls?: ModelToolCall[] }
+  | { role: 'tool'; content: string; toolCallId: string; toolName: string };
+
+export type ModelToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
 };
 
 export type ToolCallRequest = {
+  id: string;
   toolName: string;
   input: unknown;
 };

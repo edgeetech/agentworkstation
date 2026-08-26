@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { SourceReference, ToolMetadata } from '@domain/intelligence';
+import type { ModelToolDefinition, SourceReference, ToolMetadata } from '@domain/intelligence';
 import type { WorkspaceGateway } from '@application/ports';
 
 export type ToolExecutionContext = {
@@ -12,6 +12,7 @@ export type AgentTool<TInput, TOutput> = {
   id: string;
   description: string;
   inputSchema: z.ZodType<TInput>;
+  inputJsonSchema: Record<string, unknown>;
   metadata: ToolMetadata;
   execute(input: TInput, context: ToolExecutionContext): Promise<TOutput>;
 };
@@ -26,9 +27,29 @@ export class ToolRegistry {
   get(id: string): AgentTool<unknown, unknown> | undefined {
     return this.tools.get(id);
   }
+
+  getModelTools(): ModelToolDefinition[] {
+    return [...this.tools.values()].map((tool) => ({
+      name: tool.id,
+      description: tool.description,
+      inputSchema: tool.inputJsonSchema,
+    }));
+  }
 }
 
 export type ToolResult = { output: unknown; sourceReferences: SourceReference[] };
+
+function isSourceReference(value: unknown): value is SourceReference {
+  if (value === null || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  if (!['file', 'git_commit', 'git_diff', 'memory'].includes(String(candidate.type))) return false;
+  return ['workspaceId', 'relativePath', 'commitSha', 'label']
+    .every((key) => candidate[key] === undefined || typeof candidate[key] === 'string');
+}
+
+function hasToolResultKeys(value: object): boolean {
+  return 'output' in value || 'sourceReferences' in value;
+}
 
 export class ToolExecutor {
   constructor(private readonly registry: ToolRegistry) {}
@@ -43,8 +64,17 @@ export class ToolExecutor {
     const tool = this.registry.get(toolName);
     if (!tool) throw new Error(`Unknown tool: ${toolName}`);
     const parsed = tool.inputSchema.parse(input);
-    const output = await tool.execute(parsed, context);
-    return { output, sourceReferences: [] };
+    const rawOutput = await tool.execute(parsed, context);
+    if (rawOutput !== null && typeof rawOutput === 'object' && hasToolResultKeys(rawOutput)) {
+      if (!('output' in rawOutput)
+        || !('sourceReferences' in rawOutput)
+        || !Array.isArray(rawOutput.sourceReferences)
+        || !rawOutput.sourceReferences.every(isSourceReference)) {
+        throw new Error(`Malformed ToolResult from tool: ${toolName}`);
+      }
+      return { output: rawOutput.output, sourceReferences: rawOutput.sourceReferences };
+    }
+    return { output: rawOutput, sourceReferences: [] };
   }
 }
 

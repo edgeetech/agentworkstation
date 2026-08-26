@@ -1,6 +1,20 @@
 # ADR-010 Licensing and Third-Party Policy
 
-Decision: keep the repository proprietary by default, track third-party notices separately, and use commodity permissive libraries only where they do not own core control flow.
+**Date:** 2026-08-25
+**Status:** Accepted
 
-Rationale: the MVP is commercializable and should not inherit a blanket open-source licensing decision.
+## Context
+Commercial distribution needs traceable licenses without dependencies owning strategic control flow.
+
+## Decision
+Keep the repository proprietary, use narrow commodity libraries behind replaceable boundaries, commit the lockfile, and maintain notices separately.
+
+## Alternatives
+Unrestricted dependencies and reimplementing commodity parsers/drivers were rejected.
+
+## Consequences
+New dependencies require license review; SBOM publication remains deferred.
+
+## Verification
+GitHub CI audits production dependencies; THIRD_PARTY_NOTICES remains a release gate until completed.
 

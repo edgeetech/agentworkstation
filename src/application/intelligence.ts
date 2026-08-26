@@ -1,4 +1,4 @@
-import type { IntelligencePort, ModelRequest, ModelResponse } from '@domain/intelligence';
+import type { IntelligencePort, ModelRequest, SourceReference } from '@domain/intelligence';
 import type { ToolMetadata } from '@domain/intelligence';
 
 export type ExecutionLimits = {
@@ -13,7 +13,7 @@ export class AgentRuntime {
   constructor(
     private readonly intelligence: IntelligencePort,
     private readonly toolExecutor: {
-      execute(toolName: string, input: unknown, context: { workspaceId: string; signal: AbortSignal }): Promise<{ output: unknown }>;
+      execute(toolName: string, input: unknown, context: { workspaceId: string; signal: AbortSignal }): Promise<{ output: unknown; sourceReferences: SourceReference[] }>;
       getMetadata(toolName: string): ToolMetadata;
     },
     private readonly policyGate: { decide(metadata: { sideEffect: 'none' | 'propose' | 'external' }): 'allow' | 'require_approval' | 'deny' },
@@ -45,9 +45,29 @@ export class AgentRuntime {
         'Tool timeout exceeded',
       );
       const toolResult = JSON.stringify(result.output);
-      if (Buffer.byteLength(toolResult, 'utf8') > this.limits.maxToolResultBytes) throw new Error('Tool result too large');
+      if (new TextEncoder().encode(toolResult).byteLength > this.limits.maxToolResultBytes) throw new Error('Tool result too large');
+      const provenanceNote = result.sourceReferences.length > 0
+        ? `\n[source: ${result.sourceReferences.map(r => r.type + (r.relativePath ? ':' + r.relativePath : '') + (r.label ? ':' + r.label : '')).join(', ')}]`
+        : '';
       request = {
-        messages: [...request.messages, { role: 'assistant', content: toolResult }],
+        messages: [
+          ...request.messages,
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [{
+              id: response.call.id,
+              toolName: response.call.toolName,
+              input: response.call.input,
+            }],
+          },
+          {
+            role: 'tool',
+            content: toolResult + provenanceNote,
+            toolCallId: response.call.id,
+            toolName: response.call.toolName,
+          },
+        ],
         tools: request.tools,
       };
     }
@@ -60,7 +80,7 @@ export class AgentRuntime {
     abortController: AbortController,
     timeoutMessage: string,
   ): Promise<T> {
-    let timeoutId: NodeJS.Timeout | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
         abortController.abort();
