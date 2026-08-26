@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.9.1",
-    "electron": "^35.1.5",
+    "electron": "^44.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "yaml": "^2.8.1",
