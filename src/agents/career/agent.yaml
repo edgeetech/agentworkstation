@@ -1,0 +1,19 @@
+schemaVersion: 1
+id: career
+name: Career Agent
+description: Keeps professional profile information accurate and current.
+instructions:
+  - AGENT.md
+  - RULES.md
+memory:
+  directory: memory
+workflows:
+  - workflows/career-audit.md
+  - workflows/project-evidence.md
+  - workflows/propose-profile-update.md
+toolPolicies:
+  filesystem.read: allow
+  git.log: allow
+  git.diff: allow
+  filesystem.proposeWrite: require_approval
+

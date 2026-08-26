@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-electron/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+Thumbs.db
+*.log
