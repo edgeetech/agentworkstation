@@ -4,7 +4,9 @@ Local Career Agent workstation for evidence-backed profile audits.
 
 ## Current status
 
-**Windows MVP is complete** (Release 0.1 + 0.2 + 0.3):
+**Windows MVP implementation is in progress.** The Release 0.1-0.3
+domain/application foundations are present, but real desktop integration and
+end-to-end acceptance remain before the product can be called complete:
 
 - Windows-first Electron + React + TypeScript desktop shell
 - Clean Architecture modular monolith (`domain`, `application`, `infrastructure`, `apps/desktop`)
@@ -13,7 +15,7 @@ Local Career Agent workstation for evidence-backed profile audits.
 - Local-only intelligence flow with:
   - deterministic Mock adapter
   - OpenAI-compatible local endpoint adapter (Ollama tested runtime)
-- Multi-workspace Career Audit with deterministic acceptance harness
+- Multi-workspace Career Audit application service with deterministic acceptance harness
 - Safe-editing flow:
   - `filesystem.proposeWrite`
   - pending-approval lifecycle
@@ -21,6 +23,12 @@ Local Career Agent workstation for evidence-backed profile audits.
   - atomic file apply
   - approval/reject UI
 - Architecture, unit, integration, security, and evaluation coverage
+
+The current desktop screen is a deterministic demonstration surface. It is not
+yet the complete interactive MVP: workspace registration/selection, arbitrary
+chat through a configured local model, model-driven edit proposals, session
+persistence, and real Electron E2E verification remain. See `WHATS_LEFT.md` for
+the live implementation checklist and completion gate.
 
 macOS-specific manual runtime/package validation is intentionally deferred for now.
 

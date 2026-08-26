@@ -1,5 +1,25 @@
 # Local Agent Workstation --- Consolidated MVP & Architecture Plan
 
+## Current Implementation Directive (2026-08-27)
+
+The active objective is the **complete Windows MVP**, not completion of
+an individual release milestone. Releases 0.1, 0.2, and 0.3 are delivery
+checkpoints within that objective; agents must continue through them until
+the full MVP acceptance flow in Sections 4, 5, and 39 works in the real
+Electron application.
+
+Do not declare the MVP complete solely because domain services, deterministic
+evaluation harnesses, builds, or CI pass. Completion requires the desktop user
+to be able to register real workspaces, select the Career Agent, chat through a
+configured local model endpoint, run an evidence-backed Career Audit, request
+a concrete profile update, inspect its diff and sources, approve or reject it,
+and recover persisted workspace/session state after restart.
+
+Milestone commits and passing gates are progress checkpoints, never stop
+conditions. Continue autonomously while safe in-scope work remains. Keep
+`WHATS_LEFT.md` current after every completed capability or newly discovered
+gap so another agent can resume without repeating the audit.
+
 ## 0. Project Identity
 
 -   **Repository working name:** `agentworkstation`
@@ -1247,7 +1267,10 @@ Required demo:
 
 > Apply the selected GitHub README recommendation.
 
-At this point the MVP is product-complete.
+At this point the MVP is product-complete only when the complete acceptance
+flow in Sections 4, 5, and 39 also passes through the real desktop boundary;
+code-level release checklists and deterministic harnesses alone are
+insufficient.
 
 ## Release 0.4 --- macOS Compatibility Release
 
@@ -4253,39 +4276,23 @@ Before Release 0.1 completion:
 
 ------------------------------------------------------------------------
 
-# 100. Start Decision
+# 100. Current Delivery Decision
 
-**PROJECT STATUS: READY TO IMPLEMENT RELEASE 0.1**
+**PROJECT STATUS: WINDOWS MVP IMPLEMENTATION IN PROGRESS**
 
-No additional architecture exploration is required before repository
-bootstrap.
+The repository bootstrap and the Release 0.1-0.3 domain/application slices
+exist. The remaining work is product integration and real desktop acceptance,
+not another architecture spike.
 
-The first implementation task is repository bootstrap, not another
-research spike.
+Codex/Copilot should execute the live checklist in `WHATS_LEFT.md` from top to
+bottom and continue across checkpoint commits until every Section 4 success
+criterion and the Section 39 Windows critical path passes in Electron.
 
-Codex/Copilot should:
-
-1.  create the new `agentworkstation` repository structure;
-2.  bootstrap directly on `main`;
-3.  add `PROJECT_PLAN.md`;
-4.  add the concise ADRs;
-5.  add architecture dependency tests;
-6.  create the Windows Electron/React shell;
-7.  create Domain/Application/Infrastructure boundaries;
-8.  implement Mock Intelligence first;
-9.  implement the minimal AgentRuntime against the mock;
-10. implement WorkspaceGateway + Git/filesystem read tools;
-11. implement OpenAI-compatible local endpoint adapter;
-12. verify against Ollama;
-13. implement the first Career Agent repository-evidence workflow;
-14. run tests and architecture fitness review;
-15. stop at Release 0.1 scope.
-
-After bootstrap baseline is stable, move to feature branches + PR
-review.
-
-Do not implement Release 0.2+ until Release 0.1 passes its acceptance
-demo and evaluation gates.
+The historical instruction to stop at Release 0.1 is retired. Do not stop at
+Release 0.2, Release 0.3, or any internal milestone. Stop only when the complete
+Windows MVP is demonstrably usable, all automated gates pass, and the remaining
+items are explicitly outside MVP scope or require an unavailable external/manual
+environment.
 
 # 101. Commercial Product Architecture
 
