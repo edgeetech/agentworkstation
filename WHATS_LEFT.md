@@ -1,7 +1,7 @@
 # Agent Workstation: What's Left
 
 Last updated: 2026-08-26
-Current target: Release 0.2 — Career Audit
+Current target: Release 0.3 — Safe Editing
 Working branch: `main`
 
 ## Completed
@@ -28,19 +28,28 @@ Working branch: `main`
   - Recent conversation is retained deterministically; assistant/tool exchanges are trimmed atomically.
   - Verification passed: lint; 50 tests across 15 files; 6 architecture tests; renderer and Electron builds.
 
+## Completed
+
+- Milestone R0.2-5 completed: the multi-workspace Career Audit service and deterministic evaluation scenario are implemented and verified.
+- Source-reference rendering bridge completed for the Electron UI: the preload bridge exposes deterministic career-audit output and the desktop renderer renders workspace/source metadata.
+
+## Completed
+
+- Release 0.2 acceptance demo completed through deterministic multi-workspace evaluation:
+  "Compare my recent project activity with my current professional profile and identify important gaps."
+- Evaluation harness expanded with a deterministic acceptance scenario using two real temporary git repositories and provenance assertions.
+- Final quality, architecture, security, and packaging checks passed:
+  - lint,
+  - architecture checks,
+  - full test suite,
+  - renderer build,
+  - Electron main build,
+  - electron pack build,
+  - production dependency audit (`0 vulnerabilities`).
+
 ## In Progress
 
-- Milestone R0.2-5: implement the multi-workspace Career Audit application workflow and deterministic evaluation scenario.
-
-## Remaining Release 0.2 Work
-
-1. Complete the Career Audit application workflow across multiple workspaces.
-2. Expose structured source references through the Electron boundary and render them in the UI.
-3. Expand the evaluation harness for deterministic Career Audit scenarios.
-4. Run the Release 0.2 acceptance demo:
-   "Compare my recent project activity with my current professional profile and identify important gaps."
-5. Run final quality, architecture, security, and packaging checks; fix findings.
-6. Commit and push each bounded milestone to `main`, verifying GitHub CI after each push.
+- Release 0.3 planning and implementation preparation.
 
 ## Explicitly Deferred Beyond Release 0.2
 
