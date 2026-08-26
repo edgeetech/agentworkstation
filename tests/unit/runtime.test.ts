@@ -72,4 +72,28 @@ describe('agent runtime', () => {
       sourceReferences: [{ type: 'git_commit', workspaceId: 'w', commitSha: 'abc' }],
     });
   });
+
+  it('allows require_approval policy for propose-side-effect tools', async () => {
+    const runtime = new AgentRuntime(
+      new MockIntelligenceAdapter([
+        { type: 'tool_call', call: { id: 'call-propose', toolName: 'filesystem.proposeWrite', input: {} } },
+        { type: 'text', content: 'proposal created' },
+      ]),
+      {
+        execute: async () => ({
+          output: { actionId: 'pending-1' },
+          sourceReferences: [{ type: 'file', workspaceId: 'w', relativePath: 'README.md', label: 'pending:pending-1' }],
+        }),
+        getMetadata: () => ({ readOnly: false, sideEffect: 'propose', sensitive: true }),
+      },
+      { decide: () => 'require_approval' },
+      { maxSteps: 2, maxToolCalls: 2, maxToolResultBytes: 1024, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
+    );
+
+    await expect(runtime.run(
+      { messages: [{ role: 'user', content: 'propose update' }] },
+      { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' },
+      new AbortController().signal,
+    )).resolves.toBe('proposal created');
+  });
 });

@@ -45,8 +45,12 @@ export class AgentRuntime {
       if (response.type === 'error') throw new Error(response.error);
       toolCalls += 1;
       if (toolCalls > this.limits.maxToolCalls) throw new Error('Max tool calls exceeded');
-      const policy = this.policyGate.decide(this.toolExecutor.getMetadata(response.call.toolName));
-      if (policy !== 'allow') throw new Error('Tool not allowed');
+      const metadata = this.toolExecutor.getMetadata(response.call.toolName);
+      const policy = this.policyGate.decide(metadata);
+      if (policy === 'deny') throw new Error('Tool not allowed');
+      if (policy === 'require_approval' && metadata.sideEffect !== 'propose') {
+        throw new Error('Tool not allowed');
+      }
       const toolAbort = new AbortController();
       const result = await this.withTimeout(
         () => this.toolExecutor.execute(response.call.toolName, response.call.input, { workspaceId: context.workspaceId, signal: AbortSignal.any([signal, toolAbort.signal]) }),

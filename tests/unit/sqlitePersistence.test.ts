@@ -8,7 +8,17 @@ describe('sqlite persistence', () => {
   it('stores pending actions', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aw-')), 'app.db');
     const db = new SqlitePersistence(file);
-    await db.savePendingAction({ id: '1', sessionId: 's', createdAt: 'now', expectedOriginalHash: 'a', proposedContentHash: 'b', targetPath: 'README.md', proposedContent: 'x' });
+    await db.savePendingAction({
+      id: '1',
+      sessionId: 's',
+      createdAt: 'now',
+      status: 'PROPOSED',
+      expectedOriginalHash: 'a',
+      proposedContentHash: 'b',
+      targetPath: 'README.md',
+      proposedContent: 'x',
+      diff: '---',
+    });
     await expect(db.getPendingAction('1')).resolves.toMatchObject({ id: '1', targetPath: 'README.md' });
   });
 
@@ -42,4 +52,3 @@ describe('sqlite persistence', () => {
     await expect(db.getSelectedWorkspace()).resolves.toEqual({ id: 'known', rootPath: 'C:\\work\\known' });
   });
 });
-
