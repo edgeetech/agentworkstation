@@ -2,7 +2,7 @@
   "name": "agentworkstation",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
+  "type": "commonjs",
   "main": "electron-main.cjs",
   "scripts": {
     "dev": "vite",
