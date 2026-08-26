@@ -22,7 +22,7 @@ export type ModelCapabilities = {
 };
 
 export type ModelRequest = {
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  messages: Array<{ role: 'system' | 'user' | 'assistant' | 'tool'; content: string }>;
   tools?: Array<{ name: string; description: string }>;
 };
 

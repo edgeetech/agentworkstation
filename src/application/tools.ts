@@ -43,8 +43,12 @@ export class ToolExecutor {
     const tool = this.registry.get(toolName);
     if (!tool) throw new Error(`Unknown tool: ${toolName}`);
     const parsed = tool.inputSchema.parse(input);
-    const output = await tool.execute(parsed, context);
-    return { output, sourceReferences: [] };
+    const rawOutput = await tool.execute(parsed, context);
+    // If tool returned enriched result with provenance, extract it
+    if (rawOutput !== null && typeof rawOutput === 'object' && 'output' in rawOutput && 'sourceReferences' in rawOutput) {
+      return rawOutput as ToolResult;
+    }
+    return { output: rawOutput, sourceReferences: [] };
   }
 }
 
