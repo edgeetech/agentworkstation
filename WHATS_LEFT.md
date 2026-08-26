@@ -24,21 +24,23 @@ Working branch: `main`
   - Verification passed: lint; 44 tests across 14 files; 6 architecture tests; renderer and Electron builds.
 - Milestone R0.2-3 completed: declarative career memory is separated from trusted system instructions and loaded into a deterministic UTF-8 byte-bounded context with explicit source references.
   - Verification passed: lint; 47 tests across 15 files; 6 architecture tests; renderer and Electron builds.
+- Milestone R0.2-4 completed: model request composition enforces explicit content budgets for instructions, memory, conversation, tool-result exchanges, and the category total.
+  - Recent conversation is retained deterministically; assistant/tool exchanges are trimmed atomically.
+  - Verification passed: lint; 50 tests across 15 files; 6 architecture tests; renderer and Electron builds.
 
 ## In Progress
 
-- Milestone R0.2-4: budget complete model requests across instructions, memory, conversation history, and tool results.
+- Milestone R0.2-5: implement the multi-workspace Career Audit application workflow and deterministic evaluation scenario.
 
 ## Remaining Release 0.2 Work
 
-1. Add context budgeting for agent instructions, memory, history, and tool results.
-2. Complete the Career Audit application workflow across multiple workspaces.
-3. Expose structured source references through the Electron boundary and render them in the UI.
-4. Expand the evaluation harness for deterministic Career Audit scenarios.
-5. Run the Release 0.2 acceptance demo:
+1. Complete the Career Audit application workflow across multiple workspaces.
+2. Expose structured source references through the Electron boundary and render them in the UI.
+3. Expand the evaluation harness for deterministic Career Audit scenarios.
+4. Run the Release 0.2 acceptance demo:
    "Compare my recent project activity with my current professional profile and identify important gaps."
-6. Run final quality, architecture, security, and packaging checks; fix findings.
-7. Commit and push each bounded milestone to `main`, verifying GitHub CI after each push.
+5. Run final quality, architecture, security, and packaging checks; fix findings.
+6. Commit and push each bounded milestone to `main`, verifying GitHub CI after each push.
 
 ## Explicitly Deferred Beyond Release 0.2
 

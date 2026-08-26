@@ -1,4 +1,4 @@
-import type { SourceReference } from '@domain/intelligence';
+import type { ModelMessage, ModelRequest, ModelToolDefinition, SourceReference } from '@domain/intelligence';
 import type { AgentContentFile } from './agents/types';
 
 export type BoundedContext = {
@@ -8,10 +8,66 @@ export type BoundedContext = {
   sourceReferences: SourceReference[];
 };
 
+export type ContextBudget = {
+  maxInstructionsBytes: number;
+  maxMemoryBytes: number;
+  maxConversationBytes: number;
+  maxToolResultBytes: number;
+  maxTotalContentBytes: number;
+};
+
+export type ContextBuildResult = {
+  request: ModelRequest;
+  sourceReferences: SourceReference[];
+  usage: {
+    instructionsBytes: number;
+    memoryBytes: number;
+    conversationBytes: number;
+    toolResultBytes: number;
+    totalContentBytes: number;
+  };
+  truncated: Array<'instructions' | 'memory' | 'conversation' | 'toolResults'>;
+};
+
 function truncateUtf8(content: string, maxBytes: number): string {
   const encoded = Buffer.from(content, 'utf8');
   if (encoded.byteLength <= maxBytes) return content;
   return encoded.subarray(0, maxBytes).toString('utf8').replace(/\uFFFD$/u, '');
+}
+
+function contentBytes(messages: ModelMessage[]): number {
+  return messages.reduce((total, message) => total + Buffer.byteLength(message.content, 'utf8'), 0);
+}
+
+type MessageGroup = { kind: 'conversation' | 'toolResults'; messages: ModelMessage[] };
+
+function groupMessages(messages: ModelMessage[]): MessageGroup[] {
+  const groups: MessageGroup[] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message.role === 'assistant' && message.toolCalls?.length) {
+      const grouped = [message];
+      while (messages[index + 1]?.role === 'tool') grouped.push(messages[++index]);
+      groups.push({ kind: 'toolResults', messages: grouped });
+    } else {
+      groups.push({ kind: message.role === 'tool' ? 'toolResults' : 'conversation', messages: [message] });
+    }
+  }
+  return groups;
+}
+
+function validateBudget(budget: ContextBudget): void {
+  const values = Object.values(budget);
+  if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    throw new Error('Context budgets must be non-negative safe integers');
+  }
+  const categoryTotal = budget.maxInstructionsBytes
+    + budget.maxMemoryBytes
+    + budget.maxConversationBytes
+    + budget.maxToolResultBytes;
+  if (categoryTotal > budget.maxTotalContentBytes) {
+    throw new Error('Context category budgets exceed total content budget');
+  }
 }
 
 export class ContextBuilder {
@@ -49,6 +105,78 @@ export class ContextBuilder {
       byteLength: Buffer.byteLength(content, 'utf8'),
       truncated,
       sourceReferences,
+    };
+  }
+
+  buildRequest(input: {
+    systemPrompt: string;
+    memoryContext: BoundedContext;
+    conversation: ModelMessage[];
+    tools?: ModelToolDefinition[];
+  }, budget: ContextBudget): ContextBuildResult {
+    validateBudget(budget);
+    const truncated: ContextBuildResult['truncated'] = [];
+    const instructions = truncateUtf8(input.systemPrompt, budget.maxInstructionsBytes);
+    if (instructions !== input.systemPrompt) truncated.push('instructions');
+
+    const memory = truncateUtf8(input.memoryContext.content, budget.maxMemoryBytes);
+    if (memory !== input.memoryContext.content || input.memoryContext.truncated) truncated.push('memory');
+
+    const remaining = {
+      conversation: budget.maxConversationBytes,
+      toolResults: budget.maxToolResultBytes,
+    };
+    const selectedGroups: MessageGroup[] = [];
+    const groups = groupMessages(input.conversation);
+    for (let index = groups.length - 1; index >= 0; index -= 1) {
+      const group = groups[index];
+      const bytes = contentBytes(group.messages);
+      if (bytes <= remaining[group.kind]) {
+        selectedGroups.unshift(group);
+        remaining[group.kind] -= bytes;
+      } else if (group.kind === 'conversation' && group.messages.length === 1 && selectedGroups.length === 0) {
+        const message = group.messages[0];
+        selectedGroups.unshift({
+          kind: group.kind,
+          messages: [{ ...message, content: truncateUtf8(message.content, remaining.conversation) }],
+        });
+        remaining.conversation = 0;
+        if (!truncated.includes('conversation')) truncated.push('conversation');
+      } else if (!truncated.includes(group.kind)) {
+        truncated.push(group.kind);
+      }
+    }
+
+    const selectedMessages = selectedGroups.flatMap((group) => group.messages);
+    if (selectedMessages.length < input.conversation.length) {
+      const omittedTool = groups.some((group) => group.kind === 'toolResults' && !selectedGroups.includes(group));
+      const omittedConversation = groups.some((group) => group.kind === 'conversation' && !selectedGroups.includes(group));
+      if (omittedTool && !truncated.includes('toolResults')) truncated.push('toolResults');
+      if (omittedConversation && !truncated.includes('conversation')) truncated.push('conversation');
+    }
+
+    const messages: ModelMessage[] = [];
+    if (instructions) messages.push({ role: 'system', content: instructions });
+    if (memory) messages.push({ role: 'system', content: `## Career memory\n\n${memory}` });
+    messages.push(...selectedMessages);
+
+    const usage = {
+      instructionsBytes: Buffer.byteLength(instructions, 'utf8'),
+      memoryBytes: Buffer.byteLength(memory, 'utf8'),
+      conversationBytes: contentBytes(selectedGroups.filter((group) => group.kind === 'conversation').flatMap((group) => group.messages)),
+      toolResultBytes: contentBytes(selectedGroups.filter((group) => group.kind === 'toolResults').flatMap((group) => group.messages)),
+      totalContentBytes: 0,
+    };
+    usage.totalContentBytes = usage.instructionsBytes + usage.memoryBytes
+      + usage.conversationBytes + usage.toolResultBytes;
+
+    const includedSources = input.memoryContext.sourceReferences.filter((source) =>
+      !source.relativePath || memory.includes(`### ${source.relativePath}`));
+    return {
+      request: { messages, ...(input.tools ? { tools: input.tools } : {}) },
+      sourceReferences: includedSources,
+      usage,
+      truncated,
     };
   }
 }

@@ -34,4 +34,67 @@ describe('ContextBuilder', () => {
   it('rejects invalid byte budgets', () => {
     expect(() => new ContextBuilder().buildMemory([], -1)).toThrow('Context byte budget');
   });
+
+  it('composes a request within category budgets and keeps the newest conversation', () => {
+    const builder = new ContextBuilder();
+    const memoryContext = builder.buildMemory([
+      { relativePath: 'memory/profile.md', content: 'Current profile' },
+    ], 1024);
+    const result = builder.buildRequest({
+      systemPrompt: 'Trusted instructions',
+      memoryContext,
+      conversation: [
+        { role: 'user', content: 'old message that does not fit' },
+        { role: 'assistant', content: 'old reply that does not fit' },
+        { role: 'user', content: 'latest' },
+      ],
+    }, {
+      maxInstructionsBytes: 64,
+      maxMemoryBytes: 64,
+      maxConversationBytes: 8,
+      maxToolResultBytes: 32,
+      maxTotalContentBytes: 168,
+    });
+
+    expect(result.request.messages.at(-1)).toEqual({ role: 'user', content: 'latest' });
+    expect(result.request.messages.some((message) => message.content.includes('old message'))).toBe(false);
+    expect(result.usage.conversationBytes).toBe(6);
+    expect(result.truncated).toContain('conversation');
+    expect(result.sourceReferences).toEqual(memoryContext.sourceReferences);
+  });
+
+  it('drops an oversized assistant/tool pair atomically', () => {
+    const result = new ContextBuilder().buildRequest({
+      systemPrompt: '',
+      memoryContext: { content: '', byteLength: 0, truncated: false, sourceReferences: [] },
+      conversation: [
+        { role: 'assistant', content: '', toolCalls: [{ id: '1', toolName: 'git.log', input: {} }] },
+        { role: 'tool', content: 'oversized result', toolCallId: '1', toolName: 'git.log' },
+        { role: 'user', content: 'continue' },
+      ],
+    }, {
+      maxInstructionsBytes: 0,
+      maxMemoryBytes: 0,
+      maxConversationBytes: 16,
+      maxToolResultBytes: 4,
+      maxTotalContentBytes: 20,
+    });
+
+    expect(result.request.messages).toEqual([{ role: 'user', content: 'continue' }]);
+    expect(result.truncated).toContain('toolResults');
+  });
+
+  it('rejects category budgets that exceed the total', () => {
+    expect(() => new ContextBuilder().buildRequest({
+      systemPrompt: '',
+      memoryContext: { content: '', byteLength: 0, truncated: false, sourceReferences: [] },
+      conversation: [],
+    }, {
+      maxInstructionsBytes: 1,
+      maxMemoryBytes: 1,
+      maxConversationBytes: 1,
+      maxToolResultBytes: 1,
+      maxTotalContentBytes: 3,
+    })).toThrow('category budgets exceed');
+  });
 });
