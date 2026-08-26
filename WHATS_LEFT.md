@@ -1,7 +1,7 @@
 # Agent Workstation: What's Left
 
 Last updated: 2026-08-26
-Current target: Release 0.3 — Safe Editing
+Current target: Release 0.4 — macOS Compatibility Release
 Working branch: `main`
 
 ## Completed
@@ -32,6 +32,15 @@ Working branch: `main`
 
 - Milestone R0.2-5 completed: the multi-workspace Career Audit service and deterministic evaluation scenario are implemented and verified.
 - Source-reference rendering bridge completed for the Electron UI: the preload bridge exposes deterministic career-audit output and the desktop renderer renders workspace/source metadata.
+- Release 0.3 safe-editing workflow completed:
+  - `filesystem.proposeWrite` pending-action proposal flow with generated diffs,
+  - runtime-side approval gating for propose-side-effect tools,
+  - `PendingAction` lifecycle with `PROPOSED → APPROVED → EXECUTED` and `REJECTED/STALE`,
+  - stale-file hash protection before apply,
+  - atomic file write execution through workspace gateway,
+  - approval/reject desktop UI controls in renderer.
+- Release 0.3 acceptance behavior verified with deterministic evaluation:
+  - "Apply the selected GitHub README recommendation."
 
 ## Completed
 
@@ -49,7 +58,7 @@ Working branch: `main`
 
 ## In Progress
 
-- Release 0.3 planning and implementation preparation.
+- Release 0.4 compatibility verification (macOS packaging/validation) pending execution on a macOS runner/host.
 
 ## Explicitly Deferred Beyond Release 0.2
 

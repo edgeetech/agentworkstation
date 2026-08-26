@@ -10,3 +10,7 @@ Deterministic release-gate scenarios for evidence-backed Career Audit behavior.
   - Uses two real temporary git repositories (`profile`, `project`).
   - Verifies multi-workspace audit behavior and structured evidence provenance.
   - Asserts required audit sections and source-reference output shape.
+- `safeEditing.acceptance.test.ts`
+  - Runs the Release 0.3 acceptance behavior:
+    - "Apply the selected GitHub README recommendation."
+  - Verifies `PendingAction` proposal, stale-safe approval flow, and atomic file application.
