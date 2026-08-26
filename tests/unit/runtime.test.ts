@@ -44,4 +44,32 @@ describe('agent runtime', () => {
     );
     await expect(runtime.run({ messages: [{ role: 'user', content: 'hi' }] }, { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' }, new AbortController().signal)).rejects.toThrow('Model timeout exceeded');
   });
+
+  it('returns deduplicated tool provenance from traced runs', async () => {
+    const runtime = new AgentRuntime(
+      new MockIntelligenceAdapter([
+        { type: 'tool_call', call: { id: 'call-1', toolName: 'echo', input: {} } },
+        { type: 'tool_call', call: { id: 'call-2', toolName: 'echo', input: {} } },
+        { type: 'text', content: 'done' },
+      ]),
+      {
+        execute: async () => ({
+          output: 'ok',
+          sourceReferences: [{ type: 'git_commit', workspaceId: 'w', commitSha: 'abc' }],
+        }),
+        getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }),
+      },
+      { decide: () => 'allow' },
+      { maxSteps: 3, maxToolCalls: 3, maxToolResultBytes: 1024, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
+    );
+
+    await expect(runtime.runWithTrace(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' },
+      new AbortController().signal,
+    )).resolves.toEqual({
+      content: 'done',
+      sourceReferences: [{ type: 'git_commit', workspaceId: 'w', commitSha: 'abc' }],
+    });
+  });
 });

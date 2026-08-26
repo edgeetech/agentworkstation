@@ -9,6 +9,11 @@ export type ExecutionLimits = {
   toolTimeoutMs: number;
 };
 
+export type AgentRunResult = {
+  content: string;
+  sourceReferences: SourceReference[];
+};
+
 export class AgentRuntime {
   constructor(
     private readonly intelligence: IntelligencePort,
@@ -21,7 +26,12 @@ export class AgentRuntime {
   ) {}
 
   async run(request: ModelRequest, context: { modelId: string; executionMode: 'local_only'; workspaceId: string }, signal: AbortSignal): Promise<string> {
+    return (await this.runWithTrace(request, context, signal)).content;
+  }
+
+  async runWithTrace(request: ModelRequest, context: { modelId: string; executionMode: 'local_only'; workspaceId: string }, signal: AbortSignal): Promise<AgentRunResult> {
     let toolCalls = 0;
+    const sourceReferences: SourceReference[] = [];
     for (let step = 0; step < this.limits.maxSteps; step += 1) {
       signal.throwIfAborted();
       const modelAbort = new AbortController();
@@ -31,7 +41,7 @@ export class AgentRuntime {
         modelAbort,
         'Model timeout exceeded',
       );
-      if (response.type === 'text') return response.content;
+      if (response.type === 'text') return { content: response.content, sourceReferences };
       if (response.type === 'error') throw new Error(response.error);
       toolCalls += 1;
       if (toolCalls > this.limits.maxToolCalls) throw new Error('Max tool calls exceeded');
@@ -44,10 +54,20 @@ export class AgentRuntime {
         toolAbort,
         'Tool timeout exceeded',
       );
-      const toolResult = JSON.stringify(result.output);
+      const output = result !== null && typeof result === 'object' && 'output' in result
+        ? (result as { output: unknown }).output
+        : result;
+      const references = result !== null && typeof result === 'object' && Array.isArray((result as { sourceReferences?: unknown }).sourceReferences)
+        ? (result as { sourceReferences: SourceReference[] }).sourceReferences
+        : [];
+      for (const source of references) {
+        const key = JSON.stringify(source);
+        if (!sourceReferences.some((existing) => JSON.stringify(existing) === key)) sourceReferences.push(source);
+      }
+      const toolResult = JSON.stringify(output);
       if (new TextEncoder().encode(toolResult).byteLength > this.limits.maxToolResultBytes) throw new Error('Tool result too large');
-      const provenanceNote = result.sourceReferences.length > 0
-        ? `\n[source: ${result.sourceReferences.map(r => r.type + (r.relativePath ? ':' + r.relativePath : '') + (r.label ? ':' + r.label : '')).join(', ')}]`
+      const provenanceNote = references.length > 0
+        ? `\n[source: ${references.map(r => r.type + (r.relativePath ? ':' + r.relativePath : '') + (r.label ? ':' + r.label : '')).join(', ')}]`
         : '';
       request = {
         messages: [

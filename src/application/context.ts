@@ -45,12 +45,17 @@ function groupMessages(messages: ModelMessage[]): MessageGroup[] {
   const groups: MessageGroup[] = [];
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
-    if (message.role === 'assistant' && message.toolCalls?.length) {
-      const grouped = [message];
-      while (messages[index + 1]?.role === 'tool') grouped.push(messages[++index]);
+    if (message.role === 'assistant' && Array.isArray(message.toolCalls) && message.toolCalls.length > 0) {
+      const grouped: ModelMessage[] = [message];
+      while (messages[index + 1]?.role === 'tool') {
+        const toolMessage = messages[++index];
+        if (toolMessage && toolMessage.role === 'tool') grouped.push(toolMessage);
+      }
       groups.push({ kind: 'toolResults', messages: grouped });
+    } else if (message.role === 'tool') {
+      groups.push({ kind: 'toolResults', messages: [message] });
     } else {
-      groups.push({ kind: message.role === 'tool' ? 'toolResults' : 'conversation', messages: [message] });
+      groups.push({ kind: 'conversation', messages: [message] });
     }
   }
   return groups;

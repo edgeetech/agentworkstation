@@ -31,9 +31,13 @@ type GitStatusOutput = {
   entries: GitStatusEntry[];
 };
 
-type GitDiffInput =
-  | { workspaceId: string; scope: 'working' | 'staged'; maxBytes: number }
-  | { workspaceId: string; scope: 'range'; from: string; to: string; maxBytes: number };
+type GitDiffInput = {
+  workspaceId: string;
+  scope: 'working' | 'staged' | 'range';
+  maxBytes?: number;
+  from?: string;
+  to?: string;
+};
 
 type GitDiffOutput = {
   scope: GitDiffInput['scope'];
@@ -199,23 +203,37 @@ export const gitDiffTool: AgentTool<GitDiffInput, ToolResult> = {
   metadata: { readOnly: true, sideEffect: 'none', sensitive: false },
   async execute(input, context): Promise<ToolResult> {
     const workspacePath = requireWorkspaceRoot(context, input.workspaceId);
-    const args = input.scope === 'working'
-      ? ['diff', '--no-ext-diff', '--']
-      : input.scope === 'staged'
-        ? ['diff', '--cached', '--no-ext-diff', '--']
-        : ['diff', '--no-ext-diff', `${input.from}..${input.to}`, '--'];
+    const maxBytes = input.maxBytes ?? DEFAULT_DIFF_BYTES;
+
+    let args: string[];
+    let label: string;
+    if (input.scope === 'working') {
+      args = ['diff', '--no-ext-diff', '--'];
+      label = 'git.diff(working)';
+    } else if (input.scope === 'staged') {
+      args = ['diff', '--cached', '--no-ext-diff', '--'];
+      label = 'git.diff(staged)';
+    } else {
+      const from = input.from ?? '';
+      const to = input.to ?? '';
+      args = ['diff', '--no-ext-diff', `${from}..${to}`, '--'];
+      label = `git.diff(${from}..${to})`;
+    }
+
     const stdout = await runGit(workspacePath, args, context.signal);
-    const bounded = truncateUtf8(stdout, input.maxBytes);
+    const bounded = truncateUtf8(stdout, maxBytes);
     const output: GitDiffOutput = {
       scope: input.scope,
       diff: bounded.value,
       truncated: bounded.truncated,
       originalBytes: bounded.originalBytes,
     };
+
+    const rangeRef = input.scope === 'range' ? { from: input.from ?? '', to: input.to ?? '' } : undefined;
     const sourceRef: SourceReference = {
       type: 'git_diff',
       workspaceId: input.workspaceId,
-      label: input.scope === 'range' ? `git.diff(${input.from}..${input.to})` : `git.diff(${input.scope})`,
+      label: rangeRef ? `git.diff(${rangeRef.from}..${rangeRef.to})` : label,
     };
     return { output, sourceReferences: [sourceRef] };
   },
