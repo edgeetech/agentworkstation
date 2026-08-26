@@ -60,6 +60,7 @@ Working branch: `main`
 
 - Release 0.4 compatibility verification is active:
   - macOS CI compatibility gate is implemented and passing on `main` (unit/integration/security, architecture, renderer build, Electron main compile).
+  - platform abstraction added for home/app-data resolution and preload persistence pathing now uses OS-appropriate app-data directories.
   - Remaining macOS work: explicit desktop package run and manual runtime verification on a macOS host.
 
 ## Explicitly Deferred Beyond Release 0.2
