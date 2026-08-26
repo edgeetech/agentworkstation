@@ -58,8 +58,9 @@ Working branch: `main`
 
 ## In Progress
 
-- Release 0.4 compatibility verification (macOS packaging/validation) pending execution on a macOS runner/host.
-- macOS CI compatibility gate prepared in `.github/workflows/ci.yml` (unit/integration/security, architecture, renderer build, Electron main compile) and pending first successful run on `main`.
+- Release 0.4 compatibility verification is active:
+  - macOS CI compatibility gate is implemented and passing on `main` (unit/integration/security, architecture, renderer build, Electron main compile).
+  - Remaining macOS work: explicit desktop package run and manual runtime verification on a macOS host.
 
 ## Explicitly Deferred Beyond Release 0.2
 
