@@ -4,6 +4,12 @@ import type { WorkspaceGateway } from '@application/ports';
 
 const denied = ['.env', '.env.', '.pem', '.key', 'id_rsa', 'id_ed25519', 'credentials.', 'secrets.'];
 
+function isSensitivePath(target: string): boolean {
+  const normalized = target.toLowerCase();
+  const basename = path.basename(normalized);
+  return denied.some((part) => basename.includes(part) || normalized.includes(part));
+}
+
 export class DefaultWorkspaceGateway implements WorkspaceGateway {
   constructor(private readonly roots: Record<string, string>) {}
 
@@ -16,7 +22,9 @@ export class DefaultWorkspaceGateway implements WorkspaceGateway {
   async listDirectory(workspaceId: string, relativePath: string): Promise<string[]> {
     const resolved = await this.resolve(workspaceId, relativePath);
     const entries = await fs.readdir(resolved, { withFileTypes: true });
-    return entries.map((entry) => entry.name);
+    return entries
+      .map((entry) => entry.name)
+      .filter((name) => !isSensitivePath(path.join(resolved, name)));
   }
 
   async readFile(workspaceId: string, relativePath: string): Promise<{ content: string; source: string }> {
@@ -28,11 +36,14 @@ export class DefaultWorkspaceGateway implements WorkspaceGateway {
   }
 
   private async resolve(workspaceId: string, relativePath: string): Promise<string> {
-    if (path.isAbsolute(relativePath) || relativePath.includes('..')) throw new Error('Invalid path');
+    const segments = relativePath.split(/[\\/]+/);
+    if (path.isAbsolute(relativePath) || path.win32.isAbsolute(relativePath) || segments.includes('..')) {
+      throw new Error('Invalid path');
+    }
     const root = path.resolve(await fs.realpath(this.getWorkspaceRoot(workspaceId)));
     const target = path.resolve(await fs.realpath(path.join(root, relativePath)));
     if (target !== root && !target.startsWith(root + path.sep)) throw new Error('Path escapes workspace');
-    if (denied.some((part) => path.basename(target).includes(part) || target.includes(part))) throw new Error('Sensitive file denied');
+    if (isSensitivePath(target)) throw new Error('Sensitive file denied');
     return target;
   }
 }

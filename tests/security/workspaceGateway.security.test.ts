@@ -34,11 +34,11 @@ describe('workspace gateway security', () => {
     await expect(gateway.readFile('a', 'big.txt')).rejects.toThrow('File too large');
   });
 
-  it('blocks .env files (case-sensitive check)', async () => {
+  it('blocks sensitive files case-insensitively', async () => {
     const root = makeTempDir();
-    fs.writeFileSync(path.join(root, '.env'), 'SECRET=abc');
+    fs.writeFileSync(path.join(root, '.ENV'), 'SECRET=abc');
     const gateway = new DefaultWorkspaceGateway({ a: root });
-    await expect(gateway.readFile('a', '.env')).rejects.toThrow('Sensitive file denied');
+    await expect(gateway.readFile('a', '.ENV')).rejects.toThrow('Sensitive file denied');
   });
 
   it('blocks .pem certificate files', async () => {
@@ -54,9 +54,18 @@ describe('workspace gateway security', () => {
     fs.writeFileSync(path.join(root, '.env'), 'SECRET=x');
     const gateway = new DefaultWorkspaceGateway({ a: root });
     const entries = await gateway.listDirectory('a', '.');
-    // .env may appear in listing (listing is names-only), but read must be blocked
     await expect(gateway.readFile('a', '.env')).rejects.toThrow('Sensitive file denied');
     expect(entries).toContain('README.md');
+    expect(entries).not.toContain('.env');
+  });
+
+  it('blocks a symlink or junction that escapes the workspace', async () => {
+    const root = makeTempDir();
+    const outside = makeTempDir();
+    fs.writeFileSync(path.join(outside, 'outside.txt'), 'not allowed');
+    fs.symlinkSync(outside, path.join(root, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
+    const gateway = new DefaultWorkspaceGateway({ a: root });
+    await expect(gateway.readFile('a', 'escape/outside.txt')).rejects.toThrow('Path escapes workspace');
   });
 
   it('reads a legitimate file successfully', async () => {

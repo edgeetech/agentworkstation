@@ -6,6 +6,15 @@ export const filesystemReadTool: AgentTool<{ workspaceId: string; relativePath: 
   id: 'filesystem.read',
   description: 'Read a workspace file',
   inputSchema: z.object({ workspaceId: z.string(), relativePath: z.string() }),
+  inputJsonSchema: {
+    type: 'object',
+    properties: {
+      workspaceId: { type: 'string' },
+      relativePath: { type: 'string' },
+    },
+    required: ['workspaceId', 'relativePath'],
+    additionalProperties: false,
+  },
   metadata: { readOnly: true, sideEffect: 'none', sensitive: true },
   async execute(input, context): Promise<ToolResult> {
     if (!context.workspaceGateway) throw new Error('Workspace gateway unavailable');

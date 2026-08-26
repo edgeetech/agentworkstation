@@ -23,6 +23,7 @@ describe('architecture boundaries', () => {
     for (const { file, content } of readSources('src/domain')) {
       expect(content, file).not.toMatch(/from ['"]@application\//);
       expect(content, file).not.toMatch(/from ['"]@infrastructure\//);
+      expect(content, file).not.toMatch(/from ['"]node:/);
       expect(content, file).not.toMatch(/from ['"]electron/);
       expect(content, file).not.toMatch(/from ['"]ollama/);
     }
@@ -31,6 +32,7 @@ describe('architecture boundaries', () => {
   it('application does not import infrastructure, electron, or provider SDKs', () => {
     for (const { file, content } of readSources('src/application')) {
       expect(content, file).not.toMatch(/from ['"]@infrastructure\//);
+      expect(content, file).not.toMatch(/from ['"]node:/);
       expect(content, file).not.toMatch(/from ['"]electron/);
       expect(content, file).not.toMatch(/from ['"]ollama/);
       expect(content, file).not.toMatch(/from ['"]openai/);

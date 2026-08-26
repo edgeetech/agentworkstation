@@ -1,6 +1,20 @@
 # ADR-008 Tool and Policy Model
 
-Decision: tools are schema-validated, read-only by default where possible, and side-effecting actions require explicit application-owned approval.
+**Date:** 2026-08-25
+**Status:** Accepted
 
-Rationale: the model must never receive direct write capability.
+## Context
+Model-generated tool inputs are untrusted and can cross security boundaries.
+
+## Decision
+Tools publish JSON schemas, validate again with Zod, carry side-effect metadata, and return provenance. External actions are denied; proposed writes require approval.
+
+## Alternatives
+Prompt-only restrictions and a generic shell were rejected.
+
+## Consequences
+Wire schemas stay aligned with validators; approval needs a pending-action lifecycle.
+
+## Verification
+Tool/runtime tests verify validation, policy, limits, and provenance.
 

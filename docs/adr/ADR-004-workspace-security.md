@@ -1,6 +1,20 @@
 # ADR-004 Workspace Security
 
-Decision: all workspace file access goes through WorkspaceGateway with canonical-path, traversal, symlink, size, and secret-file checks.
+**Date:** 2026-08-25
+**Status:** Accepted
 
-Rationale: workspace content is untrusted and must not bypass safety checks.
+## Context
+Agent-selected paths are untrusted and Windows/macOS resolve paths and links differently.
+
+## Decision
+All workspace access uses WorkspaceGateway for allowlisted roots, canonical paths, traversal/symlink protection, size limits, and case-insensitive sensitive-file filtering.
+
+## Alternatives
+Absolute paths and tool-specific checks were rejected because they bypass or duplicate policy.
+
+## Consequences
+Directory listings filter sensitive names as well as blocking content.
+
+## Verification
+`tests/security/workspaceGateway.security.test.ts` covers traversal, links, secrets, size, and unknown workspaces.
 

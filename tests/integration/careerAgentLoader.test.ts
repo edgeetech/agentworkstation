@@ -4,16 +4,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { CareerAgentLoader } from '../../src/application/agents/CareerAgentLoader';
+import { FileSystemAgentDefinitionSource } from '../../src/infrastructure/agents/FileSystemAgentDefinitionSource';
 import { ToolRegistry, ToolExecutor, PolicyGate } from '../../src/application/tools';
 import { AgentRuntime } from '../../src/application/intelligence';
-import { MockIntelligenceAdapter } from '../../src/infrastructure/mock/mockIntelligence';
+import type { IntelligencePort, ModelRequest } from '../../src/domain/intelligence';
 import { DefaultWorkspaceGateway } from '../../src/infrastructure/filesystem/workspaceGateway';
 import { gitLogTool } from '../../src/infrastructure/git/gitTools';
 
 describe('Career Agent loader integration', () => {
   it('loads agent definition from declarative files', () => {
     const agentDir = path.resolve('src/agents/career');
-    const loader = new CareerAgentLoader(agentDir);
+    const loader = new CareerAgentLoader(new FileSystemAgentDefinitionSource(agentDir));
     const agent = loader.load();
 
     expect(agent.id).toBe('career');
@@ -22,6 +23,8 @@ describe('Career Agent loader integration', () => {
     expect(agent.toolPolicies['filesystem.read']).toBe('allow');
     expect(agent.toolPolicies['filesystem.proposeWrite']).toBe('require_approval');
     expect(agent.systemPrompt).toContain('Evidence-first');
+    expect(agent.workflows.some((file) => file.relativePath === 'workflows/project-evidence.md')).toBe(true);
+    expect(agent.memory.some((file) => file.relativePath === 'memory/projects.md')).toBe(true);
   });
 
   it('runs repository evidence workflow through application layers without bypassing them', async () => {
@@ -36,7 +39,7 @@ describe('Career Agent loader integration', () => {
 
     // Set up application layers
     const agentDir = path.resolve('src/agents/career');
-    const loader = new CareerAgentLoader(agentDir);
+    const loader = new CareerAgentLoader(new FileSystemAgentDefinitionSource(agentDir));
     const agent = loader.load();
 
     const gateway = new DefaultWorkspaceGateway({ 'test-repo': repo });
@@ -46,14 +49,22 @@ describe('Career Agent loader integration', () => {
     const executor = new ToolExecutor(registry);
     const gate = new PolicyGate();
 
-    // Mock intelligence: first call returns a tool_call for git.log, second returns text analysis
-    const mockIntelligence = new MockIntelligenceAdapter([
-      { type: 'tool_call', call: { toolName: 'git.log', input: { workspaceId: 'test-repo', limit: 5 } } },
-      { type: 'text', content: 'Recent work: initial project setup commit found in repository.' },
-    ]);
+    const modelRequests: ModelRequest[] = [];
+    const intelligence: IntelligencePort = {
+      async execute(request) {
+        modelRequests.push(request);
+        if (modelRequests.length === 1) {
+          return {
+            type: 'tool_call',
+            call: { id: 'call-git-log', toolName: 'git.log', input: { workspaceId: 'test-repo', limit: 5 } },
+          };
+        }
+        return { type: 'text', content: 'Recent work: initial project setup commit found in repository.' };
+      },
+    };
 
     const runtime = new AgentRuntime(
-      mockIntelligence,
+      intelligence,
       {
         execute: (toolName, input, context) => executor.execute(toolName, input, { ...context, workspaceGateway: gateway }),
         getMetadata: (toolName) => executor.getMetadata(toolName),
@@ -68,11 +79,19 @@ describe('Career Agent loader integration', () => {
           { role: 'system', content: agent.systemPrompt },
           { role: 'user', content: 'What did I work on recently in this repository?' },
         ],
+        tools: registry.getModelTools(),
       },
       { modelId: 'mock', executionMode: 'local_only', workspaceId: 'test-repo' },
       new AbortController().signal,
     );
 
     expect(result).toContain('Recent work');
+    expect(modelRequests).toHaveLength(2);
+    const toolMessage = modelRequests[1].messages.find((message) => message.role === 'tool');
+    expect(toolMessage?.content).toContain('initial project setup');
+    expect(toolMessage?.content).toContain('[source: git_commit:git.log(limit=5)]');
+    expect(modelRequests[1].tools?.[0].inputSchema).toMatchObject({
+      required: ['workspaceId', 'limit'],
+    });
   });
 });

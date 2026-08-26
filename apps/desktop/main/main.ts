@@ -1,18 +1,9 @@
 import { app, BrowserWindow, session } from 'electron';
 import { join } from 'node:path';
-
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
-  "connect-src 'self' http://localhost:* http://127.0.0.1:*",
-  "font-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-].join('; ');
+import { CONTENT_SECURITY_POLICY, isAllowedNavigation } from './security';
 
 function createWindow(): void {
+  const isDev = !app.isPackaged;
   const preloadPath = join(__dirname, '../preload/preload.js');
   const win = new BrowserWindow({
     width: 1280,
@@ -27,8 +18,7 @@ function createWindow(): void {
 
   // Restrict navigation to local origins only
   win.webContents.on('will-navigate', (event, navigationUrl) => {
-    const parsed = new URL(navigationUrl);
-    if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+    if (!isAllowedNavigation(navigationUrl, isDev)) {
       event.preventDefault();
     }
   });
@@ -36,7 +26,6 @@ function createWindow(): void {
   // Block new windows from renderer
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
-  const isDev = !app.isPackaged;
   if (isDev) {
     void win.loadURL('http://localhost:5173');
   } else {
@@ -49,7 +38,7 @@ app.whenReady().then(() => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [CSP],
+        'Content-Security-Policy': [CONTENT_SECURITY_POLICY],
       },
     });
   });

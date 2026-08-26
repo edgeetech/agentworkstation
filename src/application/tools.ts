@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { SourceReference, ToolMetadata } from '@domain/intelligence';
+import type { ModelToolDefinition, SourceReference, ToolMetadata } from '@domain/intelligence';
 import type { WorkspaceGateway } from '@application/ports';
 
 export type ToolExecutionContext = {
@@ -12,6 +12,7 @@ export type AgentTool<TInput, TOutput> = {
   id: string;
   description: string;
   inputSchema: z.ZodType<TInput>;
+  inputJsonSchema: Record<string, unknown>;
   metadata: ToolMetadata;
   execute(input: TInput, context: ToolExecutionContext): Promise<TOutput>;
 };
@@ -25,6 +26,14 @@ export class ToolRegistry {
 
   get(id: string): AgentTool<unknown, unknown> | undefined {
     return this.tools.get(id);
+  }
+
+  getModelTools(): ModelToolDefinition[] {
+    return [...this.tools.values()].map((tool) => ({
+      name: tool.id,
+      description: tool.description,
+      inputSchema: tool.inputJsonSchema,
+    }));
   }
 }
 

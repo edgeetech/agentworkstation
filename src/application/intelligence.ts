@@ -45,12 +45,29 @@ export class AgentRuntime {
         'Tool timeout exceeded',
       );
       const toolResult = JSON.stringify(result.output);
-      if (Buffer.byteLength(toolResult, 'utf8') > this.limits.maxToolResultBytes) throw new Error('Tool result too large');
+      if (new TextEncoder().encode(toolResult).byteLength > this.limits.maxToolResultBytes) throw new Error('Tool result too large');
       const provenanceNote = result.sourceReferences.length > 0
         ? `\n[source: ${result.sourceReferences.map(r => r.type + (r.relativePath ? ':' + r.relativePath : '') + (r.label ? ':' + r.label : '')).join(', ')}]`
         : '';
       request = {
-        messages: [...request.messages, { role: 'tool' as const, content: toolResult + provenanceNote }],
+        messages: [
+          ...request.messages,
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [{
+              id: response.call.id,
+              toolName: response.call.toolName,
+              input: response.call.input,
+            }],
+          },
+          {
+            role: 'tool',
+            content: toolResult + provenanceNote,
+            toolCallId: response.call.id,
+            toolName: response.call.toolName,
+          },
+        ],
         tools: request.tools,
       };
     }
@@ -63,7 +80,7 @@ export class AgentRuntime {
     abortController: AbortController,
     timeoutMessage: string,
   ): Promise<T> {
-    let timeoutId: NodeJS.Timeout | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
         abortController.abort();

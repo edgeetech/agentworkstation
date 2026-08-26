@@ -10,6 +10,15 @@ export const gitLogTool: AgentTool<{ workspaceId: string; limit: number }, ToolR
   id: 'git.log',
   description: 'Read recent git history',
   inputSchema: z.object({ workspaceId: z.string(), limit: z.number().int().positive().max(20) }),
+  inputJsonSchema: {
+    type: 'object',
+    properties: {
+      workspaceId: { type: 'string' },
+      limit: { type: 'integer', minimum: 1, maximum: 20 },
+    },
+    required: ['workspaceId', 'limit'],
+    additionalProperties: false,
+  },
   metadata: { readOnly: true, sideEffect: 'none', sensitive: false },
   async execute(input, context): Promise<ToolResult> {
     if (!context.workspaceGateway) throw new Error('Workspace gateway unavailable');
