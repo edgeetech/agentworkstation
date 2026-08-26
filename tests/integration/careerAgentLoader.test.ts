@@ -23,8 +23,15 @@ describe('Career Agent loader integration', () => {
     expect(agent.toolPolicies['filesystem.read']).toBe('allow');
     expect(agent.toolPolicies['filesystem.proposeWrite']).toBe('require_approval');
     expect(agent.systemPrompt).toContain('Evidence-first');
+    expect(agent.systemPrompt).not.toContain('## Career memory');
     expect(agent.workflows.some((file) => file.relativePath === 'workflows/project-evidence.md')).toBe(true);
     expect(agent.memory.some((file) => file.relativePath === 'memory/projects.md')).toBe(true);
+    expect(agent.memoryContext.content).toContain('### memory/projects.md');
+    expect(agent.memoryContext.sourceReferences).toContainEqual({
+      type: 'memory',
+      relativePath: 'memory/projects.md',
+      label: 'memory/projects.md',
+    });
   });
 
   it('runs repository evidence workflow through application layers without bypassing them', async () => {

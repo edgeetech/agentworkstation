@@ -1,3 +1,5 @@
+import type { SourceReference } from '@domain/intelligence';
+
 export type AgentToolPolicy = 'allow' | 'require_approval' | 'deny';
 
 export type AgentContentFile = {
@@ -17,4 +19,10 @@ export type AgentDefinitionMaterials = {
 
 export type AgentDefinition = AgentDefinitionMaterials & {
   systemPrompt: string;
+  memoryContext: {
+    content: string;
+    byteLength: number;
+    truncated: boolean;
+    sourceReferences: SourceReference[];
+  };
 };

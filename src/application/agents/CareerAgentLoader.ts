@@ -1,4 +1,5 @@
 import type { AgentDefinitionSource } from '@application/ports/AgentDefinitionSource';
+import { ContextBuilder } from '../context';
 import type { AgentContentFile, AgentDefinition } from './types';
 
 function renderSection(title: string, files: AgentContentFile[]): string {
@@ -10,16 +11,19 @@ function renderSection(title: string, files: AgentContentFile[]): string {
 }
 
 export class CareerAgentLoader {
-  constructor(private readonly source: AgentDefinitionSource) {}
+  constructor(
+    private readonly source: AgentDefinitionSource,
+    private readonly maxMemoryBytes = 64 * 1024,
+  ) {}
 
   load(): AgentDefinition {
     const materials = this.source.load();
     const systemPrompt = [
       renderSection('Instructions', materials.instructions),
       renderSection('Workflows', materials.workflows),
-      renderSection('Career memory', materials.memory),
     ].filter(Boolean).join('\n\n===\n\n');
+    const memoryContext = new ContextBuilder().buildMemory(materials.memory, this.maxMemoryBytes);
 
-    return { ...materials, systemPrompt };
+    return { ...materials, systemPrompt, memoryContext };
   }
 }
