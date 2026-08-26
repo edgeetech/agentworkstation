@@ -20,23 +20,24 @@ Working branch: `main`
 - Milestone R0.2-1 completed: bounded, read-only `git.status` and `git.diff` tools now return structured data and provenance.
   - Focused verification passed: `tests/unit/gitTools.test.ts` and `tests/unit/toolExecutor.test.ts` (6 tests).
   - Full verification passed: lint; 40 tests across 13 files; 6 architecture tests; renderer and Electron builds; production audit with 0 vulnerabilities.
+- Milestone R0.2-2 completed: SQLite-backed multiple workspace registration with stable ordering and persisted deterministic selection.
+  - Verification passed: lint; 44 tests across 14 files; 6 architecture tests; renderer and Electron builds.
 
 ## In Progress
 
-- Milestone R0.2-2: persist multiple workspace registrations with deterministic lookup and selection.
+- Milestone R0.2-3: load declarative career memory as an explicit, bounded application context input.
 
 ## Remaining Release 0.2 Work
 
-1. Make workspace registration support multiple persisted workspaces and deterministic selection.
-2. Turn declarative career memory into an explicit, bounded application context input.
-3. Add context budgeting for agent instructions, memory, history, and tool results.
-4. Complete the Career Audit application workflow across multiple workspaces.
-5. Expose structured source references through the Electron boundary and render them in the UI.
-6. Expand the evaluation harness for deterministic Career Audit scenarios.
-7. Run the Release 0.2 acceptance demo:
+1. Turn declarative career memory into an explicit, bounded application context input.
+2. Add context budgeting for agent instructions, memory, history, and tool results.
+3. Complete the Career Audit application workflow across multiple workspaces.
+4. Expose structured source references through the Electron boundary and render them in the UI.
+5. Expand the evaluation harness for deterministic Career Audit scenarios.
+6. Run the Release 0.2 acceptance demo:
    "Compare my recent project activity with my current professional profile and identify important gaps."
-8. Run final quality, architecture, security, and packaging checks; fix findings.
-9. Commit and push each bounded milestone to `main`, verifying GitHub CI after each push.
+7. Run final quality, architecture, security, and packaging checks; fix findings.
+8. Commit and push each bounded milestone to `main`, verifying GitHub CI after each push.
 
 ## Explicitly Deferred Beyond Release 0.2
 
