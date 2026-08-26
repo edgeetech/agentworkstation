@@ -1,7 +1,7 @@
 export type ExecutionMode = 'local_only';
 
 export type SourceReference = {
-  type: 'file' | 'git_commit' | 'git_diff' | 'memory';
+  type: 'file' | 'git_commit' | 'git_diff' | 'git_status' | 'memory';
   workspaceId?: string;
   relativePath?: string;
   commitSha?: string;

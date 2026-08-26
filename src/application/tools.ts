@@ -42,7 +42,7 @@ export type ToolResult = { output: unknown; sourceReferences: SourceReference[] 
 function isSourceReference(value: unknown): value is SourceReference {
   if (value === null || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
-  if (!['file', 'git_commit', 'git_diff', 'memory'].includes(String(candidate.type))) return false;
+  if (!['file', 'git_commit', 'git_diff', 'git_status', 'memory'].includes(String(candidate.type))) return false;
   return ['workspaceId', 'relativePath', 'commitSha', 'label']
     .every((key) => candidate[key] === undefined || typeof candidate[key] === 'string');
 }
