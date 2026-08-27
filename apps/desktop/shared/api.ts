@@ -95,6 +95,7 @@ export type ChatExchange = {
   assistantMessage: string;
   sourceReferences: SourceReference[];
   route?: RoutingDecision;
+  mode: ChatMode;
 };
 
 export type ChatMode = 'standard' | 'autopilot';

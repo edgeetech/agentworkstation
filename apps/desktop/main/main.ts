@@ -10,7 +10,7 @@ import { AdaptiveRoutingIntelligenceAdapter, type RoutingAttempt } from '../../.
 import { PolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
 import { buildWorkspaceAccessInstructions, type WorkspaceRegistration } from '../../../src/application/workspaces';
 import type { IntelligencePort, ModelMessage, RoutingDecision, RoutingPolicy } from '../../../src/domain/intelligence';
-import type { ChatSession } from '../../../src/domain/sessions';
+import type { ChatMode, ChatSession } from '../../../src/domain/sessions';
 import { FileSystemAgentDefinitionSource } from '../../../src/infrastructure/agents/FileSystemAgentDefinitionSource';
 import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../src/infrastructure/filesystem/filesystemTools';
 import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
@@ -446,7 +446,7 @@ async function ensureChatSession(): Promise<ChatSession> {
   const created: ChatSession = {
     id: `session-${Date.now()}`,
     name: 'Career Agent Session',
-    mode: 'standard',
+    mode: 'autopilot',
     createdAt: now,
     updatedAt: now,
   };
@@ -465,6 +465,7 @@ async function getChatConversation(sessionIdValue: string): Promise<ModelMessage
 async function appendChatPair(
   sessionIdValue: string,
   userMessage: string,
+  mode: ChatMode,
   assistantMessage: string,
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>,
   route: RoutingDecision,
@@ -480,6 +481,7 @@ async function appendChatPair(
     content: userMessage,
     sourceReferencesJson: '[]',
     routingJson: null,
+    mode,
     createdAt: now,
   });
   await getPersistence().appendChatMessage({
@@ -489,6 +491,7 @@ async function appendChatPair(
     content: assistantMessage,
     sourceReferencesJson: JSON.stringify(sourceReferences),
     routingJson: JSON.stringify(route),
+    mode: null,
     createdAt: now,
   });
 }
@@ -498,6 +501,7 @@ async function getChatHistory(): Promise<Array<{
   assistantMessage: string;
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
   route?: RoutingDecision;
+  mode: ChatMode;
 }>> {
   const sessionValue = await ensureChatSession();
   const messages = await getPersistence().listChatMessages(sessionValue.id);
@@ -506,6 +510,7 @@ async function getChatHistory(): Promise<Array<{
     assistantMessage: string;
     sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
     route?: RoutingDecision;
+    mode: ChatMode;
   }> = [];
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
@@ -516,6 +521,7 @@ async function getChatHistory(): Promise<Array<{
       userMessage: message.content,
       assistantMessage: assistant.content,
       sourceReferences: JSON.parse(assistant.sourceReferencesJson) as Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>,
+      mode: message.mode ?? 'standard',
       ...(assistant.routingJson ? { route: JSON.parse(assistant.routingJson) as RoutingDecision } : {}),
     });
   }
@@ -527,6 +533,7 @@ async function runChatMessage(message: string): Promise<{
   assistantMessage: string;
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
   route?: RoutingDecision;
+  mode: ChatMode;
 }> {
   const endpoint = await getEndpointConfig();
   await assertEndpointWorkflowCompatible(endpoint);
@@ -578,12 +585,13 @@ async function runChatMessage(message: string): Promise<{
     new AbortController().signal,
   );
   const route = router?.getLastDecision() ?? simulatedRoute();
-  await appendChatPair(chatSession.id, message, result.content, result.sourceReferences, route);
+  await appendChatPair(chatSession.id, message, chatSession.mode, result.content, result.sourceReferences, route);
   return {
     userMessage: message,
     assistantMessage: result.content,
     sourceReferences: result.sourceReferences,
     route,
+    mode: chatSession.mode,
   };
 }
 
@@ -911,7 +919,7 @@ function registerIpcHandlers(): void {
     const created = {
       id: `session-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       name,
-      mode: 'standard' as const,
+      mode: 'autopilot' as const,
       createdAt: now,
       updatedAt: now,
     };

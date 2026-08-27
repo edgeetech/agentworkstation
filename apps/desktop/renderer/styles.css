@@ -733,6 +733,34 @@ textarea {
   justify-self: end;
   background: #e5eee7;
 }
+.user-turn {
+  justify-self: end;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 82%;
+}
+.user-turn .message.user {
+  max-width: 100%;
+  justify-self: auto;
+}
+.prompt-mode-icon {
+  flex: 0 0 auto;
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid #d7d7d2;
+  border-radius: 50%;
+  background: #f7f7f4;
+  color: #686863;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+.prompt-mode-icon.autopilot {
+  color: #526158;
+}
 .message.assistant {
   max-width: 100%;
   padding-inline: 0;
@@ -851,20 +879,15 @@ textarea {
   color: #7b7b76;
   font-size: 10px;
 }
-.chat-mode-picker {
+.current-chat-mode {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   color: #686863;
-  font-weight: 700;
 }
-.chat-mode-picker select {
-  min-width: 104px;
-  padding: 5px 24px 5px 9px;
-  border: 1px solid #d8d8d3;
-  border-radius: 999px;
-  background-color: #f7f7f4;
-  color: #3f3f3b;
+.current-chat-mode .prompt-mode-icon {
+  width: 20px;
+  height: 20px;
   font-size: 11px;
 }
 .composer-dock .composer {

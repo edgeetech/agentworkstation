@@ -85,7 +85,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
       create table if not exists chat_sessions (
         id text primary key,
         name text not null,
-        mode text not null default 'standard' check (mode in ('standard', 'autopilot')),
+        mode text not null default 'autopilot' check (mode in ('standard', 'autopilot')),
         createdAt text not null,
         updatedAt text not null,
         selected integer not null default 0 check (selected in (0, 1))
@@ -101,6 +101,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
         content text not null,
         sourceReferencesJson text not null default '[]',
         routingJson text,
+        mode text check (mode is null or mode in ('standard', 'autopilot')),
         createdAt text not null,
         foreign key(sessionId) references chat_sessions(id) on delete cascade
       )
@@ -265,8 +266,8 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   async appendChatMessage(input: Omit<ChatMessage, 'id'>): Promise<ChatMessage> {
     const result = this.db.prepare(`
-      insert into chat_messages (sessionId, sequence, role, content, sourceReferencesJson, routingJson, createdAt)
-      values (?, ?, ?, ?, ?, ?, ?)
+      insert into chat_messages (sessionId, sequence, role, content, sourceReferencesJson, routingJson, mode, createdAt)
+      values (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.sessionId,
       input.sequence,
@@ -274,6 +275,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
       input.content,
       input.sourceReferencesJson,
       input.routingJson ?? null,
+      input.mode ?? null,
       input.createdAt,
     );
     this.db.prepare('update chat_sessions set updatedAt = ? where id = ?').run(input.createdAt, input.sessionId);
@@ -285,7 +287,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   async listChatMessages(sessionId: string): Promise<ChatMessage[]> {
     return this.db.prepare(`
-      select id, sessionId, sequence, role, content, sourceReferencesJson, routingJson, createdAt
+      select id, sessionId, sequence, role, content, sourceReferencesJson, routingJson, mode, createdAt
       from chat_messages
       where sessionId = ?
       order by sequence asc, id asc
@@ -317,7 +319,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
   private ensureChatSessionColumns(): void {
     const columns = this.db.prepare('pragma table_info(chat_sessions)').all() as Array<{ name: string }>;
     if (!columns.some((column) => column.name === 'mode')) {
-      this.db.exec("alter table chat_sessions add column mode text not null default 'standard'");
+      this.db.exec("alter table chat_sessions add column mode text not null default 'autopilot'");
     }
   }
 
@@ -325,6 +327,9 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
     const columns = this.db.prepare('pragma table_info(chat_messages)').all() as Array<{ name: string }>;
     if (!columns.some((column) => column.name === 'routingJson')) {
       this.db.exec('alter table chat_messages add column routingJson text');
+    }
+    if (!columns.some((column) => column.name === 'mode')) {
+      this.db.exec('alter table chat_messages add column mode text');
     }
   }
 }

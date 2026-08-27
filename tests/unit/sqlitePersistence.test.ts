@@ -91,6 +91,7 @@ describe('sqlite persistence', () => {
       role: 'user',
       content: 'hello',
       sourceReferencesJson: '[]',
+      mode: 'autopilot',
       createdAt: now,
     });
     await db.appendChatMessage({
@@ -108,7 +109,7 @@ describe('sqlite persistence', () => {
     });
     await expect(db.listChatSessions()).resolves.toHaveLength(1);
     await expect(db.listChatMessages('session-1')).resolves.toEqual([
-      expect.objectContaining({ sequence: 1, role: 'user', content: 'hello' }),
+      expect.objectContaining({ sequence: 1, role: 'user', content: 'hello', mode: 'autopilot' }),
       expect.objectContaining({ sequence: 2, role: 'assistant', content: 'hi there' }),
     ]);
     await expect(db.listChatMessages('session-1')).resolves.toEqual(expect.arrayContaining([
@@ -121,7 +122,7 @@ describe('sqlite persistence', () => {
     await expect(db.getSelectedChatSession()).resolves.toBeNull();
   });
 
-  it('migrates existing chat sessions to standard mode', async () => {
+  it('migrates existing chats to an autopilot default and preserves historical messages', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aw-')), 'legacy.db');
     const legacy = new DatabaseSync(file);
     legacy.exec(`
@@ -134,12 +135,26 @@ describe('sqlite persistence', () => {
       );
       insert into chat_sessions (id, name, createdAt, updatedAt, selected)
       values ('legacy-chat', 'Existing chat', 'now', 'now', 1);
+      create table chat_messages (
+        id integer primary key autoincrement,
+        sessionId text not null,
+        sequence integer not null,
+        role text not null,
+        content text not null,
+        sourceReferencesJson text not null default '[]',
+        createdAt text not null
+      );
+      insert into chat_messages (sessionId, sequence, role, content, createdAt)
+      values ('legacy-chat', 1, 'user', 'Historical prompt', 'now');
     `);
     legacy.close();
 
     const db = new SqlitePersistence(file);
     await expect(db.getSelectedChatSession()).resolves.toMatchObject({
-      id: 'legacy-chat', mode: 'standard',
+      id: 'legacy-chat', mode: 'autopilot',
     });
+    await expect(db.listChatMessages('legacy-chat')).resolves.toEqual([
+      expect.objectContaining({ content: 'Historical prompt', mode: null }),
+    ]);
   });
 });

@@ -73,7 +73,9 @@ this file after every completed capability or newly discovered blocker.
 - ✅ Career chat now uses the primary viewport in a ChatGPT-style layout. Saved
   chats, new-chat, rename, and confirmed delete actions live in the app sidebar.
   Enter sends and Shift+Enter composes multiline prompts.
-- ✅ Each saved conversation persists a Standard or Autopilot behavior mode.
+- ✅ Each saved conversation persists a Standard or Autopilot behavior mode,
+  defaulting to Autopilot. Shift+Tab switches modes from the composer and every
+  user turn records the mode used with a compact gear or question-mark icon.
   Autopilot proceeds with safe routine assumptions and asks only for material
   decisions, while authorization boundaries and write approval remain mandatory.
 - ✅ Every completed assistant turn shows the model actually selected by the
@@ -120,8 +122,9 @@ this file after every completed capability or newly discovered blocker.
   File/Edit/View/Window toolbar.
 - ✅ Final regression verification passes: 94 tests across 26 files, 6
   architecture tests, renderer/Electron builds, mock Electron E2E (including
-  conversation modes, Enter/Shift+Enter, model status, rename/delete, in-chat
-  thinking, no native menu, and HTTP 429
+  Autopilot default, Shift+Tab mode switching, per-prompt mode icons,
+  Enter/Shift+Enter, model status, rename/delete, in-chat thinking, no native menu,
+  and HTTP 429
   presentation), real `qwen2.5:3b` Electron E2E (including in-chat thinking
   state and disabled Send), and a production audit with 0 vulnerabilities. The
   environment-gated real Ollama Playwright case remains skipped by default.

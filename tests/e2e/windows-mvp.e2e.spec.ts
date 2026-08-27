@@ -71,10 +71,9 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
     const composer = page.getByLabel('Message Career Agent');
-    const conversationMode = page.getByLabel('Conversation mode');
-    await expect(conversationMode).toHaveValue('standard');
-    await conversationMode.selectOption('autopilot');
-    await expect(page.getByText('Proceeds unless an important decision is needed')).toBeVisible();
+    await expect(page.getByText('Autopilot', { exact: true })).toBeVisible();
+    await composer.press('Shift+Tab');
+    await expect(page.getByText('Standard', { exact: true })).toBeVisible();
     await composer.fill('First line');
     await composer.press('Shift+Enter');
     await composer.type('Second line');
@@ -86,10 +85,13 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await expect(page.getByLabel('Career Agent is thinking')).toBeVisible();
     await expect(page.getByText(/Mock response:/).first()).toBeVisible();
     await expect(page.getByLabel('Model used: Simulated demo').first()).toBeVisible();
+    await expect(page.locator('.user-turn').first().getByLabel('Standard mode')).toBeVisible();
+    await composer.press('Shift+Tab');
+    await expect(page.getByText('Autopilot', { exact: true })).toBeVisible();
     const conversationSidebar = page.getByLabel('Career Agent conversations');
     await expect(conversationSidebar).toBeVisible();
     await conversationSidebar.getByRole('button', { name: 'New chat' }).click();
-    await expect(conversationMode).toHaveValue('standard');
+    await expect(page.getByText('Autopilot', { exact: true })).toBeVisible();
     await conversationSidebar.locator('.session-open', { hasText: 'New chat' }).hover();
     await conversationSidebar.getByRole('button', { name: 'Chat options for New chat' }).click();
     await conversationSidebar.getByRole('menuitem', { name: 'Rename' }).click();
@@ -98,7 +100,7 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await renameInput.press('Enter');
     await expect(conversationSidebar.getByRole('button', { name: 'Second conversation', exact: true })).toHaveAttribute('aria-current', 'true');
     await conversationSidebar.getByRole('button', { name: 'Career Agent Session', exact: true }).click();
-    await expect(conversationMode).toHaveValue('autopilot');
+    await expect(page.getByText('Autopilot', { exact: true })).toBeVisible();
     await expect(page.getByText('What changed that should appear in my profile?', { exact: true })).toBeVisible();
     await conversationSidebar.locator('.session-open', { hasText: 'Second conversation' }).hover();
     await conversationSidebar.getByRole('button', { name: 'Chat options for Second conversation' }).click();

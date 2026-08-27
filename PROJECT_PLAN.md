@@ -50,8 +50,10 @@ The desktop must therefore provide:
   primary sidebar, the transcript uses the full remaining viewport, Enter sends,
   Shift+Enter adds a line, and a compact label reports the model chosen without
   exposing routing controls or per-turn model choices;
-- per-conversation Standard and Autopilot behavior modes, where Autopilot avoids
-  routine confirmation but never bypasses authorization, safety, or write approval;
+- per-conversation Standard and Autopilot behavior modes, defaulting to Autopilot;
+  Shift+Tab switches modes and each user turn records a compact mode icon;
+  Autopilot avoids routine confirmation but never bypasses authorization, safety,
+  or write approval;
 - an Intelligence Status page and compact Intelligence Access summary showing
   discovered on-device Ollama models, Ollama Cloud models, connected provider
   CLIs, agent compatibility, availability, and observed usage limits;
@@ -4404,9 +4406,10 @@ application menu is disabled.
 Conversation management now follows the same agent-first desktop pattern:
 saved chats and their rename/delete actions live in the primary left sidebar, the
 transcript owns the remaining viewport, Enter sends, Shift+Enter adds a line, and
-the composer retains each chat's Standard or Autopilot behavior mode. Every
-successful assistant turn shows the model actually selected, while routing remains
-automatic. Provider quota failures are
+the composer retains each chat's Standard or Autopilot behavior mode. Autopilot is
+the default, Shift+Tab switches modes, and an icon beside each user turn records
+the mode used for that prompt. Every successful assistant turn shows the model
+actually selected, while routing remains automatic. Provider quota failures are
 rendered as accessible in-transcript Career Agent errors, preserving both the
 submitted prompt and the original HTTP status/message.
 

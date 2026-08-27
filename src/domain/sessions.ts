@@ -22,5 +22,6 @@ export type ChatMessage = {
   content: string;
   sourceReferencesJson: string;
   routingJson?: string | null;
+  mode?: ChatMode | null;
   createdAt: string;
 };

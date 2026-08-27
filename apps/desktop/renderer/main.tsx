@@ -95,6 +95,16 @@ const availabilityLabel = (value: LocalModel["availability"] | ProviderConnectio
 
 const modelSize = (bytes: number): string => bytes > 0 ? `${(bytes / (1024 ** 3)).toFixed(1)} GB` : "Cloud managed";
 
+const PromptModeIcon = ({ mode }: { mode: ChatMode }): JSX.Element => (
+  <span
+    className={`prompt-mode-icon ${mode}`}
+    aria-label={`${mode === "autopilot" ? "Autopilot" : "Standard"} mode`}
+    title={`${mode === "autopilot" ? "Autopilot" : "Standard"} mode`}
+  >
+    <span aria-hidden="true">{mode === "autopilot" ? "⚙" : "?"}</span>
+  </span>
+);
+
 function App(): JSX.Element {
   const api = window.agentWorkstation;
   const [view, setView] = useState<View>("home");
@@ -118,10 +128,11 @@ function App(): JSX.Element {
   const [history, setHistory] = useState<ChatExchange[]>([]);
   const [sessions, setSessions] = useState<ChatSessionRecord[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const [pendingChatInput, setPendingChatInput] = useState<string | null>(null);
+  const [pendingChatInput, setPendingChatInput] = useState<{ prompt: string; mode: ChatMode } | null>(null);
   const [chatFailure, setChatFailure] = useState<{
     prompt: string;
     message: string;
+    mode: ChatMode;
   } | null>(null);
   const conversation = useRef<HTMLDivElement>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
@@ -324,25 +335,34 @@ function App(): JSX.Element {
 
   const changeChatMode = (mode: ChatMode): void => {
     if (!selectedChatSession || selectedChatSession.mode === mode) return;
+    if (typeof api.setChatSessionMode !== "function") {
+      setError("Restart Agent Workstation to activate the updated chat mode controls.");
+      return;
+    }
     void task("chat", async () => {
       await api.setChatSessionMode(selectedChatSession.id, mode);
       await loadChat();
     });
   };
 
+  const toggleChatMode = (): void => {
+    changeChatMode(selectedChatSession?.mode === "autopilot" ? "standard" : "autopilot");
+  };
+
   const sendChat = (): void => {
     const prompt = chatInput.trim();
     if (!prompt || !ready || busy === "chat") return;
+    const mode = selectedChatSession?.mode ?? "autopilot";
     setChatInput("");
     setChatFailure(null);
-    setPendingChatInput(prompt);
+    setPendingChatInput({ prompt, mode });
     void task("chat", async () => {
       try {
         const result = await api.sendChatMessage(prompt);
         setHistory((old) => [...old, result]);
         await loadChat();
       } catch (value) {
-        setChatFailure({ prompt, message: chatErrorMessage(value) });
+        setChatFailure({ prompt, message: chatErrorMessage(value), mode });
       } finally {
         setPendingChatInput(null);
       }
@@ -454,7 +474,10 @@ function App(): JSX.Element {
             </div>
           ) : history.map((exchange, i) => (
             <div className="exchange" key={`${exchange.userMessage}-${i}`}>
-              <div className="message user"><p>{exchange.userMessage}</p></div>
+              <div className="user-turn">
+                <div className="message user"><p>{exchange.userMessage}</p></div>
+                <PromptModeIcon mode={exchange.mode} />
+              </div>
               <div className="message assistant">
                 <span>Career Agent</span>
                 <p>{exchange.assistantMessage}</p>
@@ -481,7 +504,10 @@ function App(): JSX.Element {
           ))}
           {chatFailure ? (
             <div className="exchange failed-exchange">
-              <div className="message user"><p>{chatFailure.prompt}</p></div>
+              <div className="user-turn">
+                <div className="message user"><p>{chatFailure.prompt}</p></div>
+                <PromptModeIcon mode={chatFailure.mode} />
+              </div>
               <div className="message assistant error-message" role="alert">
                 <span>Career Agent</span>
                 <strong>{/HTTP\s+429/i.test(chatFailure.message) ? "Usage limit reached" : "Message could not be completed"}</strong>
@@ -492,7 +518,10 @@ function App(): JSX.Element {
           ) : null}
           {pendingChatInput ? (
             <div className="exchange pending-exchange">
-              <div className="message user"><p>{pendingChatInput}</p></div>
+              <div className="user-turn">
+                <div className="message user"><p>{pendingChatInput.prompt}</p></div>
+                <PromptModeIcon mode={pendingChatInput.mode} />
+              </div>
               <div className="message assistant thinking-message" role="status" aria-label="Career Agent is thinking">
                 <span>Career Agent</span>
                 <div className="thinking-dots" aria-hidden="true"><i /><i /><i /></div>
@@ -504,19 +533,11 @@ function App(): JSX.Element {
       </div>
       <div className="composer-dock">
         <div className="composer-toolbar">
-          <label className="chat-mode-picker">
-            <span>Mode</span>
-            <select
-              aria-label="Conversation mode"
-              value={selectedChatSession?.mode ?? "standard"}
-              onChange={(event) => changeChatMode(event.target.value as ChatMode)}
-              disabled={!selectedChatSession || busy === "chat"}
-            >
-              <option value="standard">Standard</option>
-              <option value="autopilot">Autopilot</option>
-            </select>
-          </label>
-          <span>{selectedChatSession?.mode === "autopilot" ? "Proceeds unless an important decision is needed" : "Asks when the request is materially ambiguous"}</span>
+          <span className="current-chat-mode" aria-live="polite">
+            <PromptModeIcon mode={selectedChatSession?.mode ?? "autopilot"} />
+            <strong>{selectedChatSession?.mode === "standard" ? "Standard" : "Autopilot"}</strong>
+          </span>
+          <span>Shift + Tab switches mode</span>
         </div>
         <form className="composer" onSubmit={(event) => { event.preventDefault(); sendChat(); }}>
           <textarea
@@ -524,6 +545,11 @@ function App(): JSX.Element {
             value={chatInput}
             onChange={(event) => setChatInput(event.target.value)}
             onKeyDown={(event) => {
+              if (event.key === "Tab" && event.shiftKey) {
+                event.preventDefault();
+                toggleChatMode();
+                return;
+              }
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 sendChat();
@@ -533,7 +559,7 @@ function App(): JSX.Element {
           />
           <button className="primary send-icon" aria-label="Send message" disabled={!ready || busy === "chat"}>↑</button>
         </form>
-        <small>Enter to send · Shift + Enter for a new line</small>
+        <small>Enter to send · Shift + Enter for a new line · Shift + Tab changes mode</small>
       </div>
     </div>
   );
