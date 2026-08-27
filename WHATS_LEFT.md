@@ -1,9 +1,11 @@
 # Agent Workstation: Complete MVP Handoff
 
-Last updated: 2026-08-27
-Current implementation commit: `cf12712` on `main`. Local verification,
-including the real Ollama Electron path, is complete. GitHub Actions run
-`33099497722` passed the Windows quality and macOS compatibility gates.
+Last updated: 2026-08-28
+Current implementation branch: `main`; use `git log -1` for the exact commit.
+Local verification, including the real Ollama Electron path and the
+context-visibility update, is complete. GitHub Actions run `33126570461` passed
+the Windows quality and macOS compatibility gates for the preceding chat-mode
+commit; CI for later commits must be checked separately.
 Current objective: **Windows MVP complete; preserve the acceptance boundary and
 continue only with documented post-MVP work**
 
@@ -41,8 +43,8 @@ this file after every completed capability or newly discovered blocker.
 
 - The takeover started from synchronized `HEAD`/`origin/main` commit `235bd25`
   and preserved the full Copilot implementation before correcting and extending it.
-- Local review verification of the resulting implementation passes: lint; 94 tests across
-  26 files; 6 architecture tests; renderer/Electron builds; the visible mock
+- Local review verification of the resulting implementation passes: lint; 96 tests across
+  27 files; 6 architecture tests; renderer/Electron builds; the visible mock
   Electron E2E; a real Ollama chat/audit/proposal run with `qwen2.5:3b`; and a
   production audit with 0 vulnerabilities.
 - No pull request is open.
@@ -78,6 +80,10 @@ this file after every completed capability or newly discovered blocker.
   user turn records the mode used with a compact gear or question-mark icon.
   Autopilot proceeds with safe routine assumptions and asks only for material
   decisions, while authorization boundaries and write approval remain mandatory.
+- ✅ Chat context usage is continuously visible beside the composer as a neutral
+  pie indicator. Its keyboard-accessible tooltip reports the exact percentage
+  and byte usage against Agent Workstation's enforced 48 KB prompt budget, and
+  warns when older context has been trimmed.
 - ✅ Every completed assistant turn shows the model actually selected by the
   automatic router; pending turns show a compact choosing-model state.
 - ✅ Intelligence Access now summarizes available on-device models, Ollama Cloud

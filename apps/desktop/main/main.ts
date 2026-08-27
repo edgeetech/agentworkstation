@@ -3,6 +3,11 @@ import { join } from 'node:path';
 import { ApprovalService } from '../../../src/application/approvals';
 import { CareerAgentLoader } from '../../../src/application/agents/CareerAgentLoader';
 import { CareerAuditService } from '../../../src/application/careerAudit';
+import {
+  chatContextBudget,
+  summarizeChatContextUsage,
+  type ChatContextUsage,
+} from '../../../src/application/chatContextUsage';
 import { buildChatModeInstructions } from '../../../src/application/chatMode';
 import { ContextBuilder } from '../../../src/application/context';
 import { AgentRuntime } from '../../../src/application/intelligence';
@@ -462,6 +467,45 @@ async function getChatConversation(sessionIdValue: string): Promise<ModelMessage
     .map((message) => ({ role: message.role, content: message.content })) as ModelMessage[];
 }
 
+function buildCareerChatContext(
+  chatSession: ChatSession,
+  conversation: ModelMessage[],
+  registrations: WorkspaceRegistration[],
+  selectedWorkspaceId?: string,
+  tools?: ReturnType<ToolRegistry['getModelTools']>,
+) {
+  const loader = new CareerAgentLoader(new FileSystemAgentDefinitionSource(getCareerAgentDirectory()));
+  const agent = loader.load();
+  return new ContextBuilder().buildRequest(
+    {
+      systemPrompt: `${agent.systemPrompt}\n\n===\n\n${buildWorkspaceAccessInstructions(
+        registrations,
+        selectedWorkspaceId,
+      )}\n\n===\n\n${buildChatModeInstructions(chatSession.mode)}`,
+      memoryContext: agent.memoryContext,
+      conversation,
+      ...(tools ? { tools } : {}),
+    },
+    chatContextBudget,
+  );
+}
+
+async function getChatContextUsage(): Promise<ChatContextUsage> {
+  const db = getPersistence();
+  const chatSession = await ensureChatSession();
+  const [conversation, registrations, selectedWorkspace] = await Promise.all([
+    getChatConversation(chatSession.id),
+    db.listWorkspaces(),
+    db.getSelectedWorkspace(),
+  ]);
+  return summarizeChatContextUsage(buildCareerChatContext(
+    chatSession,
+    conversation,
+    registrations,
+    selectedWorkspace?.id,
+  ));
+}
+
 async function appendChatPair(
   sessionIdValue: string,
   userMessage: string,
@@ -551,28 +595,14 @@ async function runChatMessage(message: string): Promise<{
   const toolExecutor = new ToolExecutor(toolRegistry);
   const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
 
-  const loader = new CareerAgentLoader(new FileSystemAgentDefinitionSource(getCareerAgentDirectory()));
-  const agent = loader.load();
-  const contextBuilder = new ContextBuilder();
   const persistedConversation = await getChatConversation(chatSession.id);
   const nextConversation = [...persistedConversation, { role: 'user' as const, content: message }];
-  const built = contextBuilder.buildRequest(
-    {
-      systemPrompt: `${agent.systemPrompt}\n\n===\n\n${buildWorkspaceAccessInstructions(
-        workspaceContext.registrations,
-        workspaceContext.selectedWorkspaceId,
-      )}\n\n===\n\n${buildChatModeInstructions(chatSession.mode)}`,
-      memoryContext: agent.memoryContext,
-      conversation: nextConversation,
-      tools: toolRegistry.getModelTools(),
-    },
-    {
-      maxInstructionsBytes: 16 * 1024,
-      maxMemoryBytes: 8 * 1024,
-      maxConversationBytes: 8 * 1024,
-      maxToolResultBytes: 16 * 1024,
-      maxTotalContentBytes: 48 * 1024,
-    },
+  const built = buildCareerChatContext(
+    chatSession,
+    nextConversation,
+    workspaceContext.registrations,
+    workspaceContext.selectedWorkspaceId,
+    toolRegistry.getModelTools(),
   );
   const result = await runtime.runWithTrace(
     built.request,
@@ -966,6 +996,8 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.getChatHistory, async () => getChatHistory());
+
+  ipcMain.handle(IPC_CHANNELS.getChatContextUsage, async () => getChatContextUsage());
 
   ipcMain.handle(IPC_CHANNELS.sendChatMessage, async (_event, payload: unknown) => {
     const { message } = parseChatMessageInput(payload);

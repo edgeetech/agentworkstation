@@ -19,6 +19,7 @@ export const IPC_CHANNELS = {
   deleteChatSession: 'agentWorkstation:deleteChatSession',
   selectChatSession: 'agentWorkstation:selectChatSession',
   getChatHistory: 'agentWorkstation:getChatHistory',
+  getChatContextUsage: 'agentWorkstation:getChatContextUsage',
   sendChatMessage: 'agentWorkstation:sendChatMessage',
   listPendingActions: 'agentWorkstation:listPendingActions',
   proposeProfileUpdate: 'agentWorkstation:proposeProfileUpdate',

@@ -98,6 +98,13 @@ export type ChatExchange = {
   mode: ChatMode;
 };
 
+export type ChatContextUsage = {
+  usedBytes: number;
+  limitBytes: number;
+  percentage: number;
+  truncatedSections: Array<'instructions' | 'memory' | 'conversation' | 'toolResults'>;
+};
+
 export type ChatMode = 'standard' | 'autopilot';
 
 export type ChatSessionRecord = {
@@ -128,6 +135,7 @@ export type AgentWorkstationApi = {
   deleteChatSession: (id: string) => Promise<void>;
   selectChatSession: (id: string) => Promise<void>;
   getChatHistory: () => Promise<ChatExchange[]>;
+  getChatContextUsage: () => Promise<ChatContextUsage>;
   sendChatMessage: (message: string) => Promise<ChatExchange>;
   listPendingActions: () => Promise<PendingAction[]>;
   proposeProfileUpdate: (input: ProposalRequest) => Promise<PendingAction>;

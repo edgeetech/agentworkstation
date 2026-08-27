@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import type {
   ChatExchange,
+  ChatContextUsage,
   ChatMode,
   ChatSessionRecord,
   DemoAudit,
@@ -95,6 +96,8 @@ const availabilityLabel = (value: LocalModel["availability"] | ProviderConnectio
 
 const modelSize = (bytes: number): string => bytes > 0 ? `${(bytes / (1024 ** 3)).toFixed(1)} GB` : "Cloud managed";
 
+const contextSize = (bytes: number): string => `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+
 const PromptModeIcon = ({ mode }: { mode: ChatMode }): JSX.Element => (
   <span
     className={`prompt-mode-icon ${mode}`}
@@ -104,6 +107,29 @@ const PromptModeIcon = ({ mode }: { mode: ChatMode }): JSX.Element => (
     <span aria-hidden="true">{mode === "autopilot" ? "⚙" : "?"}</span>
   </span>
 );
+
+const ContextUsageIndicator = ({ usage }: { usage: ChatContextUsage | null }): JSX.Element => {
+  const percentage = usage?.percentage ?? 0;
+  const label = usage
+    ? `${percentage}% context used, ${contextSize(usage.usedBytes)} of ${contextSize(usage.limitBytes)}`
+    : "Context usage unavailable until Agent Workstation restarts";
+  return (
+    <span
+      className={`context-usage ${usage ? "" : "unavailable"}`}
+      data-testid="context-usage"
+      tabIndex={0}
+      aria-label={label}
+      style={{ "--context-percentage": `${percentage}%` } as React.CSSProperties}
+    >
+      <span className="context-pie" aria-hidden="true"><span>{usage ? `${percentage}%` : "–"}</span></span>
+      <span className="context-tooltip" role="tooltip">
+        <strong>{usage ? `${percentage}% context used` : "Context usage unavailable"}</strong>
+        <span>{usage ? `${contextSize(usage.usedBytes)} of ${contextSize(usage.limitBytes)} prompt budget` : "Restart Agent Workstation to activate this indicator."}</span>
+        {usage?.truncatedSections.length ? <em>Older context has been trimmed to fit.</em> : null}
+      </span>
+    </span>
+  );
+};
 
 function App(): JSX.Element {
   const api = window.agentWorkstation;
@@ -126,6 +152,7 @@ function App(): JSX.Element {
     configured: false,
   });
   const [history, setHistory] = useState<ChatExchange[]>([]);
+  const [contextUsage, setContextUsage] = useState<ChatContextUsage | null>(null);
   const [sessions, setSessions] = useState<ChatSessionRecord[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [pendingChatInput, setPendingChatInput] = useState<{ prompt: string; mode: ChatMode } | null>(null);
@@ -212,6 +239,13 @@ function App(): JSX.Element {
   };
   const loadActions = async (): Promise<void> =>
     setActions(await api.listPendingActions());
+  const loadChatContextUsage = async (): Promise<void> => {
+    if (typeof api.getChatContextUsage !== "function") {
+      setContextUsage(null);
+      return;
+    }
+    setContextUsage(await api.getChatContextUsage());
+  };
   const loadChat = async (): Promise<void> => {
     const [nextSessions, nextHistory] = await Promise.all([
       api.listChatSessions(),
@@ -219,6 +253,7 @@ function App(): JSX.Element {
     ]);
     setSessions(nextSessions);
     setHistory(nextHistory);
+    await loadChatContextUsage();
   };
   const loadLocalModels = async (baseUrl = endpoint.baseUrl): Promise<void> => {
     setModelDiscoveryBusy(true);
@@ -281,6 +316,7 @@ function App(): JSX.Element {
         setSessions(nextSessions);
         setHistory(nextHistory);
         setProposalWorkspace(chooseProposalWorkspace(records));
+        void loadChatContextUsage().catch(() => setContextUsage(null));
         if ((config.allowedPaths?.localModels ?? config.mode === "local") || config.allowedPaths?.ollamaCloudModels) {
           void loadLocalModels(config.baseUrl);
         }
@@ -533,11 +569,14 @@ function App(): JSX.Element {
       </div>
       <div className="composer-dock">
         <div className="composer-toolbar">
-          <span className="current-chat-mode" aria-live="polite">
-            <PromptModeIcon mode={selectedChatSession?.mode ?? "autopilot"} />
-            <strong>{selectedChatSession?.mode === "standard" ? "Standard" : "Autopilot"}</strong>
+          <span className="composer-toolbar-copy">
+            <span className="current-chat-mode" aria-live="polite">
+              <PromptModeIcon mode={selectedChatSession?.mode ?? "autopilot"} />
+              <strong>{selectedChatSession?.mode === "standard" ? "Standard" : "Autopilot"}</strong>
+            </span>
+            <span>Shift + Tab switches mode</span>
           </span>
-          <span>Shift + Tab switches mode</span>
+          <ContextUsageIndicator usage={contextUsage} />
         </div>
         <form className="composer" onSubmit={(event) => { event.preventDefault(); sendChat(); }}>
           <textarea

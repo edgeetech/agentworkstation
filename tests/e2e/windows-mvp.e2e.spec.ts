@@ -71,6 +71,13 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
     const composer = page.getByLabel('Message Career Agent');
+    const contextUsage = page.getByTestId('context-usage');
+    await expect(contextUsage).toHaveAccessibleName(/\d+% context used, .* of 48 KB/);
+    await contextUsage.hover();
+    const contextTooltip = contextUsage.getByRole('tooltip');
+    await expect(contextTooltip).toBeVisible();
+    await expect(contextTooltip).toContainText(/\d+% context used/);
+    await expect(contextTooltip).toContainText('prompt budget');
     await expect(page.getByText('Autopilot', { exact: true })).toBeVisible();
     await composer.press('Shift+Tab');
     await expect(page.getByText('Standard', { exact: true })).toBeVisible();
@@ -84,6 +91,7 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await expect(sendButton).toBeDisabled();
     await expect(page.getByLabel('Career Agent is thinking')).toBeVisible();
     await expect(page.getByText(/Mock response:/).first()).toBeVisible();
+    await expect(contextUsage).toHaveAccessibleName(/\d+% context used, .* of 48 KB/);
     await expect(page.getByLabel('Model used: Simulated demo').first()).toBeVisible();
     await expect(page.locator('.user-turn').first().getByLabel('Standard mode')).toBeVisible();
     await composer.press('Shift+Tab');

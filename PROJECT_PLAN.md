@@ -5063,3 +5063,19 @@ privacy-aware network metadata
 Do not build billing/licensing infrastructure now.
 
 Do not delay the Career Agent vertical slice for commercial features.
+
+# 127. Chat Context Visibility
+
+Status: IMPLEMENTED ON 2026-08-28.
+
+Career chat keeps an always-visible context indicator in the fixed composer
+toolbar. The neutral pie chart reports the percentage of Agent Workstation's
+enforced prompt budget currently occupied by instructions, memory, and saved
+conversation content. Hovering or focusing the indicator shows exact used and
+available bytes and discloses when older context was trimmed.
+
+The measurement is produced by the same bounded `ContextBuilder` request used
+for inference. It is recalculated when chats are created, selected, renamed,
+deleted, switched between Standard and Autopilot, or receive a response. The UI
+does not claim provider token telemetry that delegated CLIs and Ollama do not
+reliably expose.
