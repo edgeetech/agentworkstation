@@ -79,6 +79,9 @@ this file after every completed capability or newly discovered blocker.
   non-interactive smoke calls succeeded. Claude is installed and reports an
   authenticated `claude.ai` session, but its non-interactive smoke call hung and
   remains unverified. Automatic Adaptive selection/fallback is still unfinished.
+- ✅ Provider/Ollama fixes were pushed in `ee31a0a`; GitHub Actions run
+  `33061294526` passed both the Windows quality gate (including Electron E2E and
+  installer packaging) and the macOS compatibility gate.
 - ✅ Ollama capability inspection now uses `/api/show`. Models without the
   `tools` capability are labelled and disabled for Career Agent, and stale
   incompatible selections fail with an actionable explanation. On this PC,
