@@ -4,17 +4,21 @@ Local Career Agent workstation for evidence-backed profile audits.
 
 ## Current status
 
-**Windows MVP implementation is in progress.** The Release 0.1-0.3
-domain/application foundations are present, but real desktop integration and
-end-to-end acceptance remain before the product can be called complete:
+**The Windows MVP is complete.** The Electron product and its real desktop
+acceptance path include:
 
 - Windows-first Electron + React + TypeScript desktop shell
 - Clean Architecture modular monolith (`domain`, `application`, `infrastructure`, `apps/desktop`)
 - `AgentRuntime` with tool loop, execution limits, and provenance-aware tracing
 - `WorkspaceGateway` security boundary for file access
-- Local-only intelligence flow with:
+- Permission-bounded, prompt-aware intelligence routing with:
   - deterministic Mock adapter
   - OpenAI-compatible local endpoint adapter (Ollama tested runtime)
+  - detected Codex, GitHub Copilot, and Claude CLI connections
+  - automatic candidate selection after the user allows local models, connected
+    cloud providers, or both
+  - distinct on-device Ollama and Ollama Cloud permissions, model availability
+    status, and automatic `429` fallback with cooldown
 - Multi-workspace Career Audit application service with deterministic acceptance harness
 - Safe-editing flow:
   - `filesystem.proposeWrite`
@@ -24,11 +28,12 @@ end-to-end acceptance remain before the product can be called complete:
   - approval/reject UI
 - Architecture, unit, integration, security, and evaluation coverage
 
-The current desktop screen is a deterministic demonstration surface. It is not
-yet the complete interactive MVP: workspace registration/selection, arbitrary
-chat through a configured local model, model-driven edit proposals, session
-persistence, and real Electron E2E verification remain. See `WHATS_LEFT.md` for
-the live implementation checklist and completion gate.
+The desktop provides workspace registration, arbitrary Career Agent chat,
+evidence-backed audit, structured edit proposals, explicit approval, persisted
+conversations, and restart recovery. Chat uses a full-height conversation view
+with session management in the main sidebar; users never choose execution modes
+or per-request models. See `WHATS_LEFT.md` for verified evidence and deferred
+post-MVP work.
 
 macOS-specific manual runtime/package validation is intentionally deferred for now.
 

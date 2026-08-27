@@ -1,8 +1,11 @@
 # Agent Workstation: Complete MVP Handoff
 
 Last updated: 2026-08-27
-Implementation base audited at: `235bd25` on `main`; latest completed adaptive-routing increment: `05ec909`; this document describes the current verified `main` worktree
-Current objective: **Windows MVP complete; preserve the acceptance boundary and continue only with documented post-MVP work**
+Implementation base before the current UX increment: `72bb308` on `main`; this
+document describes the current `main` HEAD. Local verification, including the
+real Ollama Electron path, is complete; GitHub CI is the remaining remote check.
+Current objective: **Windows MVP complete; preserve the acceptance boundary and
+continue only with documented post-MVP work**
 
 ## Non-Negotiable Completion Boundary
 
@@ -15,18 +18,20 @@ Continue autonomously until a real user can complete this flow in Electron:
 1. Launch the desktop application.
 2. Select the built-in Career Agent.
 3. Register and select real local workspaces.
-4. Automatically discover and select an installed local model (Ollama reference).
+4. Allow local intelligence (including compatible free Ollama models installed
+   on the computer), connected cloud providers, or both.
 5. Detect and connect supported delegated providers, beginning with existing
    Codex and GitHub Copilot CLI sign-ins.
-6. Run locally by default, or use an explicitly permitted cloud provider for a
-   request, with the chosen provider and routing reason visible.
+6. Classify every prompt and choose an eligible model automatically. Never ask
+   the user to select an execution mode, model, or provider per request, and
+   never send context to cloud unless cloud providers are allowed.
 7. Chat with arbitrary prompts and run a multi-workspace Career Audit.
 8. Inspect the audit's real file/Git/memory source references.
 9. Ask the agent for a concrete Markdown/profile update.
 10. Inspect the exact proposed diff without changing the file.
 11. Reject safely or approve and atomically apply the change.
 12. Restart the app and recover workspace, session, message, pending-action,
-    connection, and execution-policy state.
+    connection, and intelligence-permission state.
 
 The MVP is complete only when that flow passes through the real desktop boundary
 with both deterministic/mock coverage and a documented local-model run. Update
@@ -36,7 +41,7 @@ this file after every completed capability or newly discovered blocker.
 
 - The takeover started from synchronized `HEAD`/`origin/main` commit `235bd25`
   and preserved the full Copilot implementation before correcting and extending it.
-- Local review verification of the resulting implementation passes: lint; 88 tests across
+- Local review verification of the resulting implementation passes: lint; 91 tests across
   25 files; 6 architecture tests; renderer/Electron builds; the visible mock
   Electron E2E; a real Ollama chat/audit/proposal run with `qwen2.5:3b`; and a
   production audit with 0 vulnerabilities.
@@ -53,6 +58,32 @@ this file after every completed capability or newly discovered blocker.
   - Windows and macOS automated CI compatibility gates.
 
 ## Windows MVP Completion Status
+
+- ✅ The August 27 UX simplification is implemented in the current worktree.
+  Users grant only `Local models`, `Ollama Cloud models`, and/or `Connected cloud providers`; the
+  renderer no longer exposes Local only/Local first/Adaptive controls or model
+  selectors. Compatible Ollama and authenticated provider candidates are chosen
+  automatically.
+- ✅ Adaptive routing now inspects the latest prompt as well as the workflow.
+  Routine chat prefers allowed local intelligence; complex review, analysis,
+  debugging, architecture, and planning prompts prefer an allowed cloud
+  provider. Audit and Improve continue to prefer stronger eligible reasoning.
+  Route records remain persisted internally but are intentionally absent from
+  normal conversation UI.
+- ✅ Career chat now uses the primary viewport in a ChatGPT-style layout. Saved
+  chats, new-chat, and inline rename actions live in the app sidebar;
+  `Ctrl+Enter` sends; Enter remains available for composing multiline prompts.
+- ✅ Intelligence Access now summarizes available on-device models, Ollama Cloud
+  models, and connected provider CLIs. A dedicated Intelligence Status page
+  lists every discovered candidate with compatibility and current availability.
+- ✅ Ollama cloud-tagged models (`-cloud` or `:cloud`) are classified as external even through the local
+  daemon. An observed `HTTP 429` marks the candidate usage-limited for a bounded
+  cooldown; prompt routing falls back to a fully local compatible model before
+  trying another allowed cloud provider. Failed candidates and successful
+  fallback health become visible when status is refreshed.
+- ✅ Automatic on-device ordering is reliability-first: the smallest practical
+  tool-capable model is tried before heavier compatible models. Connection
+  checks also continue to the next allowed local candidate after a timeout.
 
 - ✅ The complete Windows MVP acceptance flow is implemented. The hands-on gaps
   that reopened MVP—mock readiness, model discovery/capability gating, provider
@@ -75,24 +106,25 @@ this file after every completed capability or newly discovered blocker.
   have reached your session usage limit` render as an accessible Career Agent
   error response with the original prompt preserved; they no longer appear only
   as a detached global toast.
-- ✅ Model Settings puts execution policy first, keeps installed-model selection
-  prominent, and moves endpoint/discovery details into a collapsed Ollama
-  connection section. Workspace role remains structured because it controls
+- ✅ Intelligence Access presents only permission boundaries. Model selection
+  and execution policy are automatic; endpoint/discovery and detected-provider
+  details remain collapsed. Workspace role remains structured because it controls
   audit evidence and Improve targeting; Project evidence is the safe default.
 - ✅ Electron disables the native application menu, removing the redundant
   File/Edit/View/Window toolbar.
-- ✅ Final regression verification passes: 88 tests across 25 files, 6
+- ✅ Final regression verification passes: 91 tests across 25 files, 6
   architecture tests, renderer/Electron builds, mock Electron E2E (including
   no native menu, the conversation sidebar, in-chat thinking, and HTTP 429
   presentation), real `qwen2.5:3b` Electron E2E (including in-chat thinking
-  state and disabled Send), and a production audit with 0 vulnerabilities.
+  state and disabled Send), and a production audit with 0 vulnerabilities. The
+  environment-gated real Ollama Playwright case remains skipped by default.
 - ✅ The desktop now has a neutral, agent-first shell with an agent library,
   Career Agent-scoped navigation, first-run readiness, and clear task flows.
 - ✅ Local inference is the default; mock mode is an explicitly labelled demo.
 - ✅ Mock mode no longer counts as real-model readiness and must be explicitly
   enabled for each app session. Ollama models are automatically discovered from
-  the local `/api/tags` endpoint and presented as a one-click selector; manual
-  model ID entry remains as the offline/non-Ollama fallback.
+  the local `/api/tags` endpoint, capability-checked, and selected internally;
+  technical endpoint details remain available under progressive disclosure.
 - ⚠️ At `cc43794`, delegated provider connections and adaptive routing were not
   implemented; the runtime still selected one persisted OpenAI-compatible
   endpoint. The worktree status below supersedes that baseline.
@@ -110,12 +142,12 @@ this file after every completed capability or newly discovered blocker.
   timeouts cleanly and can fall back according to the selected policy; Claude
   inference remains an external CLI/account-specific verification gap, not a
   blocker for the Codex/Copilot provider MVP.
-- ✅ Adaptive v1 is complete. `Local only` cannot invoke an external candidate;
-  `Local first` starts with Ollama and uses the explicitly configured provider
-  only after failure or a bounded route timeout; `Adaptive` keeps routine chat
-  local and prefers the connected provider for Career Audit and Improve. The
-  actual provider, model, location, fallback state, and reason are displayed for
-  each result. Chat and proposal routing metadata persist across restart.
+- ✅ Adaptive v2 is complete. Permission flags are the hard boundary: disabled
+  local/cloud candidates cannot be invoked. Within those boundaries, routine
+  chat prefers local while prompt complexity, Career Audit, and Improve prefer
+  an eligible connected provider. Failover remains bounded. Provider, model,
+  location, fallback state, and reason persist for diagnostics across restart
+  but are not exposed as controls or conversational noise.
 - ✅ The inherited Improve path now uses the same provider-neutral router as Chat
   and Career Audit; selecting a delegated provider no longer falls through to
   the local OpenAI-compatible adapter.

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AdaptiveRoutingIntelligenceAdapter } from '../../src/application/intelligenceRouting';
+import { AdaptiveRoutingIntelligenceAdapter, promptNeedsStrongerReasoning } from '../../src/application/intelligenceRouting';
 import type { IntelligencePort, ModelResponse } from '../../src/domain/intelligence';
 
 const candidate = (
@@ -46,6 +46,26 @@ describe('adaptive intelligence routing', () => {
     expect(router.getLastDecision()).toMatchObject({ providerId: 'codex' });
   });
 
+  it('classifies complex prompts before routing chat automatically', async () => {
+    expect(promptNeedsStrongerReasoning(request)).toBe(false);
+    const complexRequest = {
+      messages: [{
+        role: 'user' as const,
+        content: 'Review this architecture migration and compare the security tradeoffs before proposing an implementation plan.',
+      }],
+    };
+    expect(promptNeedsStrongerReasoning(complexRequest)).toBe(true);
+
+    const local = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'local' }));
+    const external = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'cloud' }));
+    const router = new AdaptiveRoutingIntelligenceAdapter(
+      'adaptive', candidate('ollama', 'local', local), candidate('claude', 'external', external),
+    );
+    await router.execute(complexRequest, { modelId: 'ignored', executionMode: 'provider_allowed', taskKind: 'chat' }, new AbortController().signal);
+    expect(router.getLastDecision()).toMatchObject({ providerId: 'claude', location: 'external' });
+    expect(local).not.toHaveBeenCalled();
+  });
+
   it('does not fall back after cancellation', async () => {
     const controller = new AbortController();
     const local = vi.fn(async () => { controller.abort(); throw new Error('cancelled'); });
@@ -69,5 +89,27 @@ describe('adaptive intelligence routing', () => {
     await expect(router.execute(request, { modelId: 'ignored', executionMode: 'provider_allowed' }, new AbortController().signal))
       .resolves.toEqual({ type: 'text', content: 'cloud' });
     expect(router.getLastDecision()).toMatchObject({ providerId: 'codex', fallback: true });
+  });
+
+  it('falls back from a quota-limited cloud model to an on-device model', async () => {
+    const attempts: Array<{ status: string; modelId: string }> = [];
+    const cloud = vi.fn(async (): Promise<ModelResponse> => ({ type: 'error', error: 'HTTP 429: session usage limit reached' }));
+    const local = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'local fallback' }));
+    const provider = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'provider fallback' }));
+    const router = new AdaptiveRoutingIntelligenceAdapter(
+      'adaptive',
+      [candidate('ollama', 'local', local)],
+      [candidate('ollama-cloud', 'external', cloud), candidate('codex', 'external', provider)],
+      { localMs: 50, externalMs: 50 },
+      (attempt) => attempts.push({ status: attempt.status, modelId: attempt.candidate.modelId }),
+    );
+    const complexRequest = { messages: [{ role: 'user' as const, content: 'Review and analyze this architecture migration.' }] };
+    await expect(router.execute(complexRequest, { modelId: 'ignored', executionMode: 'provider_allowed', taskKind: 'chat' }, new AbortController().signal))
+      .resolves.toEqual({ type: 'text', content: 'local fallback' });
+    expect(provider).not.toHaveBeenCalled();
+    expect(attempts).toEqual([
+      { status: 'limited', modelId: 'ollama-cloud-model' },
+      { status: 'available', modelId: 'ollama-model' },
+    ]);
   });
 });

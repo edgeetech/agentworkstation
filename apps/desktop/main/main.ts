@@ -5,7 +5,7 @@ import { CareerAgentLoader } from '../../../src/application/agents/CareerAgentLo
 import { CareerAuditService } from '../../../src/application/careerAudit';
 import { ContextBuilder } from '../../../src/application/context';
 import { AgentRuntime } from '../../../src/application/intelligence';
-import { AdaptiveRoutingIntelligenceAdapter } from '../../../src/application/intelligenceRouting';
+import { AdaptiveRoutingIntelligenceAdapter, type RoutingAttempt } from '../../../src/application/intelligenceRouting';
 import { PolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
 import { buildWorkspaceAccessInstructions, type WorkspaceRegistration } from '../../../src/application/workspaces';
 import type { IntelligencePort, ModelMessage, RoutingDecision, RoutingPolicy } from '../../../src/domain/intelligence';
@@ -32,16 +32,22 @@ import {
   parseModelDiscoveryInput,
   parseProposeProfileUpdateInput,
   parseRegisterWorkspaceInput,
+  parseRenameChatSessionInput,
   parseRejectPendingActionInput,
   parseWorkspaceIdInput,
 } from './ipcContract';
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
-import { discoverOllamaModels, inspectOllamaModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
+import { discoverOllamaModels, inspectOllamaModel, isOllamaCloudModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
 
 const userDataOverride = process.env.AW_USER_DATA_PATH?.trim();
 if (userDataOverride) app.setPath('userData', userDataOverride);
 
 const sessionId = `desktop-${Date.now()}`;
+const intelligenceHealth = new Map<string, {
+  availability: 'available' | 'limited' | 'unavailable';
+  lastError?: string;
+  checkedAt: string;
+}>();
 const endpointSettingKey = 'endpoint-config';
 let persistence: SqlitePersistence | null = null;
 
@@ -119,35 +125,90 @@ type EndpointConfig = {
   providerId?: string;
   providerModelId?: string;
   routingPolicy?: RoutingPolicy;
+  allowedPaths?: { localModels: boolean; ollamaCloudModels?: boolean; cloudProviders: boolean };
+  ollamaModelIds?: string[];
+  providerIds?: string[];
   configured?: boolean;
 };
 
+function localModelsAllowed(endpoint: EndpointConfig): boolean {
+  return endpoint.allowedPaths?.localModels ?? endpoint.mode === 'local';
+}
+
+function cloudProvidersAllowed(endpoint: EndpointConfig): boolean {
+  return endpoint.allowedPaths?.cloudProviders
+    ?? (endpoint.mode === 'delegated' || (endpoint.routingPolicy !== undefined && endpoint.routingPolicy !== 'local_only'));
+}
+
+function ollamaCloudModelsAllowed(endpoint: EndpointConfig): boolean {
+  return endpoint.allowedPaths?.ollamaCloudModels ?? false;
+}
+
+function externalIntelligenceAllowed(endpoint: EndpointConfig): boolean {
+  return ollamaCloudModelsAllowed(endpoint) || cloudProvidersAllowed(endpoint);
+}
+
+function configuredOllamaModelIds(endpoint: EndpointConfig): string[] {
+  return [...new Set(endpoint.ollamaModelIds?.length ? endpoint.ollamaModelIds : [endpoint.modelId])];
+}
+
+function healthKey(candidate: { id: string; modelId: string }): string {
+  return `${candidate.id}/${candidate.modelId}`;
+}
+
+function recordRoutingAttempt(attempt: RoutingAttempt): void {
+  intelligenceHealth.set(healthKey(attempt.candidate), {
+    availability: attempt.status,
+    ...(attempt.error ? { lastError: attempt.error } : {}),
+    checkedAt: new Date().toISOString(),
+  });
+}
+
+function routeCandidateReady(candidate: { id: string; modelId: string }): boolean {
+  const health = intelligenceHealth.get(healthKey(candidate));
+  if (!health || health.availability === 'available') return true;
+  const ageMs = Date.now() - Date.parse(health.checkedAt);
+  const cooldownMs = health.availability === 'limited' ? 5 * 60_000 : 30_000;
+  return ageMs >= cooldownMs;
+}
+
 async function getEndpointConfig(): Promise<EndpointConfig> {
   const raw = await getPersistence().getSetting(endpointSettingKey);
-  if (!raw) return { mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', routingPolicy: 'local_only', configured: false };
+  if (!raw) return {
+    mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', routingPolicy: 'local_only',
+    allowedPaths: { localModels: true, ollamaCloudModels: false, cloudProviders: false },
+    ollamaModelIds: ['llama3.1'], providerIds: [], configured: false,
+  };
   try {
     const parsed = JSON.parse(raw) as Partial<EndpointConfig>;
     if (parsed.mode !== 'mock' && parsed.mode !== 'local' && parsed.mode !== 'delegated') throw new Error('Invalid mode');
     if (!parsed.baseUrl || !parsed.modelId) throw new Error('Invalid endpoint config');
-    if (parsed.mode === 'delegated' && !parsed.providerId) throw new Error('Invalid delegated provider');
-    const routingPolicy = parsed.routingPolicy ?? (parsed.mode === 'delegated' ? 'adaptive' : 'local_only');
-    if (routingPolicy !== 'local_only' && routingPolicy !== 'local_first' && routingPolicy !== 'adaptive') {
-      throw new Error('Invalid routing policy');
-    }
-    if (parsed.mode === 'local' && routingPolicy !== 'local_only' && !parsed.providerId) {
-      throw new Error('Cloud-permitting routing requires a provider');
-    }
+    const allowedPaths = parsed.allowedPaths ?? {
+      localModels: parsed.mode === 'local',
+      ollamaCloudModels: false,
+      cloudProviders: parsed.mode === 'delegated' || (parsed.routingPolicy !== undefined && parsed.routingPolicy !== 'local_only'),
+    };
+    if (allowedPaths.cloudProviders && !parsed.providerId) throw new Error('Invalid delegated provider');
+    if (parsed.mode !== 'mock' && !allowedPaths.localModels && !allowedPaths.ollamaCloudModels && !allowedPaths.cloudProviders) throw new Error('No intelligence path allowed');
+    const routingPolicy = allowedPaths.ollamaCloudModels || allowedPaths.cloudProviders ? 'adaptive' : 'local_only';
     return {
       mode: parsed.mode,
       baseUrl: parsed.baseUrl,
       modelId: parsed.modelId,
       ...(parsed.providerId ? { providerId: parsed.providerId } : {}),
       ...(parsed.providerModelId ? { providerModelId: parsed.providerModelId } : {}),
+      ollamaModelIds: parsed.ollamaModelIds ?? [parsed.modelId],
+      providerIds: parsed.providerIds ?? (parsed.providerId ? [parsed.providerId] : []),
       routingPolicy,
+      allowedPaths,
       configured: true,
     };
   } catch {
-    return { mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', routingPolicy: 'local_only', configured: false };
+    return {
+      mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', routingPolicy: 'local_only',
+      allowedPaths: { localModels: true, ollamaCloudModels: false, cloudProviders: false },
+      ollamaModelIds: ['llama3.1'], providerIds: [], configured: false,
+    };
   }
 }
 
@@ -156,8 +217,7 @@ async function saveEndpointConfig(config: EndpointConfig): Promise<void> {
 }
 
 function effectiveRoutingPolicy(endpoint: EndpointConfig): RoutingPolicy {
-  if (endpoint.mode === 'delegated') return 'adaptive';
-  return endpoint.routingPolicy ?? 'local_only';
+  return externalIntelligenceAllowed(endpoint) ? 'adaptive' : 'local_only';
 }
 
 function createRoutingIntelligence(endpoint: EndpointConfig): {
@@ -165,24 +225,43 @@ function createRoutingIntelligence(endpoint: EndpointConfig): {
   router: AdaptiveRoutingIntelligenceAdapter | null;
 } {
   if (endpoint.mode === 'mock') return { intelligence: new DesktopMockIntelligenceAdapter(), router: null };
-  const local = endpoint.mode === 'local' ? {
-    id: 'ollama',
-    label: 'Ollama',
-    location: 'local' as const,
-    modelId: endpoint.modelId,
-    intelligence: new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway()),
-  } : null;
-  const external = endpoint.providerId ? {
-    id: endpoint.providerId,
-    label: getDelegatedProvider(endpoint.providerId).label,
-    location: 'external' as const,
-    modelId: endpoint.providerModelId ?? (endpoint.mode === 'delegated' ? endpoint.modelId : getDelegatedProvider(endpoint.providerId).defaultModel),
-    intelligence: new DelegatedCliIntelligenceAdapter(
-      getDelegatedProvider(endpoint.providerId),
-      new NodeCliProcessRunner(app.getPath('temp')),
-    ),
-  } : null;
-  const router = new AdaptiveRoutingIntelligenceAdapter(effectiveRoutingPolicy(endpoint), local, external);
+  const ollamaIds = configuredOllamaModelIds(endpoint);
+  const local = localModelsAllowed(endpoint)
+    ? ollamaIds.filter((id) => !isOllamaCloudModel(id)).map((modelId) => ({
+      id: 'ollama', label: 'Ollama on-device', location: 'local' as const, modelId,
+      intelligence: new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway()),
+    })).filter(routeCandidateReady)
+    : [];
+  const ollamaCloud = ollamaCloudModelsAllowed(endpoint)
+    ? ollamaIds.filter(isOllamaCloudModel).map((modelId) => ({
+      id: 'ollama-cloud', label: 'Ollama Cloud', location: 'external' as const, modelId,
+      intelligence: new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway()),
+    })).filter(routeCandidateReady)
+    : [];
+  const providerIds = endpoint.providerIds?.length
+    ? endpoint.providerIds
+    : endpoint.providerId ? [endpoint.providerId] : [];
+  const providers = cloudProvidersAllowed(endpoint)
+    ? providerIds.map((providerId) => {
+      const provider = getDelegatedProvider(providerId);
+      return {
+        id: providerId,
+        label: provider.label,
+        location: 'external' as const,
+        modelId: providerId === endpoint.providerId
+          ? endpoint.providerModelId ?? provider.defaultModel
+          : provider.defaultModel,
+        intelligence: new DelegatedCliIntelligenceAdapter(
+          provider,
+          new NodeCliProcessRunner(app.getPath('temp')),
+        ),
+      };
+    }).filter(routeCandidateReady)
+    : [];
+  const router = new AdaptiveRoutingIntelligenceAdapter(
+    effectiveRoutingPolicy(endpoint), local, [...ollamaCloud, ...providers],
+    { localMs: 90_000, externalMs: 120_000 }, recordRoutingAttempt,
+  );
   return { intelligence: router, router };
 }
 
@@ -215,56 +294,83 @@ async function probeIntelligence(
 
 async function testEndpointConnection(config: EndpointConfig): Promise<{ ok: true; message: string }> {
   if (config.mode === 'mock') return { ok: true, message: 'Demo mode is available. Responses will be simulated.' };
-  if (config.mode === 'local') {
+  const useLocal = localModelsAllowed(config);
+  const useOllamaCloud = ollamaCloudModelsAllowed(config);
+  const useProviders = cloudProvidersAllowed(config);
+  if (!useLocal && !useOllamaCloud && !useProviders) throw new Error('Allow at least one intelligence path before testing.');
+
+  const ollamaIds = configuredOllamaModelIds(config);
+  const localIds = ollamaIds.filter((id) => !isOllamaCloudModel(id));
+  const cloudId = ollamaIds.find(isOllamaCloudModel);
+  const successes: string[] = [];
+  const failures: string[] = [];
+  const attempt = async (
+    candidate: { id: string; label: string; location: 'local' | 'external'; modelId: string; intelligence: IntelligencePort },
+    executionMode: 'local_only' | 'provider_allowed',
+    timeoutMs: number,
+  ): Promise<boolean> => {
     try {
-      const capability = await inspectOllamaModel(
-        config.baseUrl, config.modelId, new DefaultNetworkGateway(), new AbortController().signal,
-      );
-      if (!capability.toolCalling) {
-        throw new Error(`${config.modelId} is installed but does not support tool calling required by Career Agent. Choose a model marked Career Agent ready.`);
-      }
+      await probeIntelligence(candidate.intelligence, candidate.modelId, executionMode, timeoutMs);
+      recordRoutingAttempt({ candidate, status: 'available' });
+      successes.push(candidate.label);
+      return true;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('does not support tool calling')) throw error;
-      // Non-Ollama OpenAI-compatible endpoints may not expose /api/show.
+      const message = error instanceof Error ? error.message : String(error);
+      recordRoutingAttempt({ candidate, status: /HTTP\s+429\b/i.test(message) ? 'limited' : 'unavailable', error: message });
+      failures.push(`${candidate.label}: ${message}`);
+      return false;
     }
-  }
-  if (config.mode === 'local') {
-    await probeIntelligence(
-      new OpenAICompatibleLocalAdapter(config.baseUrl, new DefaultNetworkGateway()),
-      config.modelId,
-      'local_only',
-      30_000,
-    );
-    if (effectiveRoutingPolicy(config) !== 'local_only') {
-      const provider = getDelegatedProvider(config.providerId ?? '');
-      await probeIntelligence(
-        new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp'))),
-        config.providerModelId ?? provider.defaultModel,
-        'provider_allowed',
-        60_000,
-      );
-      return { ok: true, message: `Verified local model ${config.modelId} and ${provider.label} for ${effectiveRoutingPolicy(config).replace('_', ' ')}.` };
+  };
+
+  if (useLocal && localIds.length > 0) {
+    for (const localId of localIds) {
+      const available = await attempt({
+        id: 'ollama', label: `On-device Ollama (${localId})`, location: 'local', modelId: localId,
+        intelligence: new OpenAICompatibleLocalAdapter(config.baseUrl, new DefaultNetworkGateway()),
+      }, 'local_only', 45_000);
+      if (available) break;
     }
-    return { ok: true, message: `Verified local model ${config.modelId}. Requests cannot use cloud providers.` };
-  }
-  const provider = getDelegatedProvider(config.providerId ?? '');
-  await probeIntelligence(
-    new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp'))),
-    config.providerModelId ?? config.modelId,
-    'provider_allowed',
-    60_000,
-  );
-  return { ok: true, message: `Verified ${provider.label}.` };
+  } else if (useLocal) failures.push('On-device Ollama: no compatible local model discovered');
+
+  if (useOllamaCloud && cloudId) {
+    await attempt({
+      id: 'ollama-cloud', label: 'Ollama Cloud', location: 'external', modelId: cloudId,
+      intelligence: new OpenAICompatibleLocalAdapter(config.baseUrl, new DefaultNetworkGateway()),
+    }, 'provider_allowed', 60_000);
+  } else if (useOllamaCloud) failures.push('Ollama Cloud: no compatible cloud model discovered');
+
+  if (useProviders && config.providerId) {
+    const provider = getDelegatedProvider(config.providerId);
+    await attempt({
+      id: provider.id, label: provider.label, location: 'external',
+      modelId: config.providerModelId ?? provider.defaultModel,
+      intelligence: new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp'))),
+    }, 'provider_allowed', 60_000);
+  } else if (useProviders) failures.push('Connected providers: no authenticated provider discovered');
+
+  if (successes.length === 0) throw new Error(`No allowed intelligence source is currently available. ${failures.join(' | ')}`);
+  return {
+    ok: true,
+    message: failures.length > 0
+      ? `Available: ${successes.join(', ')}. Career Agent will bypass unavailable sources automatically. ${failures.join(' | ')}`
+      : `Available: ${successes.join(', ')}. Career Agent will route requests automatically.`,
+  };
 }
 
 async function assertEndpointWorkflowCompatible(endpoint: EndpointConfig): Promise<void> {
-  if (endpoint.mode !== 'local') return;
+  if (!localModelsAllowed(endpoint)) return;
+  const modelId = configuredOllamaModelIds(endpoint).find((id) => !isOllamaCloudModel(id));
+  if (!modelId) {
+    if (externalIntelligenceAllowed(endpoint)) return;
+    throw new Error('No compatible on-device Ollama model is configured. Refresh Intelligence status.');
+  }
   try {
     const capability = await inspectOllamaModel(
-      endpoint.baseUrl, endpoint.modelId, new DefaultNetworkGateway(), new AbortController().signal,
+      endpoint.baseUrl, modelId, new DefaultNetworkGateway(), new AbortController().signal,
     );
     if (!capability.toolCalling) {
-      throw new Error(`${endpoint.modelId} cannot run Career Agent because it does not support tool calling. Choose a model marked Career Agent ready in Model settings.`);
+      if (externalIntelligenceAllowed(endpoint)) return;
+      throw new Error(`${modelId} cannot run Career Agent because it does not support tool calling. Install a tool-capable Ollama model.`);
     }
   } catch (error) {
     if (error instanceof Error && error.message.includes('cannot run Career Agent')) throw error;
@@ -275,9 +381,10 @@ async function assertEndpointWorkflowCompatible(endpoint: EndpointConfig): Promi
 async function listProviderConnections(): Promise<Array<{
   id: string; label: string; kind: 'delegated_cli'; installed: boolean;
   authenticated: boolean | null; detail: string; defaultModel: string;
+  availability: 'available' | 'limited' | 'unavailable' | 'unknown'; lastError?: string;
 }>> {
   const runner = new NodeCliProcessRunner(app.getPath('temp'));
-  return Promise.all(delegatedProviders.map(async (provider) => {
+  const connections = await Promise.all(delegatedProviders.map(async (provider) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5_000);
     try {
@@ -311,6 +418,16 @@ async function listProviderConnections(): Promise<Array<{
       clearTimeout(timer);
     }
   }));
+  return connections.map((connection) => {
+    const health = intelligenceHealth.get(`${connection.id}/${connection.defaultModel}`)
+      ?? [...intelligenceHealth.entries()].find(([key]) => key.startsWith(`${connection.id}/`))?.[1];
+    return {
+      ...connection,
+      availability: health?.availability
+        ?? (connection.installed && connection.authenticated !== false ? 'available' : 'unavailable'),
+      ...(health?.lastError ? { lastError: health.lastError } : {}),
+    };
+  });
 }
 
 async function ensureChatSession(): Promise<{ id: string; name: string; createdAt: string; updatedAt: string }> {
@@ -478,7 +595,7 @@ function createRuntime(
       maxSteps: 6,
       maxToolCalls: 8,
       maxToolResultBytes: 64 * 1024,
-      modelTimeoutMs: effectiveRoutingPolicy(endpoint) === 'local_only' ? 30_000 : 120_000,
+      modelTimeoutMs: effectiveRoutingPolicy(endpoint) === 'local_only' ? 90_000 : 120_000,
       toolTimeoutMs: 10_000,
     },
   );
@@ -654,7 +771,7 @@ async function proposeProfileUpdate(input: {
       maxSteps: 3,
       maxToolCalls: 3,
       maxToolResultBytes: 64 * 1024,
-      modelTimeoutMs: effectiveRoutingPolicy(endpoint) === 'local_only' ? 30_000 : 120_000,
+      modelTimeoutMs: effectiveRoutingPolicy(endpoint) === 'local_only' ? 90_000 : 120_000,
       toolTimeoutMs: 10_000,
     },
   );
@@ -751,7 +868,17 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.discoverLocalModels, async (_event, payload: unknown) => {
     const { baseUrl } = parseModelDiscoveryInput(payload);
-    return discoverOllamaModels(baseUrl, new DefaultNetworkGateway(), new AbortController().signal);
+    const models = await discoverOllamaModels(baseUrl, new DefaultNetworkGateway(), new AbortController().signal);
+    return models.map((model) => {
+      const candidateId = model.location === 'cloud' ? 'ollama-cloud' : 'ollama';
+      const health = intelligenceHealth.get(`${candidateId}/${model.id}`);
+      return {
+        ...model,
+        availability: health?.availability
+          ?? (model.toolCalling ? (model.location === 'local' ? 'available' : 'unknown') : 'unavailable'),
+        ...(health?.lastError ? { lastError: health.lastError } : {}),
+      };
+    });
   });
 
   ipcMain.handle(IPC_CHANNELS.saveEndpointConfig, async (_event, payload: unknown) => {
@@ -782,6 +909,17 @@ function registerIpcHandlers(): void {
     await db.saveChatSession(created);
     await db.selectChatSession(created.id);
     return { ...created, selected: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.renameChatSession, async (_event, payload: unknown) => {
+    const { id, name } = parseRenameChatSessionInput(payload);
+    const db = getPersistence();
+    const existing = (await db.listChatSessions()).find((sessionValue) => sessionValue.id === id);
+    if (!existing) throw new Error(`Unknown chat session: ${id}`);
+    const renamed = { ...existing, name, updatedAt: new Date().toISOString() };
+    await db.saveChatSession(renamed);
+    const selected = await db.getSelectedChatSession();
+    return { ...renamed, selected: selected?.id === id };
   });
 
   ipcMain.handle(IPC_CHANNELS.selectChatSession, async (_event, payload: unknown) => {

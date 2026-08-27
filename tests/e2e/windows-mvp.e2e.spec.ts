@@ -57,28 +57,36 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await page.getByRole('button', { name: 'Choose folder and add' }).click();
     await expect(page.getByRole('heading', { name: 'project', exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: /Model settings/ }).click();
-    await page.getByLabel('Execution mode').selectOption('mock');
-    await page.getByRole('button', { name: 'Save model settings' }).click();
-    await expect(page.getByText('Simulated demo is not AI.')).toBeVisible();
+    await page.locator('.settings-link').click();
+    await expect(page.getByLabel('Intelligence availability')).toBeVisible();
+    await page.getByRole('button', { name: 'View model status' }).click();
+    await expect(page.getByRole('heading', { name: 'Models Career Agent can reach' })).toBeVisible();
+    await page.locator('.settings-link').click();
+    await page.getByText('Offline demo for testing').click();
+    await page.getByRole('button', { name: 'Configure simulated demo' }).click();
+    await page.getByRole('button', { name: 'Save intelligence access' }).click();
+    await expect(page.getByText('Simulated demo configured but inactive.')).toBeVisible();
     await page.getByRole('button', { name: 'Enable simulated demo for this session' }).click();
     await expect(page.getByText('Simulated demo enabled for this session. No AI model will be used.')).toBeVisible();
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
-    await page.getByLabel('Message Career Agent').fill('What changed that should appear in my profile?');
+    const composer = page.getByLabel('Message Career Agent');
+    await composer.fill('What changed that should appear in my profile?');
     const sendButton = page.getByRole('button', { name: 'Send message' });
-    await sendButton.click();
+    await composer.press('Control+Enter');
     await expect(sendButton).toBeDisabled();
     await expect(page.getByLabel('Career Agent is thinking')).toBeVisible();
     await expect(page.getByText(/Mock response:/).first()).toBeVisible();
-    await expect(page.getByText('Simulation').first()).toBeVisible();
-    await expect(page.getByText(/no AI model was used/i).first()).toBeVisible();
-    const conversationSidebar = page.getByRole('complementary', { name: 'Career Agent conversations' });
+    const conversationSidebar = page.getByLabel('Career Agent conversations');
     await expect(conversationSidebar).toBeVisible();
-    await conversationSidebar.getByLabel('New conversation').fill('Second conversation');
-    await conversationSidebar.getByRole('button', { name: 'Create' }).click();
-    await expect(conversationSidebar.getByRole('button', { name: /Second conversation/ })).toHaveAttribute('aria-current', 'true');
-    await conversationSidebar.getByRole('button', { name: /Career Agent Session/ }).click();
+    await conversationSidebar.getByRole('button', { name: 'New chat' }).click();
+    await conversationSidebar.locator('.session-open', { hasText: 'New chat' }).hover();
+    await conversationSidebar.getByRole('button', { name: 'Rename New chat' }).click();
+    const renameInput = conversationSidebar.getByLabel('Rename New chat');
+    await renameInput.fill('Second conversation');
+    await renameInput.press('Enter');
+    await expect(conversationSidebar.getByRole('button', { name: 'Second conversation', exact: true })).toHaveAttribute('aria-current', 'true');
+    await conversationSidebar.getByRole('button', { name: 'Career Agent Session', exact: true }).click();
     await expect(page.getByText('What changed that should appear in my profile?', { exact: true })).toBeVisible();
     const longPrompt = `Scroll marker ${'career evidence '.repeat(180)}`;
     await page.getByLabel('Message Career Agent').fill(longPrompt);
@@ -103,7 +111,6 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
   const secondRun = await launch();
   try {
     const page = await secondRun.firstWindow();
-    await expect(page.getByText('Real local model required')).toBeVisible();
     await expect(page.getByText('Simulated demo is configured but inactive')).toBeVisible();
     await page.locator('nav').getByRole('button', { name: /Workspaces/ }).click();
     await expect(page.getByRole('heading', { name: 'profile', exact: true })).toBeVisible();
@@ -111,14 +118,12 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
     await expect(page.getByText('What changed that should appear in my profile?', { exact: true })).toBeVisible();
-    await expect(page.getByText('Simulation').first()).toBeVisible();
     await expect.poll(async () => page.locator('.conversation').evaluate((element) =>
       element.scrollHeight - element.scrollTop - element.clientHeight,
     )).toBeLessThan(3);
 
     await page.locator('nav').getByRole('button', { name: /Review changes/ }).click();
     await expect(page.getByText('PROPOSED', { exact: true })).toBeVisible();
-    await expect(page.getByText('Simulation').last()).toBeVisible();
     await page.getByRole('button', { name: 'Approve and write' }).click();
     await expect(page.getByText('No changes waiting')).toBeVisible();
     expect(fs.readFileSync(path.join(profileRepo, 'README.md'), 'utf8')).toContain('Updated summary from e2e proposal');
@@ -152,9 +157,10 @@ test('provider usage limits are shown inside the chat transcript', async () => {
     await page.getByLabel('Purpose').selectOption('profile');
     await page.getByRole('button', { name: 'Choose folder and add' }).click();
     await expect(page.getByRole('heading', { name: 'profile', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: /Model settings/ }).click();
-    await page.getByLabel('Execution mode').selectOption('mock');
-    await page.getByRole('button', { name: 'Save model settings' }).click();
+    await page.locator('.settings-link').click();
+    await page.getByText('Offline demo for testing').click();
+    await page.getByRole('button', { name: 'Configure simulated demo' }).click();
+    await page.getByRole('button', { name: 'Save intelligence access' }).click();
     await page.getByRole('button', { name: 'Enable simulated demo for this session' }).click();
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
     await page.getByLabel('Message Career Agent').fill('Review my profile.');

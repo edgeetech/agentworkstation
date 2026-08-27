@@ -14,6 +14,7 @@ export const IPC_CHANNELS = {
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
   listChatSessions: 'agentWorkstation:listChatSessions',
   createChatSession: 'agentWorkstation:createChatSession',
+  renameChatSession: 'agentWorkstation:renameChatSession',
   selectChatSession: 'agentWorkstation:selectChatSession',
   getChatHistory: 'agentWorkstation:getChatHistory',
   sendChatMessage: 'agentWorkstation:sendChatMessage',
@@ -40,12 +41,22 @@ const endpointConfigSchema = z.object({
   providerId: z.string().regex(/^[a-z0-9-]+$/).optional(),
   providerModelId: z.string().min(1).optional(),
   routingPolicy: z.enum(['local_only', 'local_first', 'adaptive']).optional(),
+  ollamaModelIds: z.array(z.string().min(1)).optional(),
+  providerIds: z.array(z.string().regex(/^[a-z0-9-]+$/)).optional(),
+  allowedPaths: z.object({
+    localModels: z.boolean(),
+    ollamaCloudModels: z.boolean().optional(),
+    cloudProviders: z.boolean(),
+  }).optional(),
 }).superRefine((value, context) => {
-  if (value.mode === 'delegated' && !value.providerId) {
+  const cloudAllowed = value.allowedPaths?.cloudProviders
+    ?? (value.mode === 'delegated' || (value.routingPolicy !== undefined && value.routingPolicy !== 'local_only'));
+  if (cloudAllowed && !value.providerId) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'Delegated mode requires providerId' });
   }
-  if (value.mode === 'local' && value.routingPolicy !== undefined && value.routingPolicy !== 'local_only' && !value.providerId) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Cloud-permitting routing requires providerId' });
+  if (value.mode !== 'mock' && value.allowedPaths && !value.allowedPaths.localModels
+    && !value.allowedPaths.ollamaCloudModels && !value.allowedPaths.cloudProviders) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Allow at least one intelligence path' });
   }
 });
 
@@ -55,6 +66,11 @@ const chatMessageSchema = z.object({
 
 const createChatSessionSchema = z.object({
   name: z.string().min(1),
+});
+
+const renameChatSessionSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1).max(120),
 });
 
 const proposeProfileUpdateSchema = z.object({
@@ -99,6 +115,9 @@ export function parseEndpointConfigInput(value: unknown): {
   providerId?: string;
   providerModelId?: string;
   routingPolicy?: 'local_only' | 'local_first' | 'adaptive';
+  ollamaModelIds?: string[];
+  providerIds?: string[];
+  allowedPaths?: { localModels: boolean; ollamaCloudModels?: boolean; cloudProviders: boolean };
 } {
   return endpointConfigSchema.parse(value);
 }
@@ -109,6 +128,10 @@ export function parseChatMessageInput(value: unknown): { message: string } {
 
 export function parseCreateChatSessionInput(value: unknown): { name: string } {
   return createChatSessionSchema.parse(value);
+}
+
+export function parseRenameChatSessionInput(value: unknown): { id: string; name: string } {
+  return renameChatSessionSchema.parse(value);
 }
 
 export function parseProposeProfileUpdateInput(value: unknown): {

@@ -29,23 +29,29 @@ the repository or guessing:
 1. What does the Career Agent do?
 2. What information can it inspect?
 3. What setup is required before it can work?
-4. Which model and workspaces are active?
+4. Which workspaces and intelligence source classes are allowed?
 5. What is the next safe action?
 6. What evidence supports an audit finding or proposed change?
 
 The desktop must therefore provide:
 
 - a short first-run setup flow for profile sources, project workspaces, and the
-  local model endpoint;
+  intelligence source classes the user permits;
 - a task-oriented application shell separating conversations, Career Audit,
   proposed changes, sources, and settings;
 - an agent-first hierarchy: global navigation exposes an agent library and
-  model settings, while chat, audit, sources, and change review live beneath
+  intelligence access, while chat, audit, sources, and change review live beneath
   the selected agent so future agents can add their own workflows cleanly;
 - a restrained, near-monochrome visual system similar in density and focus to
   modern Grok/Ollama chat clients, reserving colour for semantic status only;
 - progressive disclosure so endpoint/workspace administration does not compete
   visually with the primary Career Agent workflow;
+- ChatGPT-style conversation focus: chats and their rename action live in the
+  primary sidebar, the transcript uses the full remaining viewport, and
+  `Ctrl+Enter` sends without exposing routing controls or per-turn model choices;
+- an Intelligence Status page and compact Intelligence Access summary showing
+  discovered on-device Ollama models, Ollama Cloud models, connected provider
+  CLIs, agent compatibility, availability, and observed usage limits;
 - explicit ready, running, success, empty, offline, and error states;
 - clear primary actions such as `Run Career Audit`, `Ask Career Agent`, and
   `Review proposed change`;
@@ -66,11 +72,23 @@ performed real analysis.
 
 For product acceptance:
 
-- first launch must guide the user to configure and test a local endpoint, or
+- first launch must guide the user to allow and test at least one intelligence
+  source class, or
   display an unmistakable `Demo mode — responses are simulated` state;
-- every conversation and audit must show the active endpoint and model;
-- the default user journey must use the configured OpenAI-compatible local
-  endpoint (Ollama reference), not silently return `Mock response`;
+- normal conversations and audits must not ask the user to select a model,
+  provider, or execution mode. Career Agent classifies the prompt and routes it
+  across allowed candidates behind the scenes;
+- permission remains explicit: workspace context may leave the computer only
+  when `Ollama Cloud models` or `Connected cloud providers` is allowed. Route
+  decisions remain available to application diagnostics/audit records without
+  cluttering the conversation;
+- Ollama cloud-tagged models (`-cloud` or `:cloud`) are external even though
+  requests enter through the local Ollama daemon. They require a separate
+  permission from fully local models. A `429` marks the candidate usage-limited, applies a cooldown, and
+  falls back automatically to an eligible on-device model and then another
+  allowed cloud provider;
+- the default user journey must use a real allowed intelligence source, not
+  silently return `Mock response`;
 - automated E2E may use mock mode, but a separate documented Ollama acceptance
   run must exercise chat, Career Audit, evidence, proposal, and approval through
   the same desktop contract;
@@ -169,13 +187,13 @@ The MVP is successful when the user can:
 1.  Launch the desktop application locally.
 2.  Select the built-in Career Agent.
 3.  Register approved local workspaces.
-4.  Discover and select installed local models without manually copying model
-    IDs.
+4.  Allow local models, including compatible free Ollama models installed on
+    the computer, without selecting a model for each request.
 5.  Connect supported delegated cloud providers, beginning with the user's
     existing Codex and GitHub Copilot CLI sign-ins.
-6.  Choose `Local only`, `Local first`, or `Adaptive` execution, with the
-    selected provider and routing reason visible for every request. A request
-    may leave the machine only after the user selects a policy that permits it.
+6.  Allow local models, connected cloud providers, or both. Career Agent
+    classifies each prompt and automatically chooses the strongest eligible
+    route; a request may leave the machine only when cloud providers are allowed.
 7.  Chat with the Career Agent.
 8.  Let the agent inspect:
     -   local career memory,
@@ -679,9 +697,20 @@ Do not implement dynamic model benchmarking/ranking yet.
 
 ------------------------------------------------------------------------
 
-# 17. Execution Modes
+# 17. Intelligence Permissions and Internal Routing
 
-Future execution modes:
+Users do not select execution modes. They grant durable boundaries:
+
+``` ts
+type AllowedIntelligencePaths = {
+  localModels: boolean;
+  cloudProviders: boolean;
+};
+```
+
+The application may retain the following internal vocabulary for policy
+enforcement, migration compatibility, routing diagnostics, and tests. It must
+not present these values as chat/settings choices:
 
 ``` ts
 type ExecutionMode =
@@ -691,13 +720,13 @@ type ExecutionMode =
   | "adaptive";
 ```
 
-## Local Only
+## Local-only boundary
 
 Hard guarantee:
 
 > This request must not leave the machine.
 
-## Local First
+## Local-preferred internal route
 
 Prefer local inference. Escalate only if:
 
@@ -705,13 +734,13 @@ Prefer local inference. Escalate only if:
 -   policy permits external execution,
 -   paid escalation policy permits it.
 
-## SaaS First
+## Cloud-preferred internal route
 
 Prefer eligible SaaS intelligence for AI work.
 
 Deterministic operations still bypass an LLM when possible.
 
-## Adaptive
+## Automatic prompt-aware route
 
 Analyze the request and adapt execution according to:
 
@@ -725,8 +754,10 @@ Analyze the request and adapt execution according to:
 -   result quality,
 -   availability.
 
-Adaptive is the preferred name over Smart because it describes actual
-behavior rather than using a vague marketing term.
+Automatic routing is the product behavior. `Adaptive` remains an internal
+implementation name, not a user decision. A disabled path is never a fallback:
+local and cloud permissions are hard eligibility filters applied before prompt
+classification.
 
 ------------------------------------------------------------------------
 
@@ -4352,23 +4383,36 @@ Before Release 0.1 completion:
 **PROJECT STATUS: WINDOWS MVP COMPLETE (2026-08-27)**
 
 The repository bootstrap, Release 0.1-0.3 slices, product integration, and real
-desktop acceptance are complete. The app now supports explicit Local only,
-Local first, and Adaptive policies; provider/model/reason visibility; real
-Ollama chat/audit/proposal execution; and persisted human-approved changes.
+desktop acceptance are complete. The app now asks users only which intelligence
+source classes may be used, classifies each prompt, and routes automatically
+without exposing execution modes or per-turn model/provider decisions. Real
+Ollama chat/audit/proposal execution and persisted human-approved changes remain
+behind the same application boundary.
 
 Final hands-on MVP feedback is also incorporated: chat displays an in-thread
 thinking state while Send remains disabled; registered root paths are mapped to
 their exact workspace IDs in trusted model context without widening filesystem
-access; execution policy and model selection lead the simplified settings flow;
-Ollama connection details use progressive disclosure; workspace role remains a
+access; intelligence permissions lead the simplified settings flow; compatible
+local models are selected automatically; Ollama connection details use
+progressive disclosure; workspace role remains a
 structured evidence-routing field with a Project default; and Electron's native
 application menu is disabled.
 
 Conversation management now follows the same agent-first desktop pattern:
-saved chats live in a left sidebar, the transcript owns the primary visible
-scroll region, and the composer remains stable. Provider quota failures are
+saved chats and their rename actions live in the primary left sidebar, the
+transcript owns the remaining viewport, `Ctrl+Enter` sends, and the composer
+remains stable. Provider quota failures are
 rendered as accessible in-transcript Career Agent errors, preserving both the
 submitted prompt and the original HTTP status/message.
+
+Intelligence availability is now visible without turning routing into a user
+decision. Intelligence Access summarizes available source classes, while the
+dedicated status page distinguishes fully local Ollama models, Ollama Cloud
+models, and provider CLIs. Observed `429` responses mark a candidate
+usage-limited; automatic routing cools it down and falls back to on-device
+intelligence before trying another allowed cloud candidate.
+On-device ordering is reliability-first: use the smallest practical
+tool-capable model first, then fall back across heavier compatible models.
 
 Codex/Copilot should execute the live checklist in `WHATS_LEFT.md` from top to
 bottom and continue across checkpoint commits until every Section 4 success

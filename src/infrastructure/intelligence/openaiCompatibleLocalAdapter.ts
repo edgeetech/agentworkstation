@@ -1,4 +1,4 @@
-import type { IntelligencePort, ModelRequest, ModelResponse } from '@domain/intelligence';
+import type { ExecutionMode, IntelligencePort, ModelRequest, ModelResponse } from '@domain/intelligence';
 import type { NetworkGateway } from '@application/ports/NetworkGateway';
 
 export class OpenAICompatibleLocalAdapter implements IntelligencePort {
@@ -13,7 +13,7 @@ export class OpenAICompatibleLocalAdapter implements IntelligencePort {
 
   async execute(
     request: ModelRequest,
-    context: { modelId: string; executionMode: 'local_only' },
+    context: { modelId: string; executionMode: ExecutionMode },
     signal: AbortSignal,
   ): Promise<ModelResponse> {
     const tools = request.tools?.map((t) => ({

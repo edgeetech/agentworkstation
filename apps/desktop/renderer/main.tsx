@@ -19,6 +19,7 @@ type View =
   | "audit"
   | "changes"
   | "sources"
+  | "status"
   | "settings";
 type Busy =
   | "workspace"
@@ -55,19 +56,43 @@ const sourceLabel = (
   source.workspaceId ??
   "Local evidence";
 
-const policyLabel = (policy: EndpointConfig["routingPolicy"]): string => ({
-  local_only: "Local only",
-  local_first: "Local first",
-  adaptive: "Adaptive",
-}[policy ?? "local_only"]);
+const chooseAutomaticLocalModel = (models: LocalModel[]): LocalModel | undefined => {
+  const ready = models.filter((model) => model.toolCalling && model.location === "local");
+  const practical = ready.filter((model) => model.size <= 8 * 1024 * 1024 * 1024);
+  return [...(practical.length > 0 ? practical : ready)].sort((left, right) =>
+    left.size - right.size,
+  )[0];
+};
 
-const RouteNote = ({ route }: { route?: ChatExchange["route"] }): JSX.Element | null => route ? (
-  <div className="source-row route-note">
-    <span>{route.location === "external" ? "Cloud route" : route.location === "simulated" ? "Simulation" : "Local route"}</span>
-    <strong>{route.providerLabel} · {route.modelId}</strong>
-    <small>{route.reason}</small>
-  </div>
-) : null;
+const chooseAutomaticCloudModel = (models: LocalModel[]): LocalModel | undefined =>
+  models.find((model) => model.toolCalling && model.location === "cloud"
+    && model.availability !== "limited" && model.availability !== "unavailable");
+
+const orderedAutomaticModelIds = (models: LocalModel[]): string[] => {
+  const local = models.filter((model) => model.toolCalling && model.location === "local");
+  const practical = local.filter((model) => model.size <= 8 * 1024 * 1024 * 1024)
+    .sort((left, right) => left.size - right.size);
+  const oversized = local.filter((model) => model.size > 8 * 1024 * 1024 * 1024)
+    .sort((left, right) => left.size - right.size);
+  const cloud = models.filter((model) => model.toolCalling && model.location === "cloud")
+    .sort((left, right) => Number(left.availability === "limited" || left.availability === "unavailable")
+      - Number(right.availability === "limited" || right.availability === "unavailable"));
+  return [...practical, ...oversized, ...cloud].map((model) => model.id);
+};
+
+const providerReady = (provider: ProviderConnection): boolean =>
+  provider.installed && provider.authenticated !== false;
+const providerAvailable = (provider: ProviderConnection): boolean =>
+  providerReady(provider) && provider.availability !== "limited" && provider.availability !== "unavailable";
+
+const availabilityLabel = (value: LocalModel["availability"] | ProviderConnection["availability"]): string => {
+  if (value === "limited") return "Usage limited";
+  if (value === "unavailable") return "Unavailable";
+  if (value === "available") return "Available";
+  return "Discovered";
+};
+
+const modelSize = (bytes: number): string => bytes > 0 ? `${(bytes / (1024 ** 3)).toFixed(1)} GB` : "Cloud managed";
 
 function App(): JSX.Element {
   const api = window.agentWorkstation;
@@ -84,6 +109,9 @@ function App(): JSX.Element {
     baseUrl: "http://localhost:11434",
     modelId: "llama3.1",
     routingPolicy: "local_only",
+    allowedPaths: { localModels: true, ollamaCloudModels: false, cloudProviders: false },
+    ollamaModelIds: [],
+    providerIds: [],
     configured: false,
   });
   const [history, setHistory] = useState<ChatExchange[]>([]);
@@ -95,7 +123,8 @@ function App(): JSX.Element {
     message: string;
   } | null>(null);
   const conversation = useRef<HTMLDivElement>(null);
-  const [sessionName, setSessionName] = useState("Career Agent Session");
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameSessionName, setRenameSessionName] = useState("");
   const [proposalWorkspace, setProposalWorkspace] = useState("");
   const [targetPath, setTargetPath] = useState("README.md");
   const [recommendation, setRecommendation] = useState(
@@ -109,16 +138,21 @@ function App(): JSX.Element {
   const [modelDiscoveryBusy, setModelDiscoveryBusy] = useState(false);
   const [modelDiscoveryError, setModelDiscoveryError] = useState<string | null>(null);
   const [demoSessionEnabled, setDemoSessionEnabled] = useState(false);
-  const selectedLocalModel = localModels.find((model) => model.id === endpoint.modelId);
-  const localModelIncompatible = selectedLocalModel?.toolCalling === false;
-  const localEndpointReady =
-    endpoint.configured === true && endpoint.mode === "local" && !localModelIncompatible;
+  const automaticLocalModel = chooseAutomaticLocalModel(localModels);
+  const automaticCloudModel = chooseAutomaticCloudModel(localModels);
+  const localPathAllowed = endpoint.mode !== "mock" && (endpoint.allowedPaths?.localModels ?? endpoint.mode === "local");
+  const cloudPathAllowed = endpoint.mode !== "mock" && (endpoint.allowedPaths?.cloudProviders
+    ?? (endpoint.mode === "delegated" || endpoint.routingPolicy !== "local_only"));
+  const ollamaCloudPathAllowed = endpoint.mode !== "mock" && (endpoint.allowedPaths?.ollamaCloudModels ?? false);
+  const localEndpointReady = endpoint.configured === true && localPathAllowed && automaticLocalModel !== undefined;
   const delegatedConnection = providerConnections.find((provider) => provider.id === endpoint.providerId);
-  const routingNeedsProvider = endpoint.mode === "local" && endpoint.routingPolicy !== undefined && endpoint.routingPolicy !== "local_only";
-  const routingProviderReady = delegatedConnection?.installed === true && delegatedConnection.authenticated !== false;
-  const delegatedEndpointReady = endpoint.configured === true && endpoint.mode === "delegated" &&
-    delegatedConnection?.installed === true && delegatedConnection.authenticated !== false;
-  const realEndpointReady = (localEndpointReady && (!routingNeedsProvider || routingProviderReady)) || delegatedEndpointReady;
+  const automaticProvider = (delegatedConnection && providerReady(delegatedConnection)
+    ? delegatedConnection
+    : providerConnections.find(providerReady));
+  const cloudEndpointReady = endpoint.configured === true && cloudPathAllowed
+    && providerConnections.some(providerAvailable);
+  const ollamaCloudEndpointReady = endpoint.configured === true && ollamaCloudPathAllowed && automaticCloudModel !== undefined;
+  const realEndpointReady = localEndpointReady || ollamaCloudEndpointReady || cloudEndpointReady;
   const demoConfigured =
     endpoint.configured === true && endpoint.mode === "mock";
   const endpointReady = realEndpointReady || demoSessionEnabled;
@@ -177,6 +211,18 @@ function App(): JSX.Element {
     try {
       const models = await api.discoverLocalModels(baseUrl);
       setLocalModels(models);
+      const modelIds = orderedAutomaticModelIds(models);
+      const chosen = chooseAutomaticLocalModel(models) ?? chooseAutomaticCloudModel(models);
+      setEndpoint((old) => {
+        const unchangedIds = JSON.stringify(old.ollamaModelIds ?? []) === JSON.stringify(modelIds);
+        if (!chosen || (old.modelId === chosen.id && unchangedIds)) return old;
+        return {
+          ...old,
+          modelId: chosen.id,
+          ollamaModelIds: modelIds,
+          configured: false,
+        };
+      });
       if (models.length === 0) setModelDiscoveryError('Ollama is running but has no installed models.');
     } catch (value) {
       setLocalModels([]);
@@ -184,6 +230,26 @@ function App(): JSX.Element {
     } finally {
       setModelDiscoveryBusy(false);
     }
+  };
+  const loadProviderConnections = async (): Promise<void> => {
+    const providers = await api.listProviderConnections();
+    setProviderConnections(providers);
+    const readyProviders = providers.filter(providerReady);
+    const preferred = readyProviders[0];
+    if (!preferred) return;
+    const providerIds = readyProviders.map((provider) => provider.id);
+    setEndpoint((old) => {
+      const unchangedIds = JSON.stringify(old.providerIds ?? []) === JSON.stringify(providerIds);
+      if (!(old.allowedPaths?.cloudProviders ?? old.mode === "delegated")) return old;
+      if (old.providerId && unchangedIds) return old;
+      return {
+        ...old,
+        providerId: old.providerId ?? preferred.id,
+        providerModelId: old.providerModelId ?? preferred.defaultModel,
+        providerIds,
+        configured: false,
+      };
+    });
   };
   useEffect(() => {
     void Promise.all([
@@ -200,11 +266,12 @@ function App(): JSX.Element {
         setSessions(nextSessions);
         setHistory(nextHistory);
         setProposalWorkspace(chooseProposalWorkspace(records));
-        if (config.mode === "local") void loadLocalModels(config.baseUrl);
+        if ((config.allowedPaths?.localModels ?? config.mode === "local") || config.allowedPaths?.ollamaCloudModels) {
+          void loadLocalModels(config.baseUrl);
+        }
       })
       .catch((value: unknown) => setError(messageOf(value)));
-    void api.listProviderConnections()
-      .then(setProviderConnections)
+    void loadProviderConnections()
       .catch(() => setProviderConnections([]));
   }, [api]);
   useEffect(() => {
@@ -221,17 +288,56 @@ function App(): JSX.Element {
     setNotice(null);
   };
 
+  const createNewChat = (): void => {
+    void task("chat", async () => {
+      await api.createChatSession("New chat");
+      await loadChat();
+      setChatFailure(null);
+      setView("chat");
+    });
+  };
+
+  const saveChatName = (sessionId: string): void => {
+    const name = renameSessionName.trim();
+    if (!name) return;
+    void task("chat", async () => {
+      await api.renameChatSession(sessionId, name);
+      await loadChat();
+      setRenamingSessionId(null);
+      setRenameSessionName("");
+    });
+  };
+
+  const sendChat = (): void => {
+    const prompt = chatInput.trim();
+    if (!prompt || !ready || busy === "chat") return;
+    setChatInput("");
+    setChatFailure(null);
+    setPendingChatInput(prompt);
+    void task("chat", async () => {
+      try {
+        const result = await api.sendChatMessage(prompt);
+        setHistory((old) => [...old, result]);
+        await loadChat();
+      } catch (value) {
+        setChatFailure({ prompt, message: chatErrorMessage(value) });
+      } finally {
+        setPendingChatInput(null);
+      }
+    });
+  };
+
   const Home = (): JSX.Element => (
     <div className="page-stack">
       <section className="hero">
         <div>
-          <p className="eyebrow">Career Agent · local-first</p>
+          <p className="eyebrow">Career Agent</p>
           <h1>
             Turn real project work into an evidence-backed professional profile.
           </h1>
           <p className="hero-copy">
-            Connect local folders and a local model, inspect gaps, then review
-            every proposed edit before anything changes.
+            Grant access to your evidence and preferred intelligence sources once.
+            Career Agent chooses the right model for each request automatically.
           </p>
         </div>
         <div className={`readiness ${realReady ? "ready" : ""}`}>
@@ -244,9 +350,7 @@ function App(): JSX.Element {
           </span>
           <strong>
             {realReady
-              ? endpoint.mode === "delegated"
-                ? `Using ${delegatedConnection?.label ?? endpoint.providerId} with explicit cloud permission`
-                : `${policyLabel(endpoint.routingPolicy)} · ${endpoint.modelId}`
+              ? "Allowed intelligence is available"
               : demoSessionEnabled
                 ? "No AI model is being used"
                 : `${Number(workspaceReady) + Number(realEndpointReady)} of 2 steps complete`}
@@ -280,8 +384,8 @@ function App(): JSX.Element {
               onClick={() => go("settings")}
             >
               <span>{realEndpointReady ? "✓" : "2"}</span>
-              <strong>Connect intelligence</strong>
-              <small>Use Ollama locally or a delegated provider CLI.</small>
+              <strong>Choose intelligence access</strong>
+              <small>Allow local models, connected cloud providers, or both.</small>
             </button>
           </div>
         </section>
@@ -316,179 +420,72 @@ function App(): JSX.Element {
   );
 
   const Chat = (): JSX.Element => (
-    <div className="page-stack chat-page">
-      <Heading
-        eyebrow="Explore"
-        title="Career Agent chat"
-        description="Ask questions grounded in your registered workspaces and agent memory."
-      />
+    <div className="chatgpt-chat">
       {!ready ? <Setup onGo={go} /> : null}
-      <section className="panel chat-panel">
-        <div className="chat-layout">
-          <aside className="conversation-sidebar" aria-label="Career Agent conversations">
-            <div className="conversation-sidebar-heading">
-              <span>Conversations</span>
-              <small>{sessions.length}</small>
+      <div className="conversation" ref={conversation} aria-live="polite">
+        <div className="conversation-content">
+          {history.length === 0 && !pendingChatInput && !chatFailure ? (
+            <div className="chat-welcome">
+              <span className="agent-avatar large">CA</span>
+              <h1>How can I help with your career evidence?</h1>
+              <p>Ask about your profile, registered projects, or a change you are considering.</p>
             </div>
-            <div className="new-conversation">
-              <label htmlFor="new-conversation-name">New conversation</label>
-              <input
-                id="new-conversation-name"
-                value={sessionName}
-                onChange={(e) => setSessionName(e.target.value)}
-                placeholder="Conversation name"
-              />
-              <button
-                type="button"
-                disabled={busy === "chat" || !sessionName.trim()}
-                onClick={() =>
-                  void task("chat", async () => {
-                    await api.createChatSession(sessionName.trim());
-                    await loadChat();
-                    setChatFailure(null);
-                    setNotice("New conversation created.");
-                  })
-                }
-              >
-                Create
-              </button>
-            </div>
-            <ul className="session-list" aria-label="Saved conversations">
-              {sessions.map((session) => (
-                <li key={session.id}>
-                  <button
-                    type="button"
-                    className={session.selected ? "active" : ""}
-                    aria-current={session.selected ? "true" : undefined}
-                    disabled={busy === "chat"}
-                    onClick={() =>
-                      void task("chat", async () => {
-                        await api.selectChatSession(session.id);
-                        await loadChat();
-                        setChatFailure(null);
-                      })
-                    }
-                  >
-                    <span>{session.name}</span>
-                    {session.selected ? <small>Current</small> : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </aside>
-          <div className="chat-workspace">
-            <div className="active-conversation-heading">
-              <div>
-                <small>Current conversation</small>
-                <strong>{sessions.find((session) => session.selected)?.name ?? "Career Agent"}</strong>
+          ) : history.map((exchange, i) => (
+            <div className="exchange" key={`${exchange.userMessage}-${i}`}>
+              <div className="message user"><p>{exchange.userMessage}</p></div>
+              <div className="message assistant">
+                <span>Career Agent</span>
+                <p>{exchange.assistantMessage}</p>
+                {exchange.sourceReferences.length ? (
+                  <div className="chips">
+                    {exchange.sourceReferences.map((source, index) => (
+                      <span key={`${source.type}-${index}`}>{sourceLabel(source)}</span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-              <span>{history.length} {history.length === 1 ? "response" : "responses"}</span>
             </div>
-            <div className="conversation" ref={conversation} aria-live="polite">
-              {history.length === 0 && !pendingChatInput && !chatFailure ? (
-                <Empty
-                  title="Start with a concrete question"
-                  text="Try asking what important outcomes are missing from your profile."
-                />
-              ) : (
-                history.map((exchange, i) => (
-                  <div className="exchange" key={`${exchange.userMessage}-${i}`}>
-                    <div className="message user">
-                      <span>You</span>
-                      <p>{exchange.userMessage}</p>
-                    </div>
-                    <div className="message assistant">
-                      <span>Career Agent</span>
-                      <p>{exchange.assistantMessage}</p>
-                      <RouteNote route={exchange.route} />
-                      {exchange.sourceReferences.length ? (
-                        <div className="chips">
-                          {exchange.sourceReferences.map((s, j) => (
-                            <span key={`${s.type}-${j}`}>{sourceLabel(s)}</span>
-                          ))}
-                        </div>
-                      ) : (
-                        <small>No source references returned.</small>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-              {chatFailure ? (
-                <div className="exchange failed-exchange">
-                  <div className="message user">
-                    <span>You</span>
-                    <p>{chatFailure.prompt}</p>
-                  </div>
-                  <div className="message assistant error-message" role="alert">
-                    <span>Career Agent</span>
-                    <strong>
-                      {/HTTP\s+429/i.test(chatFailure.message)
-                        ? "Usage limit reached"
-                        : "Message could not be completed"}
-                    </strong>
-                    <p>{chatFailure.message}</p>
-                    <small>Your message was not lost. Try again when the provider is available.</small>
-                  </div>
-                </div>
-              ) : null}
-              {pendingChatInput ? (
-                <div className="exchange pending-exchange">
-                  <div className="message user">
-                    <span>You</span>
-                    <p>{pendingChatInput}</p>
-                  </div>
-                  <div
-                    className="message assistant thinking-message"
-                    role="status"
-                    aria-label="Career Agent is thinking"
-                  >
-                    <span>Career Agent</span>
-                    <div className="thinking-dots" aria-hidden="true">
-                      <i />
-                      <i />
-                      <i />
-                    </div>
-                    <small>Thinking…</small>
-                  </div>
-                </div>
-              ) : null}
+          ))}
+          {chatFailure ? (
+            <div className="exchange failed-exchange">
+              <div className="message user"><p>{chatFailure.prompt}</p></div>
+              <div className="message assistant error-message" role="alert">
+                <span>Career Agent</span>
+                <strong>{/HTTP\s+429/i.test(chatFailure.message) ? "Usage limit reached" : "Message could not be completed"}</strong>
+                <p>{chatFailure.message}</p>
+                <small>Your message was not lost. Try again when an allowed provider is available.</small>
+              </div>
             </div>
-            <form
-              className="composer"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const prompt = chatInput.trim();
-                if (!prompt || !ready || busy === "chat") return;
-                setChatInput("");
-                setChatFailure(null);
-                setPendingChatInput(prompt);
-                void task("chat", async () => {
-                  try {
-                    const result = await api.sendChatMessage(prompt);
-                    setHistory((old) => [...old, result]);
-                    await loadChat();
-                  } catch (value) {
-                    setChatFailure({ prompt, message: chatErrorMessage(value) });
-                  } finally {
-                    setPendingChatInput(null);
-                  }
-                });
-              }}
-            >
-              <textarea
-                aria-label="Message Career Agent"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Ask the Career Agent about your profile…"
-              />
-              <button className="primary" disabled={!ready || busy === "chat"}>
-                Send message
-              </button>
-            </form>
-          </div>
+          ) : null}
+          {pendingChatInput ? (
+            <div className="exchange pending-exchange">
+              <div className="message user"><p>{pendingChatInput}</p></div>
+              <div className="message assistant thinking-message" role="status" aria-label="Career Agent is thinking">
+                <span>Career Agent</span>
+                <div className="thinking-dots" aria-hidden="true"><i /><i /><i /></div>
+              </div>
+            </div>
+          ) : null}
         </div>
-      </section>
+      </div>
+      <div className="composer-dock">
+        <form className="composer" onSubmit={(event) => { event.preventDefault(); sendChat(); }}>
+          <textarea
+            aria-label="Message Career Agent"
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && event.ctrlKey) {
+                event.preventDefault();
+                sendChat();
+              }
+            }}
+            placeholder="Message Career Agent"
+          />
+          <button className="primary send-icon" aria-label="Send message" disabled={!ready || busy === "chat"}>↑</button>
+        </form>
+        <small>Ctrl + Enter to send</small>
+      </div>
     </div>
   );
 
@@ -541,7 +538,6 @@ function App(): JSX.Element {
             </div>
             <p>{audit.summary}</p>
             <div className="agent-output">{audit.result.content}</div>
-            <RouteNote route={audit.result.route} />
           </section>
           <section className="panel">
             <div className="section-heading">
@@ -660,7 +656,6 @@ function App(): JSX.Element {
             <h2>{action.targetPath}</h2>
             <p>{action.workspaceId}</p>
             <pre>{action.diff}</pre>
-            <RouteNote route={action.route} />
             <div className="actions">
               <button
                 className="primary"
@@ -809,279 +804,255 @@ function App(): JSX.Element {
     </div>
   );
 
-  const Settings = (): JSX.Element => (
-    <div className="page-stack">
-      <Heading
-        eyebrow="Private intelligence"
-        title="Model settings"
-        description="Choose local inference or reuse a provider CLI connection. Credentials remain provider-managed."
-      />
-      {endpoint.mode === "mock" ? (
-        <div className="demo">
-          <strong>Simulated demo is not AI.</strong>
-          <span>
-            Ask, Audit, and Improve stay locked until you explicitly enable the
-            demo for this app session. Choose Local model for real Career Agent
-            work.
-          </span>
-          <button
-            type="button"
-            data-testid="enable-demo-session"
-            disabled={!demoConfigured || demoSessionEnabled}
-            onClick={() => {
-              setDemoSessionEnabled(true);
-              setNotice(
-                "Simulated demo enabled for this session. No AI model will be used.",
-              );
-            }}
-          >
-            {demoSessionEnabled
-              ? "Simulated demo enabled"
-              : "Enable simulated demo for this session"}
-          </button>
+  const Status = (): JSX.Element => {
+    const local = localModels.filter((model) => model.location === "local");
+    const ollamaCloud = localModels.filter((model) => model.location === "cloud");
+    const statusRow = (model: LocalModel): JSX.Element => (
+      <article className="model-status-row" key={model.id}>
+        <span className={`status-dot ${model.availability ?? "unknown"}`} aria-hidden="true" />
+        <div>
+          <strong>{model.id}</strong>
+          <small>{model.location === "local" ? `${modelSize(model.size)} · Stored on this device` : "Runs through Ollama Cloud"}</small>
+          {model.lastError ? <small className="status-error">{model.lastError}</small> : null}
         </div>
-      ) : null}
-      <section className="panel form settings">
-        {endpoint.mode === "local" ? (
-          <label>
-            <span>Execution policy</span>
-            <select
-              aria-label="Routing policy"
-              value={endpoint.routingPolicy ?? "local_only"}
-              onChange={(e) => setEndpoint((old) => ({
-                ...old,
-                routingPolicy: e.target.value as NonNullable<EndpointConfig["routingPolicy"]>,
-                configured: false,
-              }))}
-            >
-              <option value="local_only">Local only · never use cloud</option>
-              <option value="local_first">Local first · cloud only after local failure</option>
-              <option value="adaptive">Adaptive · choose by Career Agent task</option>
-            </select>
-            <small>
-              {endpoint.routingPolicy === "adaptive"
-                ? "Routine chat stays local; audit and improvement prefer the connected provider."
-                : endpoint.routingPolicy === "local_first"
-                  ? "Every request starts locally and may use the connected provider only if local inference fails."
-                  : "All model requests stay on this device. Provider fallback is blocked."}
-            </small>
-          </label>
-        ) : null}
-        <label>
-          <span>Mode</span>
-          <select
-            aria-label="Execution mode"
-            value={endpoint.mode === "delegated" ? `delegated:${endpoint.providerId ?? ""}` : endpoint.mode}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value.startsWith("delegated:")) {
-                const providerId = value.slice("delegated:".length);
-                const provider = providerConnections.find((item) => item.id === providerId);
-                setEndpoint((old) => ({
-                  ...old,
-                  mode: "delegated",
-                  providerId,
-                  modelId: provider?.defaultModel ?? "default",
-                  providerModelId: provider?.defaultModel ?? "default",
-                  routingPolicy: "adaptive",
-                  configured: false,
-                }));
-              } else {
-                setEndpoint((old) => ({
-                  ...old,
-                  mode: value as "mock" | "local",
-                  ...(value === "local" ? { routingPolicy: old.routingPolicy ?? "local_only" } : {
-                    providerId: undefined,
-                    providerModelId: undefined,
-                    routingPolicy: "local_only" as const,
-                  }),
-                  configured: false,
-                }));
-              }
-              setDemoSessionEnabled(false);
-            }}
-          >
-            <option value="local">Local model</option>
+        <span className={`status-badge ${model.availability ?? "unknown"}`}>
+          {model.toolCalling ? availabilityLabel(model.availability) : "Not agent compatible"}
+        </span>
+      </article>
+    );
+    return (
+      <div className="page-stack">
+        <Heading
+          eyebrow="Intelligence status"
+          title="Models Career Agent can reach"
+          description="Availability is informational. Career Agent still chooses and falls back automatically within the access you allow."
+          action={<button type="button" disabled={busy === "endpoint" || modelDiscoveryBusy} onClick={() => void task("endpoint", async () => {
+            await Promise.all([loadLocalModels(), loadProviderConnections()]);
+            setNotice("Intelligence availability refreshed.");
+          })}>{busy === "endpoint" || modelDiscoveryBusy ? "Refreshing…" : "Refresh status"}</button>}
+        />
+        <section className="status-section panel">
+          <div className="section-heading"><div><p className="eyebrow">On-device</p><h2>Fully local Ollama models</h2></div><p>These remain available when cloud usage is limited.</p></div>
+          <div className="model-status-list">
+            {local.length ? local.map(statusRow) : <Empty title="No local models" text="Install a tool-capable Ollama model, then refresh status." />}
+          </div>
+        </section>
+        <section className="status-section panel">
+          <div className="section-heading"><div><p className="eyebrow">Ollama account</p><h2>Ollama Cloud models</h2></div><p>A 429 marks the model usage-limited and triggers automatic fallback.</p></div>
+          <div className="model-status-list">
+            {ollamaCloud.length ? ollamaCloud.map(statusRow) : <Empty title="No Ollama Cloud models" text="Pull a compatible cloud-tagged model in Ollama to make it discoverable." />}
+          </div>
+        </section>
+        <section className="status-section panel">
+          <div className="section-heading"><div><p className="eyebrow">Provider CLIs</p><h2>Connected cloud providers</h2></div><p>Credentials stay with each installed provider.</p></div>
+          <div className="model-status-list">
             {providerConnections.map((provider) => (
-              <option key={provider.id} value={`delegated:${provider.id}`} disabled={!provider.installed}>
-                {provider.label} · {provider.installed ? "delegated CLI" : "not installed"}
-              </option>
+              <article className="model-status-row" key={provider.id}>
+                <span className={`status-dot ${provider.availability ?? "unknown"}`} aria-hidden="true" />
+                <div>
+                  <strong>{provider.label}</strong>
+                  <small>{provider.detail}</small>
+                  {provider.lastError ? <small className="status-error">{provider.lastError}</small> : null}
+                </div>
+                <span className={`status-badge ${provider.availability ?? "unknown"}`}>
+                  {providerReady(provider) ? availabilityLabel(provider.availability) : provider.installed ? "Sign-in required" : "Not installed"}
+                </span>
+              </article>
             ))}
-            <option value="mock">Demo mode (simulated)</option>
-          </select>
-        </label>
-        {endpoint.mode !== "mock" ? <label>
-          <span>{endpoint.mode === "local" ? "Installed Ollama model" : "Provider model"}</span>
-          {endpoint.mode === "local" && localModels.length > 0 ? (
-            <select
-              aria-label="Installed Ollama model"
-              value={localModels.some((model) => model.id === endpoint.modelId) ? endpoint.modelId : ""}
-              onChange={(e) =>
-                setEndpoint((old) => ({
-                  ...old,
-                  modelId: e.target.value,
-                  configured: false,
-                }))
-              }
-            >
-              <option value="" disabled>Select an installed model</option>
-              {localModels.map((model) => (
-                <option key={model.id} value={model.id} disabled={!model.toolCalling}>
-                  {model.id} · {(model.size / 1024 / 1024 / 1024).toFixed(1)} GB · {model.toolCalling ? "Career Agent ready" : "chat only — no tools"}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              aria-label="Model ID"
-              value={endpoint.modelId}
-              onChange={(e) =>
-                setEndpoint((old) => ({
-                  ...old,
-                  modelId: e.target.value,
-                  configured: false,
-                }))
-              }
-            />
-          )}
-        </label> : null}
-        {routingNeedsProvider ? (
-          <div className="form-grid">
-            <label>
-              <span>Permitted cloud provider</span>
-              <select
-                aria-label="Permitted cloud provider"
-                value={endpoint.providerId ?? ""}
-                onChange={(e) => {
-                  const provider = providerConnections.find((item) => item.id === e.target.value);
+          </div>
+        </section>
+      </div>
+    );
+  };
+
+  const Settings = (): JSX.Element => {
+    const noPathAllowed = !localPathAllowed && !ollamaCloudPathAllowed && !cloudPathAllowed;
+    const localUnavailable = localPathAllowed && !automaticLocalModel;
+    const ollamaCloudUnavailable = ollamaCloudPathAllowed && !automaticCloudModel;
+    const cloudUnavailable = cloudPathAllowed && !providerConnections.some(providerAvailable);
+    const settingsBlocked = noPathAllowed || (localUnavailable && ollamaCloudUnavailable && cloudUnavailable);
+    return (
+      <div className="page-stack">
+        <Heading
+          eyebrow="Intelligence access"
+          title="Choose what Career Agent may use"
+          description="Grant boundaries once. Career Agent evaluates each prompt and chooses the best allowed model automatically."
+        />
+        <section className="availability-summary" aria-label="Intelligence availability">
+          <span><strong>{localModels.filter((model) => model.location === "local" && model.toolCalling && model.availability !== "unavailable").length}</strong> on-device ready</span>
+          <span><strong>{localModels.filter((model) => model.location === "cloud" && model.toolCalling && model.availability !== "limited" && model.availability !== "unavailable").length}</strong> Ollama Cloud ready</span>
+          <span><strong>{providerConnections.filter(providerAvailable).length}</strong> providers ready</span>
+          <button type="button" onClick={() => go("status")}>View model status</button>
+        </section>
+        <section className="panel form settings">
+          <div className="permission-list">
+            <label className={`permission-card ${localPathAllowed ? "allowed" : ""}`}>
+              <input
+                type="checkbox"
+                aria-label="Allow local models"
+                checked={localPathAllowed}
+                onChange={(event) => {
+                  const allowed = event.target.checked;
                   setEndpoint((old) => ({
                     ...old,
-                    providerId: e.target.value || undefined,
-                    providerModelId: provider?.defaultModel ?? "default",
+                    mode: "local",
+                    modelId: automaticLocalModel?.id ?? old.modelId,
+                    routingPolicy: ollamaCloudPathAllowed || cloudPathAllowed ? "adaptive" : "local_only",
+                    ollamaModelIds: orderedAutomaticModelIds(localModels),
+                    allowedPaths: { localModels: allowed, ollamaCloudModels: ollamaCloudPathAllowed, cloudProviders: cloudPathAllowed },
                     configured: false,
                   }));
+                  setDemoSessionEnabled(false);
                 }}
-              >
-                <option value="" disabled>Select a connected provider</option>
-                {providerConnections.map((provider) => (
-                  <option key={provider.id} value={provider.id} disabled={!provider.installed || provider.authenticated === false}>
-                    {provider.label} · {provider.installed ? "detected" : "not installed"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Provider model</span>
-              <input
-                aria-label="Provider model ID"
-                value={endpoint.providerModelId ?? delegatedConnection?.defaultModel ?? "default"}
-                onChange={(e) => setEndpoint((old) => ({ ...old, providerModelId: e.target.value, configured: false }))}
               />
+              <span>
+                <strong>Local models</strong>
+                <small>Includes free Ollama models installed on this computer. Workspace context stays on-device.</small>
+              </span>
+              <b>{automaticLocalModel ? "Available" : "No compatible model found"}</b>
+            </label>
+            <label className={`permission-card ${ollamaCloudPathAllowed ? "allowed" : ""}`}>
+              <input
+                type="checkbox"
+                aria-label="Allow Ollama Cloud models"
+                checked={ollamaCloudPathAllowed}
+                disabled={!ollamaCloudPathAllowed && !automaticCloudModel}
+                onChange={(event) => {
+                  const allowed = event.target.checked;
+                  setEndpoint((old) => ({
+                    ...old,
+                    mode: "local",
+                    routingPolicy: allowed || cloudPathAllowed ? "adaptive" : "local_only",
+                    ollamaModelIds: orderedAutomaticModelIds(localModels),
+                    allowedPaths: { localModels: localPathAllowed, ollamaCloudModels: allowed, cloudProviders: cloudPathAllowed },
+                    configured: false,
+                  }));
+                  setDemoSessionEnabled(false);
+                }}
+              />
+              <span>
+                <strong>Ollama Cloud models</strong>
+                <small>Large Ollama models run in Ollama Cloud. Usage limits apply and workspace context may leave this computer.</small>
+              </span>
+              <b>{automaticCloudModel ? "Discovered" : "No compatible cloud model found"}</b>
+            </label>
+            <label className={`permission-card ${cloudPathAllowed ? "allowed" : ""}`}>
+              <input
+                type="checkbox"
+                aria-label="Allow connected cloud providers"
+                checked={cloudPathAllowed}
+                disabled={!cloudPathAllowed && !automaticProvider}
+                onChange={(event) => {
+                  const allowed = event.target.checked;
+                  setEndpoint((old) => ({
+                    ...old,
+                    mode: "local",
+                    providerId: allowed ? automaticProvider?.id : undefined,
+                    providerModelId: allowed ? automaticProvider?.defaultModel : undefined,
+                    providerIds: allowed ? providerConnections.filter(providerReady).map((provider) => provider.id) : [],
+                    routingPolicy: allowed || ollamaCloudPathAllowed ? "adaptive" : "local_only",
+                    allowedPaths: { localModels: localPathAllowed, ollamaCloudModels: ollamaCloudPathAllowed, cloudProviders: allowed },
+                    configured: false,
+                  }));
+                  setDemoSessionEnabled(false);
+                }}
+              />
+              <span>
+                <strong>Connected cloud providers</strong>
+                <small>Use detected Codex, Copilot, or Claude CLI accounts only when the prompt benefits from them.</small>
+              </span>
+              <b>{automaticProvider ? `${providerConnections.filter(providerReady).length} connected` : "No authenticated provider detected"}</b>
             </label>
           </div>
-        ) : null}
-        {localModelIncompatible ? (
-          <div className="demo">
-            <strong>{endpoint.modelId} cannot run Career Agent workflows.</strong>
-            <span>
-              This model supports text completion but not tool calling. Choose a
-              model marked Career Agent ready; on this computer, qwen2.5:3b is
-              compatible.
-            </span>
-          </div>
-        ) : null}
-        {endpoint.mode === "local" ? (
+          {noPathAllowed ? <div className="inline-warning" role="alert">Allow at least one intelligence path.</div> : null}
+          {ollamaCloudPathAllowed || cloudPathAllowed ? (
+            <div className="privacy-callout">
+              <strong>Cloud access is allowed.</strong>
+              <span>Bounded prompt, workspace, and agent context may leave this computer. Provider CLIs keep their own credentials.</span>
+            </div>
+          ) : null}
           <details className="settings-details">
-            <summary>Ollama connection details</summary>
+            <summary>Local Ollama details</summary>
             <div className="details-content">
               <label>
                 <span>Endpoint URL</span>
-                <input
-                  value={endpoint.baseUrl}
-                  onChange={(e) =>
-                    setEndpoint((old) => ({
-                      ...old,
-                      baseUrl: e.target.value,
-                      configured: false,
-                    }))
-                  }
-                />
+                <input value={endpoint.baseUrl} onChange={(event) => setEndpoint((old) => ({ ...old, baseUrl: event.target.value, configured: false }))} />
               </label>
               <div className="actions model-discovery">
-                <button
-                  type="button"
-                  disabled={modelDiscoveryBusy}
-                  onClick={() => void loadLocalModels()}
-                >
+                <button type="button" disabled={modelDiscoveryBusy} onClick={() => void loadLocalModels()}>
                   {modelDiscoveryBusy ? "Finding models…" : "Refresh installed models"}
                 </button>
                 {modelDiscoveryError ? <small>{modelDiscoveryError}</small> : null}
-                {localModels.length > 0 ? (
-                  <small>{localModels.length} installed model{localModels.length === 1 ? "" : "s"} found.</small>
-                ) : null}
+                <small>
+                  {localModels.filter((model) => model.location === "local").length} on-device · {localModels.filter((model) => model.location === "cloud").length} Ollama Cloud · {localModels.filter((model) => model.toolCalling).length} compatible
+                </small>
               </div>
-              <small>Default endpoint: http://localhost:11434</small>
             </div>
           </details>
-        ) : null}
-        {endpoint.mode === "delegated" || routingNeedsProvider ? (
-          <div className="demo">
-            <strong>{delegatedConnection?.label ?? "Provider"} sends bounded Career Agent context to the cloud.</strong>
-            <span>
-              You explicitly selected {policyLabel(endpoint.routingPolicy)}. The actual provider, model,
-              fallback state, and routing reason are shown with every result. Its CLI manages authentication;
-              Agent Workstation stores only connection and model IDs.
-            </span>
-          </div>
-        ) : null}
-        <div className="provider-list">
-          {providerConnections.map((provider) => (
-            <div className="source-row" key={provider.id}>
-              <span>{provider.installed ? "Detected" : "Unavailable"}</span>
-              <strong>{provider.label}</strong>
-              <small>{provider.detail}</small>
+          <details className="settings-details">
+            <summary>Detected provider connections</summary>
+            <div className="details-content provider-list">
+              {providerConnections.map((provider) => (
+                <div className="source-row" key={provider.id}>
+                  <span>{providerReady(provider) ? availabilityLabel(provider.availability) : provider.installed ? "Sign-in required" : "Not installed"}</span>
+                  <strong>{provider.label}</strong>
+                  <small>{provider.detail}</small>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div className="actions">
-          <button
-            type="button"
-            disabled={busy === "endpoint" || (routingNeedsProvider && !routingProviderReady)}
-            onClick={() =>
-              void task("endpoint", async () => {
-                const result = await api.testEndpointConnection(endpoint);
-                setNotice(result.message);
-              })
-            }
-          >
-            Test connection
-          </button>
-          <button
-            className="primary"
-            data-testid="save-endpoint"
-            type="button"
-            disabled={busy === "endpoint" || (routingNeedsProvider && !routingProviderReady)}
-            onClick={() =>
-              void task("endpoint", async () => {
-                await api.saveEndpointConfig(endpoint);
-                setEndpoint((old) => ({ ...old, configured: true }));
-                setDemoSessionEnabled(false);
-                setNotice(
-                  endpoint.mode === "mock"
-                    ? "Simulated demo configured but inactive. Enable it explicitly to run without AI."
-                    : endpoint.mode === "delegated"
-                      ? `${delegatedConnection?.label ?? "Provider"} connection saved.`
-                      : `${policyLabel(endpoint.routingPolicy)} settings saved.`,
-                );
-              })
-            }
-          >
-            {busy === "endpoint" ? "Working…" : "Save model settings"}
-          </button>
-        </div>
-      </section>
-    </div>
-  );
+          </details>
+          <details className="settings-details">
+            <summary>Offline demo for testing</summary>
+            <div className="details-content">
+              <p>Simulated responses are not AI and never count as model readiness.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setEndpoint((old) => ({
+                    ...old,
+                    mode: "mock",
+                    routingPolicy: "local_only",
+                    allowedPaths: { localModels: false, ollamaCloudModels: false, cloudProviders: false },
+                    configured: false,
+                  }));
+                  setDemoSessionEnabled(false);
+                }}
+              >
+                Configure simulated demo
+              </button>
+              {endpoint.mode === "mock" ? (
+                <button
+                  type="button"
+                  data-testid="enable-demo-session"
+                  disabled={!demoConfigured || demoSessionEnabled}
+                  onClick={() => {
+                    setDemoSessionEnabled(true);
+                    setNotice("Simulated demo enabled for this session. No AI model will be used.");
+                  }}
+                >
+                  {demoSessionEnabled ? "Simulated demo enabled" : "Enable simulated demo for this session"}
+                </button>
+              ) : null}
+            </div>
+          </details>
+          <div className="actions">
+            <button type="button" disabled={busy === "endpoint" || settingsBlocked} onClick={() => void task("endpoint", async () => {
+              const result = await api.testEndpointConnection(endpoint);
+              setNotice(result.message);
+            })}>Check allowed paths</button>
+            <button className="primary" data-testid="save-endpoint" type="button" disabled={busy === "endpoint" || (endpoint.mode !== "mock" && settingsBlocked)} onClick={() => void task("endpoint", async () => {
+              await api.saveEndpointConfig(endpoint);
+              setEndpoint((old) => ({ ...old, configured: true }));
+              setDemoSessionEnabled(false);
+              setNotice(endpoint.mode === "mock"
+                ? "Simulated demo configured but inactive."
+                : "Intelligence access saved. Career Agent will route prompts automatically.");
+            })}>{busy === "endpoint" ? "Working…" : "Save intelligence access"}</button>
+          </div>
+        </section>
+      </div>
+    );
+  };
 
   const Agents = (): JSX.Element => (
     <div className="page-stack">
@@ -1127,6 +1098,7 @@ function App(): JSX.Element {
     audit: Audit,
     changes: Changes,
     sources: Sources,
+    status: Status,
     settings: Settings,
   };
   return (
@@ -1152,7 +1124,7 @@ function App(): JSX.Element {
           <b>⌄</b>
         </button>
         <span className="sidebar-label">Career Agent</span>
-        <nav>
+        <nav className={view === "chat" ? "compact-nav" : ""}>
           {careerNav.map((item) => (
             <button
               className={view === item.id ? "active" : ""}
@@ -1168,40 +1140,81 @@ function App(): JSX.Element {
             </button>
           ))}
         </nav>
+        {view === "chat" ? (
+          <section className="sidebar-chats" aria-label="Career Agent conversations">
+            <div className="sidebar-chats-heading">
+              <span>Chats</span>
+              <button type="button" aria-label="New chat" onClick={createNewChat} disabled={busy === "chat"}>＋</button>
+            </div>
+            <ul className="session-list" aria-label="Saved conversations">
+              {sessions.map((session) => (
+                <li className={session.selected ? "active" : ""} key={session.id}>
+                  {renamingSessionId === session.id ? (
+                    <form onSubmit={(event) => { event.preventDefault(); saveChatName(session.id); }}>
+                      <input
+                        aria-label={`Rename ${session.name}`}
+                        autoFocus
+                        value={renameSessionName}
+                        onChange={(event) => setRenameSessionName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            setRenamingSessionId(null);
+                            setRenameSessionName("");
+                          }
+                         }}
+                       />
+                       <button type="submit" aria-label={`Save ${session.name} name`}>✓</button>
+                     </form>
+                  ) : (
+                    <>
+                      <button type="button" className="session-open" aria-current={session.selected ? "true" : undefined} onClick={() => void task("chat", async () => {
+                        await api.selectChatSession(session.id);
+                        await loadChat();
+                        setChatFailure(null);
+                      })}>{session.name}</button>
+                      <button type="button" className="session-rename" aria-label={`Rename ${session.name}`} onClick={() => {
+                        setRenamingSessionId(session.id);
+                        setRenameSessionName(session.name);
+                      }}>···</button>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         <div className="sidebar-footer">
           <button
             className="settings-link"
             type="button"
             onClick={() => go("settings")}
           >
-            <span>Model settings</span>
+            <span>Intelligence access</span>
             <small>
               {realEndpointReady
-                ? endpoint.mode === "delegated"
-                  ? `${delegatedConnection?.label ?? endpoint.providerId} · cloud allowed`
-                  : `${endpoint.modelId} · real local AI`
+                ? `${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed)} path${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed) === 1 ? "" : "s"} allowed`
                 : demoSessionEnabled
                   ? "Simulated demo · no AI"
-                  : "Real model required"}
+                  : "Setup required"}
             </small>
           </button>
           <div className="privacy">
-            <strong>{endpoint.mode === "delegated" ? "● Provider allowed" : "● Local only"}</strong>
-            <small>{endpoint.mode === "delegated" ? "Bounded context is sent through the selected CLI." : "Registered folders stay on this computer."}</small>
+            <strong>{ollamaCloudPathAllowed || cloudPathAllowed ? "● Cloud permitted" : "● On-device only"}</strong>
+            <small>{ollamaCloudPathAllowed || cloudPathAllowed ? "Career Agent may use allowed cloud intelligence when needed." : "Registered context stays on this computer."}</small>
           </div>
         </div>
       </aside>
-      <main>
+      <main className={view === "chat" ? "chat-main" : ""}>
         <header>
           <div>
             <i className={realEndpointReady ? "connected" : ""} />
-            {realEndpointReady
-              ? endpoint.mode === "delegated"
-                ? `${delegatedConnection?.label ?? endpoint.providerId} · provider allowed`
-                : `${endpoint.modelId} · real local AI`
+            {view === "chat"
+              ? sessions.find((session) => session.selected)?.name ?? "New chat"
+              : realEndpointReady
+                ? "Career Agent ready"
               : demoSessionEnabled
                 ? "Simulated demo · no AI model"
-                : "Real local model required"}
+                : "Intelligence setup required"}
           </div>
           <button type="button" onClick={() => go("settings")}>
             Configure
@@ -1217,16 +1230,7 @@ function App(): JSX.Element {
             <span>
               {demoSessionEnabled
                 ? "Ask, Audit, and Improve return deterministic test responses."
-                : "Connect a local model to use Career Agent, or explicitly enable the demo in Model settings."}
-            </span>
-          </div>
-        ) : null}
-        {delegatedEndpointReady && view !== "settings" ? (
-          <div className="demo top">
-            <strong>{delegatedConnection?.label ?? "Cloud provider"} selected</strong>
-            <span>
-              Routing reason: explicit provider selection. Bounded Career Agent
-              context may leave this computer through the provider-managed CLI.
+                : "Choose allowed intelligence sources, or explicitly enable the demo in Intelligence access."}
             </span>
           </div>
         ) : null}
@@ -1269,14 +1273,14 @@ function Setup({ onGo }: { onGo: (view: View) => void }): JSX.Element {
     <div className="setup">
       <div>
         <strong>Finish setup to use this feature</strong>
-        <span>Add workspaces and save local model settings first.</span>
+        <span>Add workspaces and choose which intelligence sources Career Agent may use.</span>
       </div>
       <div>
         <button type="button" onClick={() => onGo("sources")}>
           Workspaces
         </button>
         <button type="button" onClick={() => onGo("settings")}>
-          Model settings
+          Intelligence access
         </button>
       </div>
     </div>

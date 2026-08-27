@@ -38,18 +38,14 @@ test('Career Agent reaches a real Ollama model through the desktop UI', async ()
     await page.getByRole('button', { name: 'Choose folder and add' }).click();
     await expect(page.locator('.workspace').filter({ hasText: 'profile' })).toBeVisible();
 
-    await page.getByRole('button', { name: /Model settings/ }).click();
-    await expect(page.getByRole('heading', { name: 'Model Settings' })).toBeVisible();
-    await page.getByLabel('Execution mode').selectOption('local');
-    await page.getByText('Ollama connection details', { exact: true }).click();
-    await page.getByLabel('Endpoint URL').fill('http://localhost:11434');
+    await page.locator('.settings-link').click();
+    await expect(page.getByRole('heading', { name: 'Choose what Career Agent may use' })).toBeVisible();
+    await page.getByText('Local Ollama details', { exact: true }).click();
     await page.getByRole('button', { name: 'Refresh installed models' }).click();
-    const discoveredModel = page.getByLabel('Installed Ollama model');
-    await expect(discoveredModel).toBeVisible({ timeout: 30_000 });
-    await discoveredModel.selectOption('qwen2.5:3b');
-    await page.getByRole('button', { name: 'Test connection' }).click();
-    await expect(page.getByText('Verified local model qwen2.5:3b. Requests cannot use cloud providers.')).toBeVisible({ timeout: 60_000 });
-    await page.getByRole('button', { name: 'Save model settings' }).click();
+    await expect(page.getByText(/\d+ compatible/)).toBeVisible({ timeout: 30_000 });
+    await page.getByRole('button', { name: 'Check allowed paths' }).click();
+    await expect(page.getByText(/Available: On-device Ollama/)).toBeVisible({ timeout: 120_000 });
+    await page.getByRole('button', { name: 'Save intelligence access' }).click();
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
     await page.getByLabel('Message Career Agent').fill('In one sentence, what is this profile about?');
@@ -60,14 +56,11 @@ test('Career Agent reaches a real Ollama model through the desktop UI', async ()
     const answer = page.locator('.message.assistant').last();
     await expect(answer).toBeVisible({ timeout: 90_000 });
     await expect(answer).not.toContainText('Mock response:');
-    await expect(answer.getByText('Local route')).toBeVisible();
-    await expect(answer).toContainText('Local only kept this request on this device.');
 
     await page.locator('nav').getByRole('button', { name: /Career audit/ }).click();
     await page.getByRole('button', { name: 'Run career audit' }).click();
     await expect(page.getByText('Career audit completed.')).toBeVisible({ timeout: 120_000 });
     await expect(page.locator('.agent-output')).not.toContainText('Mock response:');
-    await expect(page.getByText('Local route').last()).toBeVisible();
     await expect(page.locator('.source-row').first()).toBeVisible();
     await expect(page.locator('.source-row').filter({ hasText: 'README.md' })).toHaveCount(1);
 

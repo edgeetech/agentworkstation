@@ -6,7 +6,10 @@ export type OllamaModel = {
   modifiedAt?: string;
   capabilities: string[];
   toolCalling: boolean;
+  location: 'local' | 'cloud';
 };
+
+export const isOllamaCloudModel = (modelId: string): boolean => /(?:-cloud(?::|$)|:cloud$)/i.test(modelId);
 
 type OllamaTagsResponse = {
   models?: Array<{ name?: unknown; size?: unknown; modified_at?: unknown }>;
@@ -77,6 +80,7 @@ export async function discoverOllamaModels(
     .sort((left, right) => left.id.localeCompare(right.id));
   return Promise.all(models.map(async (model) => ({
     ...model,
+    location: isOllamaCloudModel(model.id) ? 'cloud' as const : 'local' as const,
     ...(await inspectOllamaModel(baseUrl, model.id, gateway, signal)),
   })));
 }

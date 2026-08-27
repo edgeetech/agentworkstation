@@ -41,6 +41,13 @@ export type EndpointConfig = {
   providerId?: string;
   providerModelId?: string;
   routingPolicy?: 'local_only' | 'local_first' | 'adaptive';
+  allowedPaths?: {
+    localModels: boolean;
+    ollamaCloudModels?: boolean;
+    cloudProviders: boolean;
+  };
+  ollamaModelIds?: string[];
+  providerIds?: string[];
   configured?: boolean;
 };
 
@@ -62,6 +69,8 @@ export type ProviderConnection = {
   authenticated: boolean | null;
   detail: string;
   defaultModel: string;
+  availability?: 'available' | 'limited' | 'unavailable' | 'unknown';
+  lastError?: string;
 };
 
 export type LocalModel = {
@@ -70,6 +79,9 @@ export type LocalModel = {
   modifiedAt?: string;
   capabilities: string[];
   toolCalling: boolean;
+  location: 'local' | 'cloud';
+  availability?: 'available' | 'limited' | 'unavailable' | 'unknown';
+  lastError?: string;
 };
 
 export type ProposalRequest = {
@@ -107,6 +119,7 @@ export type AgentWorkstationApi = {
   testEndpointConnection: (config: EndpointConfig) => Promise<{ ok: true; message: string }>;
   listChatSessions: () => Promise<ChatSessionRecord[]>;
   createChatSession: (name: string) => Promise<ChatSessionRecord>;
+  renameChatSession: (id: string, name: string) => Promise<ChatSessionRecord>;
   selectChatSession: (id: string) => Promise<void>;
   getChatHistory: () => Promise<ChatExchange[]>;
   sendChatMessage: (message: string) => Promise<ChatExchange>;

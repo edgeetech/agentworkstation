@@ -15,15 +15,41 @@ export type RoutingCandidate = {
   intelligence: IntelligencePort;
 };
 
+export type RoutingAttempt = {
+  candidate: RoutingCandidate;
+  status: 'available' | 'limited' | 'unavailable';
+  error?: string;
+};
+
+export function promptNeedsStrongerReasoning(request: ModelRequest): boolean {
+  const prompt = [...request.messages].reverse().find((message) => message.role === 'user')?.content.trim() ?? '';
+  if (!prompt) return false;
+
+  let score = 0;
+  if (prompt.length >= 500) score += 1;
+  if (prompt.length >= 1_200) score += 1;
+  if ((prompt.match(/\?/g) ?? []).length >= 2) score += 1;
+  if (/```|\b(stack trace|error log|diff|architecture|migration|security)\b/i.test(prompt)) score += 1;
+  if (/\b(analy[sz]e|audit|compare|investigate|review|refactor|implement|debug|research|plan|reason|trade-?offs?|codebase|repository)\b/i.test(prompt)) score += 2;
+  return score >= 2;
+}
+
 export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
   private lastDecision: RoutingDecision | null = null;
 
   constructor(
     private readonly policy: RoutingPolicy,
-    private readonly local: RoutingCandidate | null,
-    private readonly external: RoutingCandidate | null,
-    private readonly attemptTimeouts = { localMs: 30_000, externalMs: 90_000 },
-  ) {}
+    local: RoutingCandidate | RoutingCandidate[] | null,
+    external: RoutingCandidate | RoutingCandidate[] | null,
+    private readonly attemptTimeouts = { localMs: 90_000, externalMs: 120_000 },
+    private readonly onAttempt?: (attempt: RoutingAttempt) => void,
+  ) {
+    this.local = local ? (Array.isArray(local) ? local : [local]) : [];
+    this.external = external ? (Array.isArray(external) ? external : [external]) : [];
+  }
+
+  private readonly local: RoutingCandidate[];
+  private readonly external: RoutingCandidate[];
 
   getLastDecision(): RoutingDecision | null {
     return this.lastDecision;
@@ -34,7 +60,7 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
     context: ModelExecutionContext,
     signal: AbortSignal,
   ): Promise<ModelResponse> {
-    const candidates = this.candidatesFor(context);
+    const candidates = this.candidatesFor(request, context);
     if (candidates.length === 0) {
       throw new Error(this.policy === 'local_only'
         ? 'Local only requires a configured local model.'
@@ -60,13 +86,20 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
           AbortSignal.any([signal, attemptAbort.signal]),
         );
         if (response.type === 'error') throw new Error(response.error);
+        this.onAttempt?.({ candidate, status: 'available' });
         this.lastDecision = this.decisionFor(candidate, context, index > 0);
         return response;
       } catch (error) {
         if (signal.aborted) throw error;
-        failures.push(`${candidate.label}: ${attemptAbort.signal.aborted
+        const message = attemptAbort.signal.aborted
           ? 'route attempt timed out'
-          : error instanceof Error ? error.message : String(error)}`);
+          : error instanceof Error ? error.message : String(error);
+        this.onAttempt?.({
+          candidate,
+          status: /HTTP\s+429\b/i.test(message) ? 'limited' : 'unavailable',
+          error: message,
+        });
+        failures.push(`${candidate.label}: ${message}`);
       } finally {
         clearTimeout(timeout);
       }
@@ -74,12 +107,17 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
     throw new Error(`All eligible intelligence routes failed. ${failures.join(' | ')}`);
   }
 
-  private candidatesFor(context: ModelExecutionContext): RoutingCandidate[] {
-    if (this.policy === 'local_only') return this.local ? [this.local] : [];
-    if (this.policy === 'adaptive' && (context.taskKind === 'audit' || context.taskKind === 'proposal')) {
-      return [this.external, this.local].filter((candidate): candidate is RoutingCandidate => candidate !== null);
+  private candidatesFor(request: ModelRequest, context: ModelExecutionContext): RoutingCandidate[] {
+    if (this.policy === 'local_only') return this.local;
+    const prefersExternal = context.taskKind === 'audit'
+      || context.taskKind === 'proposal'
+      || (context.taskKind === 'chat' && promptNeedsStrongerReasoning(request));
+    if (this.policy === 'adaptive' && prefersExternal) {
+      const [preferredExternal, ...otherExternal] = this.external;
+      return [preferredExternal, ...this.local, ...otherExternal]
+        .filter((candidate): candidate is RoutingCandidate => candidate !== undefined);
     }
-    return [this.local, this.external].filter((candidate): candidate is RoutingCandidate => candidate !== null);
+    return [...this.local, ...this.external];
   }
 
   private decisionFor(
@@ -93,9 +131,9 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
     } else if (this.policy === 'local_only') {
       reason = 'Local only kept this request on this device.';
     } else if (this.policy === 'adaptive' && candidate.location === 'external') {
-      reason = `Adaptive selected the connected provider for ${context.taskKind ?? 'this task'} reasoning.`;
+      reason = `Automatic routing selected an allowed provider for ${context.taskKind ?? 'this task'} reasoning.`;
     } else if (this.policy === 'adaptive') {
-      reason = 'Adaptive kept this request local because the task is suitable for the local model.';
+      reason = 'Automatic routing selected an allowed local model for this request.';
     } else {
       reason = 'Local first selected the local model; the cloud fallback was not needed.';
     }
