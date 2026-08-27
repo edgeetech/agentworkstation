@@ -47,8 +47,11 @@ The desktop must therefore provide:
 - progressive disclosure so endpoint/workspace administration does not compete
   visually with the primary Career Agent workflow;
 - ChatGPT-style conversation focus: chats and their rename/delete actions live in the
-  primary sidebar, the transcript uses the full remaining viewport, and
-  `Ctrl+Enter` sends without exposing routing controls or per-turn model choices;
+  primary sidebar, the transcript uses the full remaining viewport, Enter sends,
+  Shift+Enter adds a line, and a compact label reports the model chosen without
+  exposing routing controls or per-turn model choices;
+- per-conversation Standard and Autopilot behavior modes, where Autopilot avoids
+  routine confirmation but never bypasses authorization, safety, or write approval;
 - an Intelligence Status page and compact Intelligence Access summary showing
   discovered on-device Ollama models, Ollama Cloud models, connected provider
   CLIs, agent compatibility, availability, and observed usage limits;
@@ -4400,8 +4403,10 @@ application menu is disabled.
 
 Conversation management now follows the same agent-first desktop pattern:
 saved chats and their rename/delete actions live in the primary left sidebar, the
-transcript owns the remaining viewport, `Ctrl+Enter` sends, and the composer
-remains stable. Provider quota failures are
+transcript owns the remaining viewport, Enter sends, Shift+Enter adds a line, and
+the composer retains each chat's Standard or Autopilot behavior mode. Every
+successful assistant turn shows the model actually selected, while routing remains
+automatic. Provider quota failures are
 rendered as accessible in-transcript Career Agent errors, preserving both the
 submitted prompt and the original HTTP status/message.
 

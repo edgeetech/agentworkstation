@@ -41,8 +41,8 @@ this file after every completed capability or newly discovered blocker.
 
 - The takeover started from synchronized `HEAD`/`origin/main` commit `235bd25`
   and preserved the full Copilot implementation before correcting and extending it.
-- Local review verification of the resulting implementation passes: lint; 91 tests across
-  25 files; 6 architecture tests; renderer/Electron builds; the visible mock
+- Local review verification of the resulting implementation passes: lint; 94 tests across
+  26 files; 6 architecture tests; renderer/Electron builds; the visible mock
   Electron E2E; a real Ollama chat/audit/proposal run with `qwen2.5:3b`; and a
   production audit with 0 vulnerabilities.
 - No pull request is open.
@@ -68,11 +68,16 @@ this file after every completed capability or newly discovered blocker.
   Routine chat prefers allowed local intelligence; complex review, analysis,
   debugging, architecture, and planning prompts prefer an allowed cloud
   provider. Audit and Improve continue to prefer stronger eligible reasoning.
-  Route records remain persisted internally but are intentionally absent from
-  normal conversation UI.
+  Route records remain persisted internally; normal conversation UI shows only
+  a compact per-response model label while keeping routing automatic.
 - ✅ Career chat now uses the primary viewport in a ChatGPT-style layout. Saved
-  chats, new-chat, rename, and confirmed delete actions live in the app sidebar;
-  `Ctrl+Enter` sends; Enter remains available for composing multiline prompts.
+  chats, new-chat, rename, and confirmed delete actions live in the app sidebar.
+  Enter sends and Shift+Enter composes multiline prompts.
+- ✅ Each saved conversation persists a Standard or Autopilot behavior mode.
+  Autopilot proceeds with safe routine assumptions and asks only for material
+  decisions, while authorization boundaries and write approval remain mandatory.
+- ✅ Every completed assistant turn shows the model actually selected by the
+  automatic router; pending turns show a compact choosing-model state.
 - ✅ Intelligence Access now summarizes available on-device models, Ollama Cloud
   models, and connected provider CLIs. A dedicated Intelligence Status page
   lists every discovered candidate with compatibility and current availability.
@@ -113,9 +118,10 @@ this file after every completed capability or newly discovered blocker.
   audit evidence and Improve targeting; Project evidence is the safe default.
 - ✅ Electron disables the native application menu, removing the redundant
   File/Edit/View/Window toolbar.
-- ✅ Final regression verification passes: 91 tests across 25 files, 6
+- ✅ Final regression verification passes: 94 tests across 26 files, 6
   architecture tests, renderer/Electron builds, mock Electron E2E (including
-  no native menu, conversation rename/delete, in-chat thinking, and HTTP 429
+  conversation modes, Enter/Shift+Enter, model status, rename/delete, in-chat
+  thinking, no native menu, and HTTP 429
   presentation), real `qwen2.5:3b` Electron E2E (including in-chat thinking
   state and disabled Send), and a production audit with 0 vulnerabilities. The
   environment-gated real Ollama Playwright case remains skipped by default.
@@ -147,8 +153,9 @@ this file after every completed capability or newly discovered blocker.
   local/cloud candidates cannot be invoked. Within those boundaries, routine
   chat prefers local while prompt complexity, Career Audit, and Improve prefer
   an eligible connected provider. Failover remains bounded. Provider, model,
-  location, fallback state, and reason persist for diagnostics across restart
-  but are not exposed as controls or conversational noise.
+  location, fallback state, and reason persist for diagnostics across restart.
+  Only the selected model is exposed as compact response metadata, never as a
+  per-prompt control or routing decision burden.
 - ✅ The inherited Improve path now uses the same provider-neutral router as Chat
   and Career Audit; selecting a delegated provider no longer falls through to
   the local OpenAI-compatible adapter.

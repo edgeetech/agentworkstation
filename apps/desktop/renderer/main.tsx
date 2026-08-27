@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import type {
   ChatExchange,
+  ChatMode,
   ChatSessionRecord,
   DemoAudit,
   EndpointConfig,
@@ -161,6 +162,7 @@ function App(): JSX.Element {
   const workspaceReady = workspaces.length > 0;
   const ready = endpointReady && workspaceReady;
   const realReady = realEndpointReady && workspaceReady;
+  const selectedChatSession = sessions.find((session) => session.selected);
   const profileWorkspaces = useMemo(
     () => workspaces.filter((w) => w.kind !== "project"),
     [workspaces],
@@ -320,6 +322,14 @@ function App(): JSX.Element {
     });
   };
 
+  const changeChatMode = (mode: ChatMode): void => {
+    if (!selectedChatSession || selectedChatSession.mode === mode) return;
+    void task("chat", async () => {
+      await api.setChatSessionMode(selectedChatSession.id, mode);
+      await loadChat();
+    });
+  };
+
   const sendChat = (): void => {
     const prompt = chatInput.trim();
     if (!prompt || !ready || busy === "chat") return;
@@ -455,6 +465,17 @@ function App(): JSX.Element {
                     ))}
                   </div>
                 ) : null}
+                {exchange.route ? (
+                  <div
+                    className="model-status"
+                    aria-label={`Model used: ${exchange.route.location === "simulated" ? "Simulated demo" : exchange.route.modelId}`}
+                    title={exchange.route.reason}
+                  >
+                    <i aria-hidden="true" />
+                    <span>{exchange.route.location === "simulated" ? "Simulated demo" : exchange.route.modelId}</span>
+                    {exchange.route.fallback ? <em>fallback</em> : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}
@@ -475,19 +496,35 @@ function App(): JSX.Element {
               <div className="message assistant thinking-message" role="status" aria-label="Career Agent is thinking">
                 <span>Career Agent</span>
                 <div className="thinking-dots" aria-hidden="true"><i /><i /><i /></div>
+                <div className="model-status choosing-model"><i aria-hidden="true" /><span>Choosing model</span></div>
               </div>
             </div>
           ) : null}
         </div>
       </div>
       <div className="composer-dock">
+        <div className="composer-toolbar">
+          <label className="chat-mode-picker">
+            <span>Mode</span>
+            <select
+              aria-label="Conversation mode"
+              value={selectedChatSession?.mode ?? "standard"}
+              onChange={(event) => changeChatMode(event.target.value as ChatMode)}
+              disabled={!selectedChatSession || busy === "chat"}
+            >
+              <option value="standard">Standard</option>
+              <option value="autopilot">Autopilot</option>
+            </select>
+          </label>
+          <span>{selectedChatSession?.mode === "autopilot" ? "Proceeds unless an important decision is needed" : "Asks when the request is materially ambiguous"}</span>
+        </div>
         <form className="composer" onSubmit={(event) => { event.preventDefault(); sendChat(); }}>
           <textarea
             aria-label="Message Career Agent"
             value={chatInput}
             onChange={(event) => setChatInput(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && event.ctrlKey) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 sendChat();
               }
@@ -496,7 +533,7 @@ function App(): JSX.Element {
           />
           <button className="primary send-icon" aria-label="Send message" disabled={!ready || busy === "chat"}>↑</button>
         </form>
-        <small>Ctrl + Enter to send</small>
+        <small>Enter to send · Shift + Enter for a new line</small>
       </div>
     </div>
   );

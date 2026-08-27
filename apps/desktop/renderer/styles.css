@@ -757,6 +757,36 @@ textarea {
   margin-top: 10px;
   color: #758079;
 }
+.model-status {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  margin-top: 11px;
+  padding: 4px 8px;
+  border: 1px solid #deded9;
+  border-radius: 999px;
+  background: #f7f7f4;
+  color: #6f6f6a;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.model-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #718378;
+}
+.model-status em {
+  color: #888883;
+  font-style: normal;
+}
+.choosing-model {
+  margin-top: 8px;
+}
+.choosing-model i {
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
 .thinking-message {
   min-width: 112px;
 }
@@ -790,7 +820,8 @@ textarea {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .thinking-dots i {
+  .thinking-dots i,
+  .choosing-model i {
     animation: none;
     opacity: 0.65;
   }
@@ -808,6 +839,33 @@ textarea {
   z-index: 1;
   padding: 14px 24px 18px;
   background: linear-gradient(to bottom, rgba(255, 255, 255, 0), #fff 22%);
+}
+.composer-toolbar {
+  width: min(100%, 820px);
+  margin: 0 auto 7px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #7b7b76;
+  font-size: 10px;
+}
+.chat-mode-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #686863;
+  font-weight: 700;
+}
+.chat-mode-picker select {
+  min-width: 104px;
+  padding: 5px 24px 5px 9px;
+  border: 1px solid #d8d8d3;
+  border-radius: 999px;
+  background-color: #f7f7f4;
+  color: #3f3f3b;
+  font-size: 11px;
 }
 .composer-dock .composer {
   width: min(100%, 820px);

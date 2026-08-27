@@ -4,9 +4,12 @@ export type AgentSession = {
   startedAt: string;
 };
 
+export type ChatMode = 'standard' | 'autopilot';
+
 export type ChatSession = {
   id: string;
   name: string;
+  mode: ChatMode;
   createdAt: string;
   updatedAt: string;
 };

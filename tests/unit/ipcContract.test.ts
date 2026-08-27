@@ -3,6 +3,7 @@ import {
   IPC_CHANNELS,
   parseCreateChatSessionInput,
   parseRenameChatSessionInput,
+  parseSetChatSessionModeInput,
   parseChatMessageInput,
   parseEndpointConfigInput,
   parseProposeProfileUpdateInput,
@@ -16,6 +17,7 @@ describe('ipc contract', () => {
     expect(IPC_CHANNELS.approvePendingAction).toBe('agentWorkstation:approvePendingAction');
     expect(IPC_CHANNELS.testEndpointConnection).toBe('agentWorkstation:testEndpointConnection');
     expect(IPC_CHANNELS.renameChatSession).toBe('agentWorkstation:renameChatSession');
+    expect(IPC_CHANNELS.setChatSessionMode).toBe('agentWorkstation:setChatSessionMode');
     expect(IPC_CHANNELS.deleteChatSession).toBe('agentWorkstation:deleteChatSession');
   });
 
@@ -55,6 +57,9 @@ describe('ipc contract', () => {
     expect(parseCreateChatSessionInput({ name: 'Session A' })).toEqual({ name: 'Session A' });
     expect(parseRenameChatSessionInput({ id: 'chat-1', name: 'Renamed chat' }))
       .toEqual({ id: 'chat-1', name: 'Renamed chat' });
+    expect(parseSetChatSessionModeInput({ id: 'chat-1', mode: 'autopilot' }))
+      .toEqual({ id: 'chat-1', mode: 'autopilot' });
+    expect(() => parseSetChatSessionModeInput({ id: 'chat-1', mode: 'unrestricted' })).toThrow();
     expect(parseProposeProfileUpdateInput({
       workspaceId: 'profile',
       targetPath: 'README.md',

@@ -97,9 +97,12 @@ export type ChatExchange = {
   route?: RoutingDecision;
 };
 
+export type ChatMode = 'standard' | 'autopilot';
+
 export type ChatSessionRecord = {
   id: string;
   name: string;
+  mode: ChatMode;
   createdAt: string;
   updatedAt: string;
   selected: boolean;
@@ -120,6 +123,7 @@ export type AgentWorkstationApi = {
   listChatSessions: () => Promise<ChatSessionRecord[]>;
   createChatSession: (name: string) => Promise<ChatSessionRecord>;
   renameChatSession: (id: string, name: string) => Promise<ChatSessionRecord>;
+  setChatSessionMode: (id: string, mode: ChatMode) => Promise<ChatSessionRecord>;
   deleteChatSession: (id: string) => Promise<void>;
   selectChatSession: (id: string) => Promise<void>;
   getChatHistory: () => Promise<ChatExchange[]>;

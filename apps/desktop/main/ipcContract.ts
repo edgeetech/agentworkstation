@@ -15,6 +15,7 @@ export const IPC_CHANNELS = {
   listChatSessions: 'agentWorkstation:listChatSessions',
   createChatSession: 'agentWorkstation:createChatSession',
   renameChatSession: 'agentWorkstation:renameChatSession',
+  setChatSessionMode: 'agentWorkstation:setChatSessionMode',
   deleteChatSession: 'agentWorkstation:deleteChatSession',
   selectChatSession: 'agentWorkstation:selectChatSession',
   getChatHistory: 'agentWorkstation:getChatHistory',
@@ -72,6 +73,11 @@ const createChatSessionSchema = z.object({
 const renameChatSessionSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1).max(120),
+});
+
+const setChatSessionModeSchema = z.object({
+  id: z.string().min(1),
+  mode: z.enum(['standard', 'autopilot']),
 });
 
 const proposeProfileUpdateSchema = z.object({
@@ -133,6 +139,10 @@ export function parseCreateChatSessionInput(value: unknown): { name: string } {
 
 export function parseRenameChatSessionInput(value: unknown): { id: string; name: string } {
   return renameChatSessionSchema.parse(value);
+}
+
+export function parseSetChatSessionModeInput(value: unknown): { id: string; mode: 'standard' | 'autopilot' } {
+  return setChatSessionModeSchema.parse(value);
 }
 
 export function parseProposeProfileUpdateInput(value: unknown): {

@@ -85,6 +85,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
       create table if not exists chat_sessions (
         id text primary key,
         name text not null,
+        mode text not null default 'standard' check (mode in ('standard', 'autopilot')),
         createdAt text not null,
         updatedAt text not null,
         selected integer not null default 0 check (selected in (0, 1))
@@ -107,6 +108,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
     this.db.exec('create unique index if not exists one_chat_message_sequence_per_session on chat_messages(sessionId, sequence)');
     this.ensurePendingActionColumns();
     this.ensureWorkspaceColumns();
+    this.ensureChatSessionColumns();
     this.ensureChatMessageColumns();
   }
 
@@ -223,16 +225,17 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   async saveChatSession(session: ChatSession): Promise<void> {
     this.db.prepare(`
-      insert into chat_sessions (id, name, createdAt, updatedAt)
-      values (?, ?, ?, ?)
+      insert into chat_sessions (id, name, mode, createdAt, updatedAt)
+      values (?, ?, ?, ?, ?)
       on conflict(id) do update set
         name = excluded.name,
+        mode = excluded.mode,
         updatedAt = excluded.updatedAt
-    `).run(session.id, session.name, session.createdAt, session.updatedAt);
+    `).run(session.id, session.name, session.mode, session.createdAt, session.updatedAt);
   }
 
   async listChatSessions(): Promise<ChatSession[]> {
-    return this.db.prepare('select id, name, createdAt, updatedAt from chat_sessions order by updatedAt desc, id desc')
+    return this.db.prepare('select id, name, mode, createdAt, updatedAt from chat_sessions order by updatedAt desc, id desc')
       .all() as ChatSession[];
   }
 
@@ -255,7 +258,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
   }
 
   async getSelectedChatSession(): Promise<ChatSession | null> {
-    const row = this.db.prepare('select id, name, createdAt, updatedAt from chat_sessions where selected = 1')
+    const row = this.db.prepare('select id, name, mode, createdAt, updatedAt from chat_sessions where selected = 1')
       .get() as ChatSession | undefined;
     return row ?? null;
   }
@@ -308,6 +311,13 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
     const existing = new Set(columns.map((column) => column.name));
     if (!existing.has('kind')) {
       this.db.exec("alter table workspace_registrations add column kind text not null default 'project'");
+    }
+  }
+
+  private ensureChatSessionColumns(): void {
+    const columns = this.db.prepare('pragma table_info(chat_sessions)').all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === 'mode')) {
+      this.db.exec("alter table chat_sessions add column mode text not null default 'standard'");
     }
   }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { SqlitePersistence } from '../../src/infrastructure/persistence/sqlite';
 
 describe('sqlite persistence', () => {
@@ -82,7 +83,7 @@ describe('sqlite persistence', () => {
     const db = new SqlitePersistence(file);
     const now = new Date().toISOString();
 
-    await db.saveChatSession({ id: 'session-1', name: 'Career Agent Session', createdAt: now, updatedAt: now });
+    await db.saveChatSession({ id: 'session-1', name: 'Career Agent Session', mode: 'autopilot', createdAt: now, updatedAt: now });
     await db.selectChatSession('session-1');
     await db.appendChatMessage({
       sessionId: 'session-1',
@@ -102,7 +103,9 @@ describe('sqlite persistence', () => {
       createdAt: now,
     });
 
-    await expect(db.getSelectedChatSession()).resolves.toMatchObject({ id: 'session-1', name: 'Career Agent Session' });
+    await expect(db.getSelectedChatSession()).resolves.toMatchObject({
+      id: 'session-1', name: 'Career Agent Session', mode: 'autopilot',
+    });
     await expect(db.listChatSessions()).resolves.toHaveLength(1);
     await expect(db.listChatMessages('session-1')).resolves.toEqual([
       expect.objectContaining({ sequence: 1, role: 'user', content: 'hello' }),
@@ -116,5 +119,27 @@ describe('sqlite persistence', () => {
     await expect(db.listChatSessions()).resolves.toEqual([]);
     await expect(db.listChatMessages('session-1')).resolves.toEqual([]);
     await expect(db.getSelectedChatSession()).resolves.toBeNull();
+  });
+
+  it('migrates existing chat sessions to standard mode', async () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aw-')), 'legacy.db');
+    const legacy = new DatabaseSync(file);
+    legacy.exec(`
+      create table chat_sessions (
+        id text primary key,
+        name text not null,
+        createdAt text not null,
+        updatedAt text not null,
+        selected integer not null default 0 check (selected in (0, 1))
+      );
+      insert into chat_sessions (id, name, createdAt, updatedAt, selected)
+      values ('legacy-chat', 'Existing chat', 'now', 'now', 1);
+    `);
+    legacy.close();
+
+    const db = new SqlitePersistence(file);
+    await expect(db.getSelectedChatSession()).resolves.toMatchObject({
+      id: 'legacy-chat', mode: 'standard',
+    });
   });
 });

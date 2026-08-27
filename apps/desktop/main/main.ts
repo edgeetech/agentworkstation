@@ -3,12 +3,14 @@ import { join } from 'node:path';
 import { ApprovalService } from '../../../src/application/approvals';
 import { CareerAgentLoader } from '../../../src/application/agents/CareerAgentLoader';
 import { CareerAuditService } from '../../../src/application/careerAudit';
+import { buildChatModeInstructions } from '../../../src/application/chatMode';
 import { ContextBuilder } from '../../../src/application/context';
 import { AgentRuntime } from '../../../src/application/intelligence';
 import { AdaptiveRoutingIntelligenceAdapter, type RoutingAttempt } from '../../../src/application/intelligenceRouting';
 import { PolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
 import { buildWorkspaceAccessInstructions, type WorkspaceRegistration } from '../../../src/application/workspaces';
 import type { IntelligencePort, ModelMessage, RoutingDecision, RoutingPolicy } from '../../../src/domain/intelligence';
+import type { ChatSession } from '../../../src/domain/sessions';
 import { FileSystemAgentDefinitionSource } from '../../../src/infrastructure/agents/FileSystemAgentDefinitionSource';
 import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../src/infrastructure/filesystem/filesystemTools';
 import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
@@ -33,6 +35,7 @@ import {
   parseProposeProfileUpdateInput,
   parseRegisterWorkspaceInput,
   parseRenameChatSessionInput,
+  parseSetChatSessionModeInput,
   parseRejectPendingActionInput,
   parseWorkspaceIdInput,
 } from './ipcContract';
@@ -430,7 +433,7 @@ async function listProviderConnections(): Promise<Array<{
   });
 }
 
-async function ensureChatSession(): Promise<{ id: string; name: string; createdAt: string; updatedAt: string }> {
+async function ensureChatSession(): Promise<ChatSession> {
   const db = getPersistence();
   const selected = await db.getSelectedChatSession();
   if (selected) return selected;
@@ -440,7 +443,13 @@ async function ensureChatSession(): Promise<{ id: string; name: string; createdA
     return sessions[0];
   }
   const now = new Date().toISOString();
-  const created = { id: `session-${Date.now()}`, name: 'Career Agent Session', createdAt: now, updatedAt: now };
+  const created: ChatSession = {
+    id: `session-${Date.now()}`,
+    name: 'Career Agent Session',
+    mode: 'standard',
+    createdAt: now,
+    updatedAt: now,
+  };
   await db.saveChatSession(created);
   await db.selectChatSession(created.id);
   return created;
@@ -545,7 +554,7 @@ async function runChatMessage(message: string): Promise<{
       systemPrompt: `${agent.systemPrompt}\n\n===\n\n${buildWorkspaceAccessInstructions(
         workspaceContext.registrations,
         workspaceContext.selectedWorkspaceId,
-      )}`,
+      )}\n\n===\n\n${buildChatModeInstructions(chatSession.mode)}`,
       memoryContext: agent.memoryContext,
       conversation: nextConversation,
       tools: toolRegistry.getModelTools(),
@@ -902,6 +911,7 @@ function registerIpcHandlers(): void {
     const created = {
       id: `session-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       name,
+      mode: 'standard' as const,
       createdAt: now,
       updatedAt: now,
     };
@@ -920,6 +930,17 @@ function registerIpcHandlers(): void {
     await db.saveChatSession(renamed);
     const selected = await db.getSelectedChatSession();
     return { ...renamed, selected: selected?.id === id };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.setChatSessionMode, async (_event, payload: unknown) => {
+    const { id, mode } = parseSetChatSessionModeInput(payload);
+    const db = getPersistence();
+    const existing = (await db.listChatSessions()).find((sessionValue) => sessionValue.id === id);
+    if (!existing) throw new Error(`Unknown chat session: ${id}`);
+    const updated = { ...existing, mode, updatedAt: new Date().toISOString() };
+    await db.saveChatSession(updated);
+    const selected = await db.getSelectedChatSession();
+    return { ...updated, selected: selected?.id === id };
   });
 
   ipcMain.handle(IPC_CHANNELS.deleteChatSession, async (_event, payload: unknown) => {

@@ -71,15 +71,25 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
     const composer = page.getByLabel('Message Career Agent');
+    const conversationMode = page.getByLabel('Conversation mode');
+    await expect(conversationMode).toHaveValue('standard');
+    await conversationMode.selectOption('autopilot');
+    await expect(page.getByText('Proceeds unless an important decision is needed')).toBeVisible();
+    await composer.fill('First line');
+    await composer.press('Shift+Enter');
+    await composer.type('Second line');
+    await expect(composer).toHaveValue('First line\nSecond line');
     await composer.fill('What changed that should appear in my profile?');
     const sendButton = page.getByRole('button', { name: 'Send message' });
-    await composer.press('Control+Enter');
+    await composer.press('Enter');
     await expect(sendButton).toBeDisabled();
     await expect(page.getByLabel('Career Agent is thinking')).toBeVisible();
     await expect(page.getByText(/Mock response:/).first()).toBeVisible();
+    await expect(page.getByLabel('Model used: Simulated demo').first()).toBeVisible();
     const conversationSidebar = page.getByLabel('Career Agent conversations');
     await expect(conversationSidebar).toBeVisible();
     await conversationSidebar.getByRole('button', { name: 'New chat' }).click();
+    await expect(conversationMode).toHaveValue('standard');
     await conversationSidebar.locator('.session-open', { hasText: 'New chat' }).hover();
     await conversationSidebar.getByRole('button', { name: 'Chat options for New chat' }).click();
     await conversationSidebar.getByRole('menuitem', { name: 'Rename' }).click();
@@ -88,6 +98,7 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await renameInput.press('Enter');
     await expect(conversationSidebar.getByRole('button', { name: 'Second conversation', exact: true })).toHaveAttribute('aria-current', 'true');
     await conversationSidebar.getByRole('button', { name: 'Career Agent Session', exact: true }).click();
+    await expect(conversationMode).toHaveValue('autopilot');
     await expect(page.getByText('What changed that should appear in my profile?', { exact: true })).toBeVisible();
     await conversationSidebar.locator('.session-open', { hasText: 'Second conversation' }).hover();
     await conversationSidebar.getByRole('button', { name: 'Chat options for Second conversation' }).click();
