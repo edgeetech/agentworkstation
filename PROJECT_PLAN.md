@@ -46,7 +46,7 @@ The desktop must therefore provide:
   modern Grok/Ollama chat clients, reserving colour for semantic status only;
 - progressive disclosure so endpoint/workspace administration does not compete
   visually with the primary Career Agent workflow;
-- ChatGPT-style conversation focus: chats and their rename action live in the
+- ChatGPT-style conversation focus: chats and their rename/delete actions live in the
   primary sidebar, the transcript uses the full remaining viewport, and
   `Ctrl+Enter` sends without exposing routing controls or per-turn model choices;
 - an Intelligence Status page and compact Intelligence Access summary showing
@@ -4399,7 +4399,7 @@ structured evidence-routing field with a Project default; and Electron's native
 application menu is disabled.
 
 Conversation management now follows the same agent-first desktop pattern:
-saved chats and their rename actions live in the primary left sidebar, the
+saved chats and their rename/delete actions live in the primary left sidebar, the
 transcript owns the remaining viewport, `Ctrl+Enter` sends, and the composer
 remains stable. Provider quota failures are
 rendered as accessible in-transcript Career Agent errors, preserving both the

@@ -16,6 +16,7 @@ describe('ipc contract', () => {
     expect(IPC_CHANNELS.approvePendingAction).toBe('agentWorkstation:approvePendingAction');
     expect(IPC_CHANNELS.testEndpointConnection).toBe('agentWorkstation:testEndpointConnection');
     expect(IPC_CHANNELS.renameChatSession).toBe('agentWorkstation:renameChatSession');
+    expect(IPC_CHANNELS.deleteChatSession).toBe('agentWorkstation:deleteChatSession');
   });
 
   it('validates approve payload', () => {

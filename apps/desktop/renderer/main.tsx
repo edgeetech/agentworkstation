@@ -125,6 +125,8 @@ function App(): JSX.Element {
   const conversation = useRef<HTMLDivElement>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameSessionName, setRenameSessionName] = useState("");
+  const [sessionMenuId, setSessionMenuId] = useState<string | null>(null);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [proposalWorkspace, setProposalWorkspace] = useState("");
   const [targetPath, setTargetPath] = useState("README.md");
   const [recommendation, setRecommendation] = useState(
@@ -305,6 +307,16 @@ function App(): JSX.Element {
       await loadChat();
       setRenamingSessionId(null);
       setRenameSessionName("");
+    });
+  };
+
+  const deleteChat = (sessionId: string): void => {
+    void task("chat", async () => {
+      await api.deleteChatSession(sessionId);
+      await loadChat();
+      setDeletingSessionId(null);
+      setSessionMenuId(null);
+      setChatFailure(null);
     });
   };
 
@@ -1149,7 +1161,15 @@ function App(): JSX.Element {
             <ul className="session-list" aria-label="Saved conversations">
               {sessions.map((session) => (
                 <li className={session.selected ? "active" : ""} key={session.id}>
-                  {renamingSessionId === session.id ? (
+                  {deletingSessionId === session.id ? (
+                    <div className="session-delete-confirm" role="group" aria-live="assertive" aria-label={`Delete ${session.name}?`}>
+                      <span>Delete this chat?</span>
+                      <div>
+                        <button type="button" autoFocus onClick={() => setDeletingSessionId(null)}>Cancel</button>
+                        <button type="button" className="danger" onClick={() => deleteChat(session.id)} disabled={busy === "chat"}>Delete</button>
+                      </div>
+                    </div>
+                  ) : renamingSessionId === session.id ? (
                     <form onSubmit={(event) => { event.preventDefault(); saveChatName(session.id); }}>
                       <input
                         aria-label={`Rename ${session.name}`}
@@ -1171,11 +1191,29 @@ function App(): JSX.Element {
                         await api.selectChatSession(session.id);
                         await loadChat();
                         setChatFailure(null);
+                        setSessionMenuId(null);
                       })}>{session.name}</button>
-                      <button type="button" className="session-rename" aria-label={`Rename ${session.name}`} onClick={() => {
-                        setRenamingSessionId(session.id);
-                        setRenameSessionName(session.name);
-                      }}>···</button>
+                      <button
+                        type="button"
+                        className="session-actions-trigger"
+                        aria-label={`Chat options for ${session.name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={sessionMenuId === session.id}
+                        onClick={() => setSessionMenuId((current) => current === session.id ? null : session.id)}
+                      >···</button>
+                      {sessionMenuId === session.id ? (
+                        <div className="session-actions-menu" role="menu">
+                          <button type="button" role="menuitem" onClick={() => {
+                            setSessionMenuId(null);
+                            setRenamingSessionId(session.id);
+                            setRenameSessionName(session.name);
+                          }}>Rename</button>
+                          <button type="button" role="menuitem" className="danger" onClick={() => {
+                            setSessionMenuId(null);
+                            setDeletingSessionId(session.id);
+                          }}>Delete</button>
+                        </div>
+                      ) : null}
                     </>
                   )}
                 </li>

@@ -111,5 +111,10 @@ describe('sqlite persistence', () => {
     await expect(db.listChatMessages('session-1')).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ sequence: 2, routingJson: '{\"providerId\":\"ollama\"}' }),
     ]));
+
+    await db.deleteChatSession('session-1');
+    await expect(db.listChatSessions()).resolves.toEqual([]);
+    await expect(db.listChatMessages('session-1')).resolves.toEqual([]);
+    await expect(db.getSelectedChatSession()).resolves.toBeNull();
   });
 });

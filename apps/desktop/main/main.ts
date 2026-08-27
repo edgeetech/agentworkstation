@@ -922,6 +922,15 @@ function registerIpcHandlers(): void {
     return { ...renamed, selected: selected?.id === id };
   });
 
+  ipcMain.handle(IPC_CHANNELS.deleteChatSession, async (_event, payload: unknown) => {
+    const { id } = parseWorkspaceIdInput(payload);
+    const db = getPersistence();
+    const existing = (await db.listChatSessions()).find((sessionValue) => sessionValue.id === id);
+    if (!existing) throw new Error(`Unknown chat session: ${id}`);
+    await db.deleteChatSession(id);
+    await ensureChatSession();
+  });
+
   ipcMain.handle(IPC_CHANNELS.selectChatSession, async (_event, payload: unknown) => {
     const { id } = parseWorkspaceIdInput(payload);
     await getPersistence().selectChatSession(id);

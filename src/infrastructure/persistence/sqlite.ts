@@ -236,6 +236,14 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
       .all() as ChatSession[];
   }
 
+  async deleteChatSession(id: string): Promise<void> {
+    const remove = this.db.transaction((sessionId: string) => {
+      this.db.prepare('delete from chat_messages where sessionId = ?').run(sessionId);
+      this.db.prepare('delete from chat_sessions where id = ?').run(sessionId);
+    });
+    remove(id);
+  }
+
   async selectChatSession(id: string): Promise<void> {
     const select = this.db.transaction((sessionId: string) => {
       const exists = this.db.prepare('select 1 from chat_sessions where id = ?').get(sessionId);

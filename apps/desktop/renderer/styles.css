@@ -517,6 +517,7 @@ textarea {
   display: none;
 }
 .session-list li {
+  position: relative;
   min-width: 0;
   list-style: none;
   display: grid;
@@ -544,7 +545,7 @@ textarea {
 .session-list li.active .session-open {
   color: #fff;
 }
-.session-rename {
+.session-actions-trigger {
   width: 30px;
   height: 30px;
   padding: 0;
@@ -554,14 +555,69 @@ textarea {
   color: #8d8d8d;
   opacity: 0;
 }
-.session-list li:hover .session-rename,
-.session-list li.active .session-rename,
-.session-rename:focus-visible {
+.session-list li:hover .session-actions-trigger,
+.session-list li.active .session-actions-trigger,
+.session-actions-trigger:focus-visible,
+.session-actions-trigger[aria-expanded="true"] {
   opacity: 1;
 }
-.session-rename:hover {
+.session-actions-trigger:hover {
   background: #303030;
   color: #fff;
+}
+.session-actions-menu {
+  position: absolute;
+  z-index: 3;
+  top: 34px;
+  right: 2px;
+  width: 116px;
+  padding: 5px;
+  border: 1px solid #3a3a3a;
+  border-radius: 9px;
+  background: #202020;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 35%);
+}
+.session-actions-menu button {
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #e5e5e5;
+  text-align: left;
+}
+.session-actions-menu button:hover {
+  background: #303030;
+}
+.session-actions-menu button.danger,
+.session-delete-confirm button.danger {
+  color: #ff9a9a;
+}
+.session-delete-confirm {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #4b3030;
+  border-radius: 8px;
+  background: #241b1b;
+  color: #f1f1f1;
+  font-size: 12px;
+}
+.session-delete-confirm div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.session-delete-confirm button {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: #333;
+  color: #eee;
+}
+.session-delete-confirm button:hover {
+  background: #414141;
 }
 .session-list form {
   grid-column: 1 / -1;

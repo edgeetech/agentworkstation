@@ -120,6 +120,7 @@ export type AgentWorkstationApi = {
   listChatSessions: () => Promise<ChatSessionRecord[]>;
   createChatSession: (name: string) => Promise<ChatSessionRecord>;
   renameChatSession: (id: string, name: string) => Promise<ChatSessionRecord>;
+  deleteChatSession: (id: string) => Promise<void>;
   selectChatSession: (id: string) => Promise<void>;
   getChatHistory: () => Promise<ChatExchange[]>;
   sendChatMessage: (message: string) => Promise<ChatExchange>;

@@ -71,7 +71,7 @@ this file after every completed capability or newly discovered blocker.
   Route records remain persisted internally but are intentionally absent from
   normal conversation UI.
 - ✅ Career chat now uses the primary viewport in a ChatGPT-style layout. Saved
-  chats, new-chat, and inline rename actions live in the app sidebar;
+  chats, new-chat, rename, and confirmed delete actions live in the app sidebar;
   `Ctrl+Enter` sends; Enter remains available for composing multiline prompts.
 - ✅ Intelligence Access now summarizes available on-device models, Ollama Cloud
   models, and connected provider CLIs. A dedicated Intelligence Status page
@@ -97,8 +97,9 @@ this file after every completed capability or newly discovered blocker.
 - ✅ Chat shows the pending user turn plus an accessible in-conversation Career
   Agent thinking indicator. The Send message label stays stable and the button
   remains disabled until the response finishes.
-- ✅ Saved conversations now live in a dedicated chat sidebar instead of a
-  control strip above the transcript. The chat workspace is viewport-bounded,
+- ✅ Saved conversations now live in a dedicated chat sidebar, with an actions
+  menu for renaming or safely deleting a chat, instead of a control strip above
+  the transcript. The chat workspace is viewport-bounded,
   the composer stays in place, and the transcript is the single visible primary
   scroll region.
 - ✅ Provider failures remain in conversational context. Electron-wrapped HTTP
@@ -114,7 +115,7 @@ this file after every completed capability or newly discovered blocker.
   File/Edit/View/Window toolbar.
 - ✅ Final regression verification passes: 91 tests across 25 files, 6
   architecture tests, renderer/Electron builds, mock Electron E2E (including
-  no native menu, the conversation sidebar, in-chat thinking, and HTTP 429
+  no native menu, conversation rename/delete, in-chat thinking, and HTTP 429
   presentation), real `qwen2.5:3b` Electron E2E (including in-chat thinking
   state and disabled Send), and a production audit with 0 vulnerabilities. The
   environment-gated real Ollama Playwright case remains skipped by default.
