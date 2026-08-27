@@ -7,6 +7,7 @@ import { CareerAgentLoader } from '../../src/application/agents/CareerAgentLoade
 import { FileSystemAgentDefinitionSource } from '../../src/infrastructure/agents/FileSystemAgentDefinitionSource';
 import { ToolRegistry, ToolExecutor, PolicyGate } from '../../src/application/tools';
 import { AgentRuntime } from '../../src/application/intelligence';
+import { buildWorkspaceAccessInstructions } from '../../src/application/workspaces';
 import type { IntelligencePort, ModelRequest } from '../../src/domain/intelligence';
 import { DefaultWorkspaceGateway } from '../../src/infrastructure/filesystem/workspaceGateway';
 import { gitLogTool } from '../../src/infrastructure/git/gitTools';
@@ -100,5 +101,62 @@ describe('Career Agent loader integration', () => {
     expect(modelRequests[1].tools?.[0].inputSchema).toMatchObject({
       required: ['workspaceId'],
     });
+  });
+
+  it('maps a named registered root to a non-selected workspace tool call', async () => {
+    const projectRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-path-mapping-'));
+    execFileSync('git', ['init'], { cwd: projectRepo });
+    execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: projectRepo });
+    execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: projectRepo });
+    fs.writeFileSync(path.join(projectRepo, 'README.md'), '# Mapped project');
+    execFileSync('git', ['add', '.'], { cwd: projectRepo });
+    execFileSync('git', ['commit', '-m', 'feat: mapped workspace evidence'], { cwd: projectRepo });
+
+    const registrations = [
+      { id: 'profile', rootPath: path.dirname(projectRepo), kind: 'profile' as const },
+      { id: 'project', rootPath: projectRepo, kind: 'project' as const },
+    ];
+    const requestLog: ModelRequest[] = [];
+    const intelligence: IntelligencePort = {
+      async execute(request) {
+        requestLog.push(request);
+        if (requestLog.length === 1) {
+          expect(request.messages[0]?.content).toContain(`"id":"project","rootPath":${JSON.stringify(projectRepo)}`);
+          expect(request.messages.at(-1)?.content).toContain(projectRepo);
+          return {
+            type: 'tool_call',
+            call: { id: 'call-mapped-log', toolName: 'git.log', input: { workspaceId: 'project', limit: 1 } },
+          };
+        }
+        return { type: 'text', content: 'Mapped project evidence inspected.' };
+      },
+    };
+    const gateway = new DefaultWorkspaceGateway(Object.fromEntries(
+      registrations.map((workspace) => [workspace.id, workspace.rootPath]),
+    ));
+    const registry = new ToolRegistry();
+    registry.register(gitLogTool);
+    const executor = new ToolExecutor(registry);
+    const runtime = new AgentRuntime(
+      intelligence,
+      {
+        execute: (toolName, input, context) => executor.execute(toolName, input, { ...context, workspaceGateway: gateway }),
+        getMetadata: (toolName) => executor.getMetadata(toolName),
+      },
+      new PolicyGate(),
+      { maxSteps: 3, maxToolCalls: 2, maxToolResultBytes: 64 * 1024, modelTimeoutMs: 10_000, toolTimeoutMs: 10_000 },
+    );
+
+    const result = await runtime.run({
+      messages: [
+        { role: 'system', content: buildWorkspaceAccessInstructions(registrations, 'profile') },
+        { role: 'user', content: `Inspect recent work in ${projectRepo}.` },
+      ],
+      tools: registry.getModelTools(),
+    }, { modelId: 'mock', executionMode: 'local_only', workspaceId: 'profile' }, new AbortController().signal);
+
+    expect(result).toBe('Mapped project evidence inspected.');
+    expect(requestLog[1]?.messages.find((message) => message.role === 'tool')?.content)
+      .toContain('mapped workspace evidence');
   });
 });

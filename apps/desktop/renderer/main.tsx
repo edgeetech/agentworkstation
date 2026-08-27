@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import type {
   ChatExchange,
@@ -80,6 +80,8 @@ function App(): JSX.Element {
   const [history, setHistory] = useState<ChatExchange[]>([]);
   const [sessions, setSessions] = useState<ChatSessionRecord[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [pendingChatInput, setPendingChatInput] = useState<string | null>(null);
+  const conversationEnd = useRef<HTMLDivElement>(null);
   const [sessionName, setSessionName] = useState("Career Agent Session");
   const [proposalWorkspace, setProposalWorkspace] = useState("");
   const [targetPath, setTargetPath] = useState("README.md");
@@ -192,6 +194,9 @@ function App(): JSX.Element {
       .then(setProviderConnections)
       .catch(() => setProviderConnections([]));
   }, [api]);
+  useEffect(() => {
+    if (pendingChatInput) conversationEnd.current?.scrollIntoView({ block: "nearest" });
+  }, [pendingChatInput]);
   const go = (next: View): void => {
     setView(next);
     setError(null);
@@ -344,7 +349,7 @@ function App(): JSX.Element {
           </label>
         </div>
         <div className="conversation" aria-live="polite">
-          {history.length === 0 ? (
+          {history.length === 0 && !pendingChatInput ? (
             <Empty
               title="Start with a concrete question"
               text="Try asking what important outcomes are missing from your profile."
@@ -373,6 +378,28 @@ function App(): JSX.Element {
               </div>
             ))
           )}
+          {pendingChatInput ? (
+            <div className="exchange pending-exchange">
+              <div className="message user">
+                <span>You</span>
+                <p>{pendingChatInput}</p>
+              </div>
+              <div
+                className="message assistant thinking-message"
+                role="status"
+                aria-label="Career Agent is thinking"
+              >
+                <span>Career Agent</span>
+                <div className="thinking-dots" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </div>
+                <small>Thinking…</small>
+              </div>
+            </div>
+          ) : null}
+          <div ref={conversationEnd} aria-hidden="true" />
         </div>
         <form
           className="composer"
@@ -380,11 +407,16 @@ function App(): JSX.Element {
             e.preventDefault();
             const prompt = chatInput.trim();
             if (!prompt || !ready) return;
+            setChatInput("");
+            setPendingChatInput(prompt);
             void task("chat", async () => {
-              const result = await api.sendChatMessage(prompt);
-              setHistory((old) => [...old, result]);
-              setChatInput("");
-              await loadChat();
+              try {
+                const result = await api.sendChatMessage(prompt);
+                setHistory((old) => [...old, result]);
+                await loadChat();
+              } finally {
+                setPendingChatInput(null);
+              }
             });
           }}
         >
@@ -395,7 +427,7 @@ function App(): JSX.Element {
             placeholder="Ask the Career Agent about your profile…"
           />
           <button className="primary" disabled={!ready || busy === "chat"}>
-            {busy === "chat" ? "Thinking…" : "Send message"}
+            Send message
           </button>
         </form>
       </section>
@@ -628,17 +660,19 @@ function App(): JSX.Element {
             />
           </label>
           <label>
-            <span>Purpose</span>
+            <span>Workspace role</span>
             <select
+              aria-label="Purpose"
               value={workspaceKind}
               onChange={(e) =>
                 setWorkspaceKind(e.target.value as typeof workspaceKind)
               }
             >
+              <option value="project">Project evidence (default)</option>
               <option value="profile">Professional profile</option>
-              <option value="project">Project evidence</option>
               <option value="cv">CV or résumé</option>
             </select>
+            <small>This role helps the Career Agent choose profile content or project activity as evidence.</small>
           </label>
         </div>
         <div className="actions">
@@ -750,6 +784,31 @@ function App(): JSX.Element {
         </div>
       ) : null}
       <section className="panel form settings">
+        {endpoint.mode === "local" ? (
+          <label>
+            <span>Execution policy</span>
+            <select
+              aria-label="Routing policy"
+              value={endpoint.routingPolicy ?? "local_only"}
+              onChange={(e) => setEndpoint((old) => ({
+                ...old,
+                routingPolicy: e.target.value as NonNullable<EndpointConfig["routingPolicy"]>,
+                configured: false,
+              }))}
+            >
+              <option value="local_only">Local only · never use cloud</option>
+              <option value="local_first">Local first · cloud only after local failure</option>
+              <option value="adaptive">Adaptive · choose by Career Agent task</option>
+            </select>
+            <small>
+              {endpoint.routingPolicy === "adaptive"
+                ? "Routine chat stays local; audit and improvement prefer the connected provider."
+                : endpoint.routingPolicy === "local_first"
+                  ? "Every request starts locally and may use the connected provider only if local inference fails."
+                  : "All model requests stay on this device. Provider fallback is blocked."}
+            </small>
+          </label>
+        ) : null}
         <label>
           <span>Mode</span>
           <select
@@ -793,44 +852,6 @@ function App(): JSX.Element {
             <option value="mock">Demo mode (simulated)</option>
           </select>
         </label>
-        {endpoint.mode === "local" ? (
-          <label>
-            <span>Execution policy</span>
-            <select
-              aria-label="Routing policy"
-              value={endpoint.routingPolicy ?? "local_only"}
-              onChange={(e) => setEndpoint((old) => ({
-                ...old,
-                routingPolicy: e.target.value as NonNullable<EndpointConfig["routingPolicy"]>,
-                configured: false,
-              }))}
-            >
-              <option value="local_only">Local only · never use cloud</option>
-              <option value="local_first">Local first · cloud only after local failure</option>
-              <option value="adaptive">Adaptive · choose by Career Agent task</option>
-            </select>
-            <small>
-              {endpoint.routingPolicy === "adaptive"
-                ? "Routine chat stays local; audit and improvement prefer the connected provider."
-                : endpoint.routingPolicy === "local_first"
-                  ? "Every request starts locally and may use the connected provider only if local inference fails."
-                  : "All model requests stay on this device. Provider fallback is blocked."}
-            </small>
-          </label>
-        ) : null}
-        {endpoint.mode === "local" ? <label>
-          <span>Endpoint URL</span>
-          <input
-            value={endpoint.baseUrl}
-            onChange={(e) =>
-              setEndpoint((old) => ({
-                ...old,
-                baseUrl: e.target.value,
-                configured: false,
-              }))
-            }
-          />
-        </label> : null}
         {endpoint.mode !== "mock" ? <label>
           <span>{endpoint.mode === "local" ? "Installed Ollama model" : "Provider model"}</span>
           {endpoint.mode === "local" && localModels.length > 0 ? (
@@ -912,19 +933,38 @@ function App(): JSX.Element {
           </div>
         ) : null}
         {endpoint.mode === "local" ? (
-          <div className="actions model-discovery">
-            <button
-              type="button"
-              disabled={modelDiscoveryBusy}
-              onClick={() => void loadLocalModels()}
-            >
-              {modelDiscoveryBusy ? "Finding models…" : "Refresh installed models"}
-            </button>
-            {modelDiscoveryError ? <small>{modelDiscoveryError}</small> : null}
-            {localModels.length > 0 ? (
-              <small>{localModels.length} installed model{localModels.length === 1 ? "" : "s"} found.</small>
-            ) : null}
-          </div>
+          <details className="settings-details">
+            <summary>Ollama connection details</summary>
+            <div className="details-content">
+              <label>
+                <span>Endpoint URL</span>
+                <input
+                  value={endpoint.baseUrl}
+                  onChange={(e) =>
+                    setEndpoint((old) => ({
+                      ...old,
+                      baseUrl: e.target.value,
+                      configured: false,
+                    }))
+                  }
+                />
+              </label>
+              <div className="actions model-discovery">
+                <button
+                  type="button"
+                  disabled={modelDiscoveryBusy}
+                  onClick={() => void loadLocalModels()}
+                >
+                  {modelDiscoveryBusy ? "Finding models…" : "Refresh installed models"}
+                </button>
+                {modelDiscoveryError ? <small>{modelDiscoveryError}</small> : null}
+                {localModels.length > 0 ? (
+                  <small>{localModels.length} installed model{localModels.length === 1 ? "" : "s"} found.</small>
+                ) : null}
+              </div>
+              <small>Default endpoint: http://localhost:11434</small>
+            </div>
+          </details>
         ) : null}
         {endpoint.mode === "delegated" || routingNeedsProvider ? (
           <div className="demo">
@@ -945,9 +985,6 @@ function App(): JSX.Element {
             </div>
           ))}
         </div>
-        {endpoint.mode === "local" ? <small>
-          Ollama default: http://localhost:11434 with a model you have already pulled.
-        </small> : null}
         <div className="actions">
           <button
             type="button"

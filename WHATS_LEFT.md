@@ -1,7 +1,7 @@
 # Agent Workstation: Complete MVP Handoff
 
 Last updated: 2026-08-27
-Implementation base audited at: `235bd25` on `main`; this document describes the complete takeover changes in the current `main` worktree/commit
+Implementation base audited at: `235bd25` on `main`; latest completed adaptive-routing increment: `05ec909`; this document describes the current verified `main` worktree
 Current objective: **Windows MVP complete; preserve the acceptance boundary and continue only with documented post-MVP work**
 
 ## Non-Negotiable Completion Boundary
@@ -36,7 +36,7 @@ this file after every completed capability or newly discovered blocker.
 
 - The takeover started from synchronized `HEAD`/`origin/main` commit `235bd25`
   and preserved the full Copilot implementation before correcting and extending it.
-- Local review verification of the resulting implementation passes: lint; 85 tests across
+- Local review verification of the resulting implementation passes: lint; 88 tests across
   25 files; 6 architecture tests; renderer/Electron builds; the visible mock
   Electron E2E; a real Ollama chat/audit/proposal run with `qwen2.5:3b`; and a
   production audit with 0 vulnerabilities.
@@ -56,7 +56,26 @@ this file after every completed capability or newly discovered blocker.
 
 - ✅ The complete Windows MVP acceptance flow is implemented. The hands-on gaps
   that reopened MVP—mock readiness, model discovery/capability gating, provider
-  connections, and adaptive routing—are now closed.
+  connections, adaptive routing, workspace-path discoverability, and final
+  desktop interaction polish—are now closed.
+- ✅ Ordinary chat now receives a trusted, bounded mapping of the registered
+  workspace ID to its root path and structured role. A user can name a
+  registered Windows path and the model can translate it to the exact ID needed
+  by filesystem/Git tools; the gateway still rejects unknown IDs, absolute tool
+  paths, traversal, and symlink escape.
+- ✅ Chat shows the pending user turn plus an accessible in-conversation Career
+  Agent thinking indicator. The Send message label stays stable and the button
+  remains disabled until the response finishes.
+- ✅ Model Settings puts execution policy first, keeps installed-model selection
+  prominent, and moves endpoint/discovery details into a collapsed Ollama
+  connection section. Workspace role remains structured because it controls
+  audit evidence and Improve targeting; Project evidence is the safe default.
+- ✅ Electron disables the native application menu, removing the redundant
+  File/Edit/View/Window toolbar.
+- ✅ Final regression verification passes: 88 tests across 25 files, 6
+  architecture tests, renderer/Electron builds, mock Electron E2E (including
+  no native menu), real `qwen2.5:3b` Electron E2E (including in-chat thinking
+  state and disabled Send), and a production audit with 0 vulnerabilities.
 - ✅ The desktop now has a neutral, agent-first shell with an agent library,
   Career Agent-scoped navigation, first-run readiness, and clear task flows.
 - ✅ Local inference is the default; mock mode is an explicitly labelled demo.

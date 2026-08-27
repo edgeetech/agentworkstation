@@ -4356,6 +4356,14 @@ desktop acceptance are complete. The app now supports explicit Local only,
 Local first, and Adaptive policies; provider/model/reason visibility; real
 Ollama chat/audit/proposal execution; and persisted human-approved changes.
 
+Final hands-on MVP feedback is also incorporated: chat displays an in-thread
+thinking state while Send remains disabled; registered root paths are mapped to
+their exact workspace IDs in trusted model context without widening filesystem
+access; execution policy and model selection lead the simplified settings flow;
+Ollama connection details use progressive disclosure; workspace role remains a
+structured evidence-routing field with a Project default; and Electron's native
+application menu is disabled.
+
 Codex/Copilot should execute the live checklist in `WHATS_LEFT.md` from top to
 bottom and continue across checkpoint commits until every Section 4 success
 criterion and the Section 39 Windows critical path passes in Electron.

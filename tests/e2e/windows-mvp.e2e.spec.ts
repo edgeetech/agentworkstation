@@ -21,12 +21,18 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
   const appDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-e2e-appdata-'));
   const launch = async () => electron.launch({
     args: ['.'], cwd: path.resolve('.'),
-    env: { ...process.env, AW_RENDERER_MODE: 'file', AW_USER_DATA_PATH: appDataRoot },
+    env: {
+      ...process.env,
+      AW_RENDERER_MODE: 'file',
+      AW_USER_DATA_PATH: appDataRoot,
+      AW_MOCK_RESPONSE_DELAY_MS: '300',
+    },
   });
 
   const firstRun = await launch();
   try {
     const page = await firstRun.firstWindow();
+    expect(await firstRun.evaluate(({ Menu }) => Menu.getApplicationMenu())).toBeNull();
     await expect(page.getByText('Agent Workstation').first()).toBeVisible();
     await expect(page.getByRole('heading', { name: /Turn real project work/ })).toBeVisible();
     await page.locator('.agent-picker').click();
@@ -60,7 +66,10 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
     await page.getByLabel('Message Career Agent').fill('What changed that should appear in my profile?');
-    await page.getByRole('button', { name: 'Send message' }).click();
+    const sendButton = page.getByRole('button', { name: 'Send message' });
+    await sendButton.click();
+    await expect(sendButton).toBeDisabled();
+    await expect(page.getByLabel('Career Agent is thinking')).toBeVisible();
     await expect(page.getByText(/Mock response:/).first()).toBeVisible();
     await expect(page.getByText('Simulation').first()).toBeVisible();
     await expect(page.getByText(/no AI model was used/i).first()).toBeVisible();

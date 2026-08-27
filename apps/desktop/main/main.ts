@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, session } from 'electron';
 import { join } from 'node:path';
 import { ApprovalService } from '../../../src/application/approvals';
 import { CareerAgentLoader } from '../../../src/application/agents/CareerAgentLoader';
@@ -7,6 +7,7 @@ import { ContextBuilder } from '../../../src/application/context';
 import { AgentRuntime } from '../../../src/application/intelligence';
 import { AdaptiveRoutingIntelligenceAdapter } from '../../../src/application/intelligenceRouting';
 import { PolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
+import { buildWorkspaceAccessInstructions, type WorkspaceRegistration } from '../../../src/application/workspaces';
 import type { IntelligencePort, ModelMessage, RoutingDecision, RoutingPolicy } from '../../../src/domain/intelligence';
 import { FileSystemAgentDefinitionSource } from '../../../src/infrastructure/agents/FileSystemAgentDefinitionSource';
 import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../src/infrastructure/filesystem/filesystemTools';
@@ -48,8 +49,23 @@ class DesktopMockIntelligenceAdapter implements IntelligencePort {
   async execute(
     request: { messages: ModelMessage[] },
     _context: { modelId: string; executionMode: 'local_only' },
-    _signal: AbortSignal,
+    signal: AbortSignal,
   ): Promise<{ type: 'text'; content: string }> {
+    const delayMs = Number(process.env.AW_MOCK_RESPONSE_DELAY_MS ?? 0);
+    if (Number.isFinite(delayMs) && delayMs > 0) {
+      signal.throwIfAborted();
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = (): void => {
+          clearTimeout(timeout);
+          reject(signal.reason);
+        };
+        const timeout = setTimeout(() => {
+          signal.removeEventListener('abort', onAbort);
+          resolve();
+        }, Math.min(delayMs, 2_000));
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
+    }
     const lastUserMessage = [...request.messages].reverse().find((message) => message.role === 'user');
     const content = lastUserMessage?.content ?? '';
     return { type: 'text', content: `Mock response: ${content}` };
@@ -68,7 +84,11 @@ function getCareerAgentDirectory(): string {
     : join(process.cwd(), 'src', 'agents', 'career');
 }
 
-async function ensureWorkspaceSelection(): Promise<{ selectedWorkspaceId: string; gateway: DefaultWorkspaceGateway }> {
+async function ensureWorkspaceSelection(): Promise<{
+  selectedWorkspaceId: string;
+  registrations: WorkspaceRegistration[];
+  gateway: DefaultWorkspaceGateway;
+}> {
   const db = getPersistence();
   const workspaces = await db.listWorkspaces();
   if (workspaces.length === 0) throw new Error('No workspace configured');
@@ -76,7 +96,7 @@ async function ensureWorkspaceSelection(): Promise<{ selectedWorkspaceId: string
   if (!selected) throw new Error('No workspace configured');
   const all = await db.listWorkspaces();
   const roots = Object.fromEntries(all.map((workspace) => [workspace.id, workspace.rootPath]));
-  return { selectedWorkspaceId: selected.id, gateway: new DefaultWorkspaceGateway(roots) };
+  return { selectedWorkspaceId: selected.id, registrations: all, gateway: new DefaultWorkspaceGateway(roots) };
 }
 
 async function approvals(): Promise<{ service: ApprovalService; workspaceId: string }> {
@@ -401,7 +421,10 @@ async function runChatMessage(message: string): Promise<{
   const nextConversation = [...persistedConversation, { role: 'user' as const, content: message }];
   const built = contextBuilder.buildRequest(
     {
-      systemPrompt: agent.systemPrompt,
+      systemPrompt: `${agent.systemPrompt}\n\n===\n\n${buildWorkspaceAccessInstructions(
+        workspaceContext.registrations,
+        workspaceContext.selectedWorkspaceId,
+      )}`,
       memoryContext: agent.memoryContext,
       conversation: nextConversation,
       tools: toolRegistry.getModelTools(),
@@ -838,6 +861,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   const isDev = !app.isPackaged;
+  Menu.setApplicationMenu(null);
   registerIpcHandlers();
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
