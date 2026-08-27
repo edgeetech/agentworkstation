@@ -13,7 +13,7 @@
     "electron:dev": "concurrently -k \"npm run dev\" \"npm:electron:start\"",
     "electron:start": "npm run electron:build-main && electron .",
     "electron:prepare": "npm run build && npm run electron:build-main",
-    "electron:pack": "npm run electron:prepare && electron-builder --win nsis",
+    "electron:pack": "npm run electron:prepare && electron-builder --win nsis --publish never",
     "test": "vitest run --environment node",
     "test:watch": "vitest --environment node",
     "lint": "eslint .",

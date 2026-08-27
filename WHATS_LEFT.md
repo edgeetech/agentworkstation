@@ -321,11 +321,13 @@ Status update (2026-08-27):
   Ollama acceptance, and production audit pass locally.
 - `electron:pack` now invokes `electron-builder`, includes Career Agent files via
   `extraResources`, and no longer depends on `process.cwd()` when packaged.
-- Remaining blocker: both `release` and a clean `release-build` output fail at
-  Electron extraction with `EPERM: operation not permitted, rename
-  '...win-unpacked.tmp' -> '...win-unpacked'` on this PC. Re-run packaging in CI
-  or after resolving the local Windows filesystem/security lock, then smoke-test
-  the produced installer before declaring the release artifact complete.
+- GitHub Actions successfully built the NSIS executable and blockmap; its first
+  attempt then failed because electron-builder implicitly tried to publish
+  without a GitHub token. `electron:pack` now passes `--publish never`, leaving
+  publication to the explicit artifact-upload step.
+- Remaining release gate: confirm the corrected CI run uploads the installer,
+  then smoke-test that artifact. Local packaging still hits `EPERM` while
+  renaming `win-unpacked.tmp`, so CI is the authoritative clean packaging host.
 
 ## Out of MVP Scope
 
