@@ -2,7 +2,7 @@ import type { AgentDefinition } from './agents/types';
 import { ContextBuilder, type ContextBudget } from './context';
 import type { AgentRunResult } from './intelligence';
 import type { WorkspaceRegistryPort } from './workspaces';
-import type { ExecutionMode, ModelMessage, ModelRequest, ModelToolDefinition, SourceReference } from '@domain/intelligence';
+import type { ExecutionMode, ModelMessage, ModelRequest, ModelToolDefinition, SourceReference, TaskKind } from '@domain/intelligence';
 
 export type CareerAuditResult = AgentRunResult & {
   workspaceIds: string[];
@@ -34,6 +34,7 @@ export class CareerAuditService {
         modelId: string;
         executionMode: ExecutionMode;
         workspaceId: string;
+        taskKind?: TaskKind;
       }, signal: AbortSignal): Promise<AgentRunResult>;
     },
     private readonly contextBuilder: ContextBuilder,
@@ -45,6 +46,7 @@ export class CareerAuditService {
     userMessage: string;
     modelId: string;
     executionMode?: ExecutionMode;
+    taskKind?: TaskKind;
     tools?: ModelToolDefinition[];
     preloadedEvidence?: {
       messages: ModelMessage[];
@@ -75,6 +77,7 @@ export class CareerAuditService {
       modelId: input.modelId,
       executionMode: input.executionMode ?? 'local_only',
       workspaceId: selected.id,
+      taskKind: input.taskKind,
     }, signal);
 
     return {

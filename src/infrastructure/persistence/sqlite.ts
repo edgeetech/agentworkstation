@@ -66,6 +66,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
         targetPath text not null,
         proposedContent text not null,
         diff text not null default '',
+        routingJson text,
         decidedAt text,
         rejectionReason text
       )
@@ -98,6 +99,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
         role text not null,
         content text not null,
         sourceReferencesJson text not null default '[]',
+        routingJson text,
         createdAt text not null,
         foreign key(sessionId) references chat_sessions(id) on delete cascade
       )
@@ -105,15 +107,16 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
     this.db.exec('create unique index if not exists one_chat_message_sequence_per_session on chat_messages(sessionId, sequence)');
     this.ensurePendingActionColumns();
     this.ensureWorkspaceColumns();
+    this.ensureChatMessageColumns();
   }
 
   async savePendingAction(action: PendingAction): Promise<void> {
     const stmt = this.db.prepare(`
       insert into pending_actions (
         id, sessionId, createdAt, status, expectedOriginalHash,
-        workspaceId, proposedContentHash, targetPath, proposedContent, diff, decidedAt, rejectionReason
+        workspaceId, proposedContentHash, targetPath, proposedContent, diff, routingJson, decidedAt, rejectionReason
       )
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(id) do update set
         sessionId = excluded.sessionId,
         createdAt = excluded.createdAt,
@@ -124,6 +127,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
         targetPath = excluded.targetPath,
         proposedContent = excluded.proposedContent,
         diff = excluded.diff,
+        routingJson = excluded.routingJson,
         decidedAt = excluded.decidedAt,
         rejectionReason = excluded.rejectionReason
     `);
@@ -138,6 +142,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
       action.targetPath,
       action.proposedContent,
       action.diff,
+      action.routingJson ?? null,
       action.decidedAt ?? null,
       action.rejectionReason ?? null,
     );
@@ -249,14 +254,15 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   async appendChatMessage(input: Omit<ChatMessage, 'id'>): Promise<ChatMessage> {
     const result = this.db.prepare(`
-      insert into chat_messages (sessionId, sequence, role, content, sourceReferencesJson, createdAt)
-      values (?, ?, ?, ?, ?, ?)
+      insert into chat_messages (sessionId, sequence, role, content, sourceReferencesJson, routingJson, createdAt)
+      values (?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.sessionId,
       input.sequence,
       input.role,
       input.content,
       input.sourceReferencesJson,
+      input.routingJson ?? null,
       input.createdAt,
     );
     this.db.prepare('update chat_sessions set updatedAt = ? where id = ?').run(input.createdAt, input.sessionId);
@@ -268,7 +274,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   async listChatMessages(sessionId: string): Promise<ChatMessage[]> {
     return this.db.prepare(`
-      select id, sessionId, sequence, role, content, sourceReferencesJson, createdAt
+      select id, sessionId, sequence, role, content, sourceReferencesJson, routingJson, createdAt
       from chat_messages
       where sessionId = ?
       order by sequence asc, id asc
@@ -284,6 +290,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
       !existing.has('diff') ? "alter table pending_actions add column diff text not null default ''" : null,
       !existing.has('decidedAt') ? 'alter table pending_actions add column decidedAt text' : null,
       !existing.has('rejectionReason') ? 'alter table pending_actions add column rejectionReason text' : null,
+      !existing.has('routingJson') ? 'alter table pending_actions add column routingJson text' : null,
     ].filter((statement): statement is string => Boolean(statement));
     for (const statement of statements) this.db.exec(statement);
   }
@@ -293,6 +300,13 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
     const existing = new Set(columns.map((column) => column.name));
     if (!existing.has('kind')) {
       this.db.exec("alter table workspace_registrations add column kind text not null default 'project'");
+    }
+  }
+
+  private ensureChatMessageColumns(): void {
+    const columns = this.db.prepare('pragma table_info(chat_messages)').all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === 'routingJson')) {
+      this.db.exec('alter table chat_messages add column routingJson text');
     }
   }
 }

@@ -4349,21 +4349,20 @@ Before Release 0.1 completion:
 
 # 100. Current Delivery Decision
 
-**PROJECT STATUS: WINDOWS MVP IMPLEMENTATION IN PROGRESS**
+**PROJECT STATUS: WINDOWS MVP COMPLETE (2026-08-27)**
 
-The repository bootstrap and the Release 0.1-0.3 domain/application slices
-exist. The remaining work is product integration and real desktop acceptance,
-not another architecture spike.
+The repository bootstrap, Release 0.1-0.3 slices, product integration, and real
+desktop acceptance are complete. The app now supports explicit Local only,
+Local first, and Adaptive policies; provider/model/reason visibility; real
+Ollama chat/audit/proposal execution; and persisted human-approved changes.
 
 Codex/Copilot should execute the live checklist in `WHATS_LEFT.md` from top to
 bottom and continue across checkpoint commits until every Section 4 success
 criterion and the Section 39 Windows critical path passes in Electron.
 
-The historical instruction to stop at Release 0.1 is retired. Do not stop at
-Release 0.2, Release 0.3, or any internal milestone. Stop only when the complete
-Windows MVP is demonstrably usable, all automated gates pass, and the remaining
-items are explicitly outside MVP scope or require an unavailable external/manual
-environment.
+Completion evidence is maintained in `WHATS_LEFT.md`. Future work must preserve
+the Windows MVP acceptance suite and treat the remaining items as post-MVP or
+external/manual verification unless the product boundary is explicitly reopened.
 
 # 101. Commercial Product Architecture
 

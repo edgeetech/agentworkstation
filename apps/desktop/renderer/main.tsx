@@ -46,6 +46,20 @@ const sourceLabel = (
   source.workspaceId ??
   "Local evidence";
 
+const policyLabel = (policy: EndpointConfig["routingPolicy"]): string => ({
+  local_only: "Local only",
+  local_first: "Local first",
+  adaptive: "Adaptive",
+}[policy ?? "local_only"]);
+
+const RouteNote = ({ route }: { route?: ChatExchange["route"] }): JSX.Element | null => route ? (
+  <div className="source-row route-note">
+    <span>{route.location === "external" ? "Cloud route" : route.location === "simulated" ? "Simulation" : "Local route"}</span>
+    <strong>{route.providerLabel} · {route.modelId}</strong>
+    <small>{route.reason}</small>
+  </div>
+) : null;
+
 function App(): JSX.Element {
   const api = window.agentWorkstation;
   const [view, setView] = useState<View>("home");
@@ -60,6 +74,7 @@ function App(): JSX.Element {
     mode: "local",
     baseUrl: "http://localhost:11434",
     modelId: "llama3.1",
+    routingPolicy: "local_only",
     configured: false,
   });
   const [history, setHistory] = useState<ChatExchange[]>([]);
@@ -84,9 +99,11 @@ function App(): JSX.Element {
   const localEndpointReady =
     endpoint.configured === true && endpoint.mode === "local" && !localModelIncompatible;
   const delegatedConnection = providerConnections.find((provider) => provider.id === endpoint.providerId);
+  const routingNeedsProvider = endpoint.mode === "local" && endpoint.routingPolicy !== undefined && endpoint.routingPolicy !== "local_only";
+  const routingProviderReady = delegatedConnection?.installed === true && delegatedConnection.authenticated !== false;
   const delegatedEndpointReady = endpoint.configured === true && endpoint.mode === "delegated" &&
     delegatedConnection?.installed === true && delegatedConnection.authenticated !== false;
-  const realEndpointReady = localEndpointReady || delegatedEndpointReady;
+  const realEndpointReady = (localEndpointReady && (!routingNeedsProvider || routingProviderReady)) || delegatedEndpointReady;
   const demoConfigured =
     endpoint.configured === true && endpoint.mode === "mock";
   const endpointReady = realEndpointReady || demoSessionEnabled;
@@ -206,7 +223,7 @@ function App(): JSX.Element {
             {realReady
               ? endpoint.mode === "delegated"
                 ? `Using ${delegatedConnection?.label ?? endpoint.providerId} with explicit cloud permission`
-                : `Using ${endpoint.modelId} locally`
+                : `${policyLabel(endpoint.routingPolicy)} · ${endpoint.modelId}`
               : demoSessionEnabled
                 ? "No AI model is being used"
                 : `${Number(workspaceReady) + Number(realEndpointReady)} of 2 steps complete`}
@@ -342,6 +359,7 @@ function App(): JSX.Element {
                 <div className="message assistant">
                   <span>Career Agent</span>
                   <p>{exchange.assistantMessage}</p>
+                  <RouteNote route={exchange.route} />
                   {exchange.sourceReferences.length ? (
                     <div className="chips">
                       {exchange.sourceReferences.map((s, j) => (
@@ -433,6 +451,7 @@ function App(): JSX.Element {
             </div>
             <p>{audit.summary}</p>
             <div className="agent-output">{audit.result.content}</div>
+            <RouteNote route={audit.result.route} />
           </section>
           <section className="panel">
             <div className="section-heading">
@@ -551,6 +570,7 @@ function App(): JSX.Element {
             <h2>{action.targetPath}</h2>
             <p>{action.workspaceId}</p>
             <pre>{action.diff}</pre>
+            <RouteNote route={action.route} />
             <div className="actions">
               <button
                 className="primary"
@@ -745,13 +765,19 @@ function App(): JSX.Element {
                   mode: "delegated",
                   providerId,
                   modelId: provider?.defaultModel ?? "default",
+                  providerModelId: provider?.defaultModel ?? "default",
+                  routingPolicy: "adaptive",
                   configured: false,
                 }));
               } else {
                 setEndpoint((old) => ({
                   ...old,
                   mode: value as "mock" | "local",
-                  providerId: undefined,
+                  ...(value === "local" ? { routingPolicy: old.routingPolicy ?? "local_only" } : {
+                    providerId: undefined,
+                    providerModelId: undefined,
+                    routingPolicy: "local_only" as const,
+                  }),
                   configured: false,
                 }));
               }
@@ -767,6 +793,31 @@ function App(): JSX.Element {
             <option value="mock">Demo mode (simulated)</option>
           </select>
         </label>
+        {endpoint.mode === "local" ? (
+          <label>
+            <span>Execution policy</span>
+            <select
+              aria-label="Routing policy"
+              value={endpoint.routingPolicy ?? "local_only"}
+              onChange={(e) => setEndpoint((old) => ({
+                ...old,
+                routingPolicy: e.target.value as NonNullable<EndpointConfig["routingPolicy"]>,
+                configured: false,
+              }))}
+            >
+              <option value="local_only">Local only · never use cloud</option>
+              <option value="local_first">Local first · cloud only after local failure</option>
+              <option value="adaptive">Adaptive · choose by Career Agent task</option>
+            </select>
+            <small>
+              {endpoint.routingPolicy === "adaptive"
+                ? "Routine chat stays local; audit and improvement prefer the connected provider."
+                : endpoint.routingPolicy === "local_first"
+                  ? "Every request starts locally and may use the connected provider only if local inference fails."
+                  : "All model requests stay on this device. Provider fallback is blocked."}
+            </small>
+          </label>
+        ) : null}
         {endpoint.mode === "local" ? <label>
           <span>Endpoint URL</span>
           <input
@@ -815,6 +866,41 @@ function App(): JSX.Element {
             />
           )}
         </label> : null}
+        {routingNeedsProvider ? (
+          <div className="form-grid">
+            <label>
+              <span>Permitted cloud provider</span>
+              <select
+                aria-label="Permitted cloud provider"
+                value={endpoint.providerId ?? ""}
+                onChange={(e) => {
+                  const provider = providerConnections.find((item) => item.id === e.target.value);
+                  setEndpoint((old) => ({
+                    ...old,
+                    providerId: e.target.value || undefined,
+                    providerModelId: provider?.defaultModel ?? "default",
+                    configured: false,
+                  }));
+                }}
+              >
+                <option value="" disabled>Select a connected provider</option>
+                {providerConnections.map((provider) => (
+                  <option key={provider.id} value={provider.id} disabled={!provider.installed || provider.authenticated === false}>
+                    {provider.label} · {provider.installed ? "detected" : "not installed"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Provider model</span>
+              <input
+                aria-label="Provider model ID"
+                value={endpoint.providerModelId ?? delegatedConnection?.defaultModel ?? "default"}
+                onChange={(e) => setEndpoint((old) => ({ ...old, providerModelId: e.target.value, configured: false }))}
+              />
+            </label>
+          </div>
+        ) : null}
         {localModelIncompatible ? (
           <div className="demo">
             <strong>{endpoint.modelId} cannot run Career Agent workflows.</strong>
@@ -840,12 +926,13 @@ function App(): JSX.Element {
             ) : null}
           </div>
         ) : null}
-        {endpoint.mode === "delegated" ? (
+        {endpoint.mode === "delegated" || routingNeedsProvider ? (
           <div className="demo">
             <strong>{delegatedConnection?.label ?? "Provider"} sends bounded Career Agent context to the cloud.</strong>
             <span>
-              Routing reason: you explicitly selected this provider. Its CLI manages authentication;
-              Agent Workstation stores only provider and model IDs.
+              You explicitly selected {policyLabel(endpoint.routingPolicy)}. The actual provider, model,
+              fallback state, and routing reason are shown with every result. Its CLI manages authentication;
+              Agent Workstation stores only connection and model IDs.
             </span>
           </div>
         ) : null}
@@ -864,7 +951,7 @@ function App(): JSX.Element {
         <div className="actions">
           <button
             type="button"
-            disabled={busy === "endpoint"}
+            disabled={busy === "endpoint" || (routingNeedsProvider && !routingProviderReady)}
             onClick={() =>
               void task("endpoint", async () => {
                 const result = await api.testEndpointConnection(endpoint);
@@ -878,7 +965,7 @@ function App(): JSX.Element {
             className="primary"
             data-testid="save-endpoint"
             type="button"
-            disabled={busy === "endpoint"}
+            disabled={busy === "endpoint" || (routingNeedsProvider && !routingProviderReady)}
             onClick={() =>
               void task("endpoint", async () => {
                 await api.saveEndpointConfig(endpoint);
@@ -889,7 +976,7 @@ function App(): JSX.Element {
                     ? "Simulated demo configured but inactive. Enable it explicitly to run without AI."
                     : endpoint.mode === "delegated"
                       ? `${delegatedConnection?.label ?? "Provider"} connection saved.`
-                      : "Local model settings saved.",
+                      : `${policyLabel(endpoint.routingPolicy)} settings saved.`,
                 );
               })
             }

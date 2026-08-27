@@ -1,4 +1,22 @@
 export type ExecutionMode = 'local_only' | 'provider_allowed';
+export type RoutingPolicy = 'local_only' | 'local_first' | 'adaptive';
+export type TaskKind = 'chat' | 'audit' | 'proposal' | 'connection_test';
+
+export type RoutingDecision = {
+  policy: RoutingPolicy;
+  location: 'local' | 'external' | 'simulated';
+  providerId: string;
+  providerLabel: string;
+  modelId: string;
+  reason: string;
+  fallback: boolean;
+};
+
+export type ModelExecutionContext = {
+  modelId: string;
+  executionMode: ExecutionMode;
+  taskKind?: TaskKind;
+};
 
 export type SourceReference = {
   type: 'file' | 'git_commit' | 'git_diff' | 'git_status' | 'memory';
@@ -57,7 +75,7 @@ export type ModelResponse =
 export interface IntelligencePort {
   execute(
     request: ModelRequest,
-    context: { modelId: string; executionMode: ExecutionMode },
+    context: ModelExecutionContext,
     signal: AbortSignal,
   ): Promise<ModelResponse>;
 }

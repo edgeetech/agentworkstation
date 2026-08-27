@@ -62,6 +62,8 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await page.getByLabel('Message Career Agent').fill('What changed that should appear in my profile?');
     await page.getByRole('button', { name: 'Send message' }).click();
     await expect(page.getByText(/Mock response:/).first()).toBeVisible();
+    await expect(page.getByText('Simulation').first()).toBeVisible();
+    await expect(page.getByText(/no AI model was used/i).first()).toBeVisible();
 
     await page.locator('nav').getByRole('button', { name: /Career audit/ }).click();
     await page.getByRole('button', { name: 'Run career audit' }).click();
@@ -89,9 +91,11 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
     await expect(page.getByText('What changed that should appear in my profile?', { exact: true })).toBeVisible();
+    await expect(page.getByText('Simulation').first()).toBeVisible();
 
     await page.locator('nav').getByRole('button', { name: /Review changes/ }).click();
     await expect(page.getByText('PROPOSED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Simulation').last()).toBeVisible();
     await page.getByRole('button', { name: 'Approve and write' }).click();
     await expect(page.getByText('No changes waiting')).toBeVisible();
     expect(fs.readFileSync(path.join(profileRepo, 'README.md'), 'utf8')).toContain('Updated summary from e2e proposal');

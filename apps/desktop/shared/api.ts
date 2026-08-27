@@ -13,6 +13,7 @@ export type DemoAudit = {
     content: string;
     workspaceIds: string[];
     sourceReferences: SourceReference[];
+    route?: RoutingDecision;
   };
 };
 
@@ -23,6 +24,7 @@ export type PendingAction = {
   targetPath: string;
   diff: string;
   rejectionReason?: string;
+  route?: RoutingDecision;
 };
 
 export type WorkspaceRecord = {
@@ -37,7 +39,19 @@ export type EndpointConfig = {
   baseUrl: string;
   modelId: string;
   providerId?: string;
+  providerModelId?: string;
+  routingPolicy?: 'local_only' | 'local_first' | 'adaptive';
   configured?: boolean;
+};
+
+export type RoutingDecision = {
+  policy: 'local_only' | 'local_first' | 'adaptive';
+  location: 'local' | 'external' | 'simulated';
+  providerId: string;
+  providerLabel: string;
+  modelId: string;
+  reason: string;
+  fallback: boolean;
 };
 
 export type ProviderConnection = {
@@ -68,6 +82,7 @@ export type ChatExchange = {
   userMessage: string;
   assistantMessage: string;
   sourceReferences: SourceReference[];
+  route?: RoutingDecision;
 };
 
 export type ChatSessionRecord = {

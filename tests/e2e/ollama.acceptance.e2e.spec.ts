@@ -47,7 +47,7 @@ test('Career Agent reaches a real Ollama model through the desktop UI', async ()
       await page.getByLabel('Model ID').fill('qwen2.5:3b');
     }
     await page.getByRole('button', { name: 'Test connection' }).click();
-    await expect(page.getByText('Connected to qwen2.5:3b.')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText('Verified local model qwen2.5:3b. Requests cannot use cloud providers.')).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: 'Save model settings' }).click();
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
@@ -56,11 +56,14 @@ test('Career Agent reaches a real Ollama model through the desktop UI', async ()
     const answer = page.locator('.message.assistant').last();
     await expect(answer).toBeVisible({ timeout: 90_000 });
     await expect(answer).not.toContainText('Mock response:');
+    await expect(answer.getByText('Local route')).toBeVisible();
+    await expect(answer).toContainText('Local only kept this request on this device.');
 
     await page.locator('nav').getByRole('button', { name: /Career audit/ }).click();
     await page.getByRole('button', { name: 'Run career audit' }).click();
     await expect(page.getByText('Career audit completed.')).toBeVisible({ timeout: 120_000 });
     await expect(page.locator('.agent-output')).not.toContainText('Mock response:');
+    await expect(page.getByText('Local route').last()).toBeVisible();
     await expect(page.locator('.source-row').first()).toBeVisible();
     await expect(page.locator('.source-row').filter({ hasText: 'README.md' })).toHaveCount(1);
 

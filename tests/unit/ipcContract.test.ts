@@ -35,6 +35,10 @@ describe('ipc contract', () => {
     })).toEqual({
       mode: 'delegated', baseUrl: 'http://localhost:11434', modelId: 'default', providerId: 'codex',
     });
+    expect(parseEndpointConfigInput({
+      mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'qwen3:8b',
+      routingPolicy: 'adaptive', providerId: 'copilot', providerModelId: 'auto',
+    })).toMatchObject({ routingPolicy: 'adaptive', providerId: 'copilot', providerModelId: 'auto' });
     expect(parseChatMessageInput({ message: 'hello' })).toEqual({ message: 'hello' });
     expect(parseCreateChatSessionInput({ name: 'Session A' })).toEqual({ name: 'Session A' });
     expect(parseProposeProfileUpdateInput({
@@ -46,6 +50,9 @@ describe('ipc contract', () => {
     expect(() => parseEndpointConfigInput({ mode: 'unknown', baseUrl: '', modelId: '' })).toThrow();
     expect(() => parseEndpointConfigInput({
       mode: 'delegated', baseUrl: 'http://localhost:11434', modelId: 'default',
+    })).toThrow();
+    expect(() => parseEndpointConfigInput({
+      mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'qwen3:8b', routingPolicy: 'local_first',
     })).toThrow();
   });
 });

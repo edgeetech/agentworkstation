@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-27
 Implementation base audited at: `235bd25` on `main`; this document describes the complete takeover changes in the current `main` worktree/commit
-Current objective: **MVP reopened: complete model discovery, provider connections, and policy-visible adaptive routing**
+Current objective: **Windows MVP complete; preserve the acceptance boundary and continue only with documented post-MVP work**
 
 ## Non-Negotiable Completion Boundary
 
@@ -36,8 +36,8 @@ this file after every completed capability or newly discovered blocker.
 
 - The takeover started from synchronized `HEAD`/`origin/main` commit `235bd25`
   and preserved the full Copilot implementation before correcting and extending it.
-- Local review verification of the resulting implementation passes: lint; 80 tests across
-  24 files; 6 architecture tests; renderer/Electron builds; the visible mock
+- Local review verification of the resulting implementation passes: lint; 85 tests across
+  25 files; 6 architecture tests; renderer/Electron builds; the visible mock
   Electron E2E; a real Ollama chat/audit/proposal run with `qwen2.5:3b`; and a
   production audit with 0 vulnerabilities.
 - No pull request is open.
@@ -54,10 +54,9 @@ this file after every completed capability or newly discovered blocker.
 
 ## Windows MVP Completion Status
 
-- ⚠️ The original local-only Windows acceptance flow is implemented, but the
-  product MVP is reopened after hands-on validation exposed two missing product
-  boundaries: Mock mode could masquerade as readiness, and model/provider
-  selection had no discovery or adaptive intelligence.
+- ✅ The complete Windows MVP acceptance flow is implemented. The hands-on gaps
+  that reopened MVP—mock readiness, model discovery/capability gating, provider
+  connections, and adaptive routing—are now closed.
 - ✅ The desktop now has a neutral, agent-first shell with an agent library,
   Career Agent-scoped navigation, first-run readiness, and clear task flows.
 - ✅ Local inference is the default; mock mode is an explicitly labelled demo.
@@ -77,8 +76,20 @@ this file after every completed capability or newly discovered blocker.
   bounded, provider-appropriate timeouts and Codex ignores user configuration
   and rules so Agent Workstation remains the only tool boundary. Codex and Copilot
   non-interactive smoke calls succeeded. Claude is installed and reports an
-  authenticated `claude.ai` session, but its non-interactive smoke call hung and
-  remains unverified. Automatic Adaptive selection/fallback is still unfinished.
+  authenticated `claude.ai` session, but two isolated non-interactive smoke calls
+  timed out after 60 seconds without output. The app now reports delegated
+  timeouts cleanly and can fall back according to the selected policy; Claude
+  inference remains an external CLI/account-specific verification gap, not a
+  blocker for the Codex/Copilot provider MVP.
+- ✅ Adaptive v1 is complete. `Local only` cannot invoke an external candidate;
+  `Local first` starts with Ollama and uses the explicitly configured provider
+  only after failure or a bounded route timeout; `Adaptive` keeps routine chat
+  local and prefers the connected provider for Career Audit and Improve. The
+  actual provider, model, location, fallback state, and reason are displayed for
+  each result. Chat and proposal routing metadata persist across restart.
+- ✅ The inherited Improve path now uses the same provider-neutral router as Chat
+  and Career Audit; selecting a delegated provider no longer falls through to
+  the local OpenAI-compatible adapter.
 - ✅ Provider/Ollama fixes were pushed in `ee31a0a`; GitHub Actions run
   `33061294526` passed both the Windows quality gate (including Electron E2E and
   installer packaging) and the macOS compatibility gate.
@@ -109,8 +120,8 @@ this file after every completed capability or newly discovered blocker.
 
 ### A. Fix correctness and safety blockers first
 
-Status: safety work completed; installer artifact verification remains blocked
-by the local Windows `EPERM` extraction/rename failure described below.
+Status: ✅ Completed. Installer artifact verification later succeeded through
+the packaged application smoke described above.
 
 - Remove the arbitrary model-response-to-full-file fallback.
 - Stop overriding structured model proposals with a forced `README.md` body.
@@ -163,8 +174,7 @@ a post-MVP refinement.
 
 ### E. Strengthen desktop acceptance around the user experience
 
-Status: ✅ Completed for functional acceptance; installer smoke testing remains
-the release blocker.
+Status: ✅ Completed for functional acceptance and packaged installer smoke.
 
 - Rewrite the Electron E2E so workspace registration, endpoint configuration,
   audit execution, chat, proposal review, reject, approve, and restart recovery
@@ -356,7 +366,7 @@ Status update (2026-08-27):
   approved atomic write. Only the native directory dialog response is stubbed.
 - Optional `tests/e2e/ollama.acceptance.e2e.spec.ts` passes model connection,
   non-mock chat, audit, and structured proposal generation with `qwen2.5:3b`.
-- lint, architecture, 80-test Vitest suite, renderer/Electron compile, mock E2E,
+- lint, architecture, 85-test Vitest suite, renderer/Electron compile, mock E2E,
   Ollama acceptance, and production audit pass locally.
 - `electron:pack` now invokes `electron-builder`, includes Career Agent files via
   `extraResources`, and no longer depends on `process.cwd()` when packaged.

@@ -1,4 +1,4 @@
-import type { ExecutionMode, IntelligencePort, ModelRequest, SourceReference } from '@domain/intelligence';
+import type { ExecutionMode, IntelligencePort, ModelRequest, SourceReference, TaskKind } from '@domain/intelligence';
 import type { ToolMetadata } from '@domain/intelligence';
 
 export type ExecutionLimits = {
@@ -25,18 +25,22 @@ export class AgentRuntime {
     private readonly limits: ExecutionLimits,
   ) {}
 
-  async run(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId: string }, signal: AbortSignal): Promise<string> {
+  async run(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId: string; taskKind?: TaskKind }, signal: AbortSignal): Promise<string> {
     return (await this.runWithTrace(request, context, signal)).content;
   }
 
-  async runWithTrace(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId: string }, signal: AbortSignal): Promise<AgentRunResult> {
+  async runWithTrace(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId: string; taskKind?: TaskKind }, signal: AbortSignal): Promise<AgentRunResult> {
     let toolCalls = 0;
     const sourceReferences: SourceReference[] = [];
     for (let step = 0; step < this.limits.maxSteps; step += 1) {
       signal.throwIfAborted();
       const modelAbort = new AbortController();
       const response = await this.withTimeout(
-        () => this.intelligence.execute(request, { modelId: context.modelId, executionMode: context.executionMode }, AbortSignal.any([signal, modelAbort.signal])),
+        () => this.intelligence.execute(request, {
+          modelId: context.modelId,
+          executionMode: context.executionMode,
+          taskKind: context.taskKind,
+        }, AbortSignal.any([signal, modelAbort.signal])),
         this.limits.modelTimeoutMs,
         modelAbort,
         'Model timeout exceeded',

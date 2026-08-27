@@ -5,8 +5,9 @@ import { CareerAgentLoader } from '../../../src/application/agents/CareerAgentLo
 import { CareerAuditService } from '../../../src/application/careerAudit';
 import { ContextBuilder } from '../../../src/application/context';
 import { AgentRuntime } from '../../../src/application/intelligence';
+import { AdaptiveRoutingIntelligenceAdapter } from '../../../src/application/intelligenceRouting';
 import { PolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
-import type { IntelligencePort, ModelMessage } from '../../../src/domain/intelligence';
+import type { IntelligencePort, ModelMessage, RoutingDecision, RoutingPolicy } from '../../../src/domain/intelligence';
 import { FileSystemAgentDefinitionSource } from '../../../src/infrastructure/agents/FileSystemAgentDefinitionSource';
 import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../src/infrastructure/filesystem/filesystemTools';
 import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
@@ -92,31 +93,100 @@ type EndpointConfig = {
   baseUrl: string;
   modelId: string;
   providerId?: string;
+  providerModelId?: string;
+  routingPolicy?: RoutingPolicy;
   configured?: boolean;
 };
 
 async function getEndpointConfig(): Promise<EndpointConfig> {
   const raw = await getPersistence().getSetting(endpointSettingKey);
-  if (!raw) return { mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', configured: false };
+  if (!raw) return { mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', routingPolicy: 'local_only', configured: false };
   try {
     const parsed = JSON.parse(raw) as Partial<EndpointConfig>;
     if (parsed.mode !== 'mock' && parsed.mode !== 'local' && parsed.mode !== 'delegated') throw new Error('Invalid mode');
     if (!parsed.baseUrl || !parsed.modelId) throw new Error('Invalid endpoint config');
     if (parsed.mode === 'delegated' && !parsed.providerId) throw new Error('Invalid delegated provider');
+    const routingPolicy = parsed.routingPolicy ?? (parsed.mode === 'delegated' ? 'adaptive' : 'local_only');
+    if (routingPolicy !== 'local_only' && routingPolicy !== 'local_first' && routingPolicy !== 'adaptive') {
+      throw new Error('Invalid routing policy');
+    }
+    if (parsed.mode === 'local' && routingPolicy !== 'local_only' && !parsed.providerId) {
+      throw new Error('Cloud-permitting routing requires a provider');
+    }
     return {
       mode: parsed.mode,
       baseUrl: parsed.baseUrl,
       modelId: parsed.modelId,
       ...(parsed.providerId ? { providerId: parsed.providerId } : {}),
+      ...(parsed.providerModelId ? { providerModelId: parsed.providerModelId } : {}),
+      routingPolicy,
       configured: true,
     };
   } catch {
-    return { mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', configured: false };
+    return { mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', routingPolicy: 'local_only', configured: false };
   }
 }
 
 async function saveEndpointConfig(config: EndpointConfig): Promise<void> {
   await getPersistence().setSetting(endpointSettingKey, JSON.stringify(config));
+}
+
+function effectiveRoutingPolicy(endpoint: EndpointConfig): RoutingPolicy {
+  if (endpoint.mode === 'delegated') return 'adaptive';
+  return endpoint.routingPolicy ?? 'local_only';
+}
+
+function createRoutingIntelligence(endpoint: EndpointConfig): {
+  intelligence: IntelligencePort;
+  router: AdaptiveRoutingIntelligenceAdapter | null;
+} {
+  if (endpoint.mode === 'mock') return { intelligence: new DesktopMockIntelligenceAdapter(), router: null };
+  const local = endpoint.mode === 'local' ? {
+    id: 'ollama',
+    label: 'Ollama',
+    location: 'local' as const,
+    modelId: endpoint.modelId,
+    intelligence: new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway()),
+  } : null;
+  const external = endpoint.providerId ? {
+    id: endpoint.providerId,
+    label: getDelegatedProvider(endpoint.providerId).label,
+    location: 'external' as const,
+    modelId: endpoint.providerModelId ?? (endpoint.mode === 'delegated' ? endpoint.modelId : getDelegatedProvider(endpoint.providerId).defaultModel),
+    intelligence: new DelegatedCliIntelligenceAdapter(
+      getDelegatedProvider(endpoint.providerId),
+      new NodeCliProcessRunner(app.getPath('temp')),
+    ),
+  } : null;
+  const router = new AdaptiveRoutingIntelligenceAdapter(effectiveRoutingPolicy(endpoint), local, external);
+  return { intelligence: router, router };
+}
+
+function simulatedRoute(): RoutingDecision {
+  return {
+    policy: 'local_only', location: 'simulated', providerId: 'mock', providerLabel: 'Simulated demo',
+    modelId: 'mock', reason: 'Simulated demo was explicitly enabled; no AI model was used.', fallback: false,
+  };
+}
+
+async function probeIntelligence(
+  intelligence: IntelligencePort,
+  modelId: string,
+  executionMode: 'local_only' | 'provider_allowed',
+  timeoutMs: number,
+): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await intelligence.execute(
+      { messages: [{ role: 'user', content: 'Return the required JSON text envelope with content exactly OK.' }] },
+      { modelId, executionMode, taskKind: 'connection_test' },
+      controller.signal,
+    );
+    if (response.type !== 'text' || !response.content.trim()) throw new Error('The provider returned an empty response');
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function testEndpointConnection(config: EndpointConfig): Promise<{ ok: true; message: string }> {
@@ -134,29 +204,33 @@ async function testEndpointConnection(config: EndpointConfig): Promise<{ ok: tru
       // Non-Ollama OpenAI-compatible endpoints may not expose /api/show.
     }
   }
-  const adapter: IntelligencePort = config.mode === 'delegated'
-    ? new DelegatedCliIntelligenceAdapter(
-        getDelegatedProvider(config.providerId ?? ''),
-        new NodeCliProcessRunner(app.getPath('temp')),
-      )
-    : new OpenAICompatibleLocalAdapter(config.baseUrl, new DefaultNetworkGateway());
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.mode === 'delegated' ? 60_000 : 30_000);
-  let response;
-  try {
-    response = await adapter.execute(
-      { messages: [{ role: 'user', content: 'Return the required JSON text envelope with content exactly OK.' }] },
-      { modelId: config.modelId, executionMode: config.mode === 'local' ? 'local_only' : 'provider_allowed' },
-      controller.signal,
+  if (config.mode === 'local') {
+    await probeIntelligence(
+      new OpenAICompatibleLocalAdapter(config.baseUrl, new DefaultNetworkGateway()),
+      config.modelId,
+      'local_only',
+      30_000,
     );
-  } finally {
-    clearTimeout(timeout);
+    if (effectiveRoutingPolicy(config) !== 'local_only') {
+      const provider = getDelegatedProvider(config.providerId ?? '');
+      await probeIntelligence(
+        new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp'))),
+        config.providerModelId ?? provider.defaultModel,
+        'provider_allowed',
+        60_000,
+      );
+      return { ok: true, message: `Verified local model ${config.modelId} and ${provider.label} for ${effectiveRoutingPolicy(config).replace('_', ' ')}.` };
+    }
+    return { ok: true, message: `Verified local model ${config.modelId}. Requests cannot use cloud providers.` };
   }
-  if (response.type !== 'text' || !response.content.trim()) throw new Error('The provider returned an empty response');
-  const providerLabel = config.mode === 'delegated'
-    ? getDelegatedProvider(config.providerId ?? '').label
-    : config.modelId;
-  return { ok: true, message: `Connected to ${providerLabel}.` };
+  const provider = getDelegatedProvider(config.providerId ?? '');
+  await probeIntelligence(
+    new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp'))),
+    config.providerModelId ?? config.modelId,
+    'provider_allowed',
+    60_000,
+  );
+  return { ok: true, message: `Verified ${provider.label}.` };
 }
 
 async function assertEndpointWorkflowCompatible(endpoint: EndpointConfig): Promise<void> {
@@ -243,6 +317,7 @@ async function appendChatPair(
   userMessage: string,
   assistantMessage: string,
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>,
+  route: RoutingDecision,
 ): Promise<void> {
   const now = new Date().toISOString();
   const existing = await getPersistence().listChatMessages(sessionIdValue);
@@ -254,6 +329,7 @@ async function appendChatPair(
     role: 'user',
     content: userMessage,
     sourceReferencesJson: '[]',
+    routingJson: null,
     createdAt: now,
   });
   await getPersistence().appendChatMessage({
@@ -262,6 +338,7 @@ async function appendChatPair(
     role: 'assistant',
     content: assistantMessage,
     sourceReferencesJson: JSON.stringify(sourceReferences),
+    routingJson: JSON.stringify(route),
     createdAt: now,
   });
 }
@@ -270,6 +347,7 @@ async function getChatHistory(): Promise<Array<{
   userMessage: string;
   assistantMessage: string;
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
+  route?: RoutingDecision;
 }>> {
   const sessionValue = await ensureChatSession();
   const messages = await getPersistence().listChatMessages(sessionValue.id);
@@ -277,6 +355,7 @@ async function getChatHistory(): Promise<Array<{
     userMessage: string;
     assistantMessage: string;
     sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
+    route?: RoutingDecision;
   }> = [];
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
@@ -287,6 +366,7 @@ async function getChatHistory(): Promise<Array<{
       userMessage: message.content,
       assistantMessage: assistant.content,
       sourceReferences: JSON.parse(assistant.sourceReferencesJson) as Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>,
+      ...(assistant.routingJson ? { route: JSON.parse(assistant.routingJson) as RoutingDecision } : {}),
     });
   }
   return exchanges;
@@ -296,6 +376,7 @@ async function runChatMessage(message: string): Promise<{
   userMessage: string;
   assistantMessage: string;
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
+  route?: RoutingDecision;
 }> {
   const endpoint = await getEndpointConfig();
   await assertEndpointWorkflowCompatible(endpoint);
@@ -311,7 +392,7 @@ async function runChatMessage(message: string): Promise<{
   toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, sessionId));
 
   const toolExecutor = new ToolExecutor(toolRegistry);
-  const runtime = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
+  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
 
   const loader = new CareerAgentLoader(new FileSystemAgentDefinitionSource(getCareerAgentDirectory()));
   const agent = loader.load();
@@ -337,16 +418,19 @@ async function runChatMessage(message: string): Promise<{
     built.request,
     {
       modelId: endpoint.modelId,
-      executionMode: endpoint.mode === 'delegated' ? 'provider_allowed' : 'local_only',
+      executionMode: effectiveRoutingPolicy(endpoint) === 'local_only' ? 'local_only' : 'provider_allowed',
       workspaceId: workspaceContext.selectedWorkspaceId,
+      taskKind: 'chat',
     },
     new AbortController().signal,
   );
-  await appendChatPair(chatSession.id, message, result.content, result.sourceReferences);
+  const route = router?.getLastDecision() ?? simulatedRoute();
+  await appendChatPair(chatSession.id, message, result.content, result.sourceReferences, route);
   return {
     userMessage: message,
     assistantMessage: result.content,
     sourceReferences: result.sourceReferences,
+    route,
   };
 }
 
@@ -354,16 +438,9 @@ function createRuntime(
   endpoint: EndpointConfig,
   toolExecutor: ToolExecutor,
   workspaceGateway: DefaultWorkspaceGateway,
-): AgentRuntime {
-  const intelligence: IntelligencePort = endpoint.mode === 'mock'
-    ? new DesktopMockIntelligenceAdapter()
-    : endpoint.mode === 'delegated'
-      ? new DelegatedCliIntelligenceAdapter(
-          getDelegatedProvider(endpoint.providerId ?? ''),
-          new NodeCliProcessRunner(app.getPath('temp')),
-        )
-      : new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway());
-  return new AgentRuntime(
+): { runtime: AgentRuntime; router: AdaptiveRoutingIntelligenceAdapter | null } {
+  const { intelligence, router } = createRoutingIntelligence(endpoint);
+  const runtime = new AgentRuntime(
     intelligence,
     {
       execute: (toolName, input, context) => toolExecutor.execute(toolName, input, { ...context, workspaceGateway }),
@@ -374,10 +451,11 @@ function createRuntime(
       maxSteps: 6,
       maxToolCalls: 8,
       maxToolResultBytes: 64 * 1024,
-      modelTimeoutMs: endpoint.mode === 'delegated' ? 120_000 : 30_000,
+      modelTimeoutMs: effectiveRoutingPolicy(endpoint) === 'local_only' ? 30_000 : 120_000,
       toolTimeoutMs: 10_000,
     },
   );
+  return { runtime, router };
 }
 
 async function runCareerAudit(): Promise<{
@@ -387,6 +465,7 @@ async function runCareerAudit(): Promise<{
     content: string;
     workspaceIds: string[];
     sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
+    route?: RoutingDecision;
   };
 }> {
   const endpoint = await getEndpointConfig();
@@ -402,7 +481,7 @@ async function runCareerAudit(): Promise<{
   toolRegistry.register(gitDiffTool);
   toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, sessionId));
   const toolExecutor = new ToolExecutor(toolRegistry);
-  const runtime = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
+  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
   const signal = new AbortController().signal;
 
   const evidenceMessages: ModelMessage[] = [];
@@ -462,7 +541,8 @@ async function runCareerAudit(): Promise<{
       agent,
       userMessage: 'Compare my recent project activity with my current professional profile and identify important gaps.',
       modelId: endpoint.modelId,
-      executionMode: endpoint.mode === 'delegated' ? 'provider_allowed' : 'local_only',
+      executionMode: effectiveRoutingPolicy(endpoint) === 'local_only' ? 'local_only' : 'provider_allowed',
+      taskKind: 'audit',
       tools: toolRegistry.getModelTools(),
       preloadedEvidence: { messages: evidenceMessages, sourceReferences: evidenceSources },
     },
@@ -475,6 +555,7 @@ async function runCareerAudit(): Promise<{
       content: result.content,
       workspaceIds: result.workspaceIds,
       sourceReferences: result.sourceReferences,
+      route: router?.getLastDecision() ?? simulatedRoute(),
     },
   };
 }
@@ -490,6 +571,7 @@ async function proposeProfileUpdate(input: {
   targetPath: string;
   diff: string;
   rejectionReason?: string;
+  route?: RoutingDecision;
 }> {
   const endpoint = await getEndpointConfig();
   await assertEndpointWorkflowCompatible(endpoint);
@@ -506,7 +588,7 @@ async function proposeProfileUpdate(input: {
   toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, sessionId));
   const toolExecutor = new ToolExecutor(toolRegistry);
 
-  const intelligence: IntelligencePort = endpoint.mode === 'mock'
+  const mockIntelligence = endpoint.mode === 'mock'
     ? new MockIntelligenceAdapter([
       {
         type: 'tool_call',
@@ -522,10 +604,11 @@ async function proposeProfileUpdate(input: {
       },
       { type: 'text', content: 'Proposal created.' },
     ])
-    : new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway());
+    : null;
+  const routed = mockIntelligence ? { intelligence: mockIntelligence as IntelligencePort, router: null } : createRoutingIntelligence(endpoint);
 
   const runtime = new AgentRuntime(
-    intelligence,
+    routed.intelligence,
     {
       execute: (toolName, toolInput, context) => {
         if (toolName === 'filesystem.proposeWrite') {
@@ -544,7 +627,7 @@ async function proposeProfileUpdate(input: {
       maxSteps: 3,
       maxToolCalls: 3,
       maxToolResultBytes: 64 * 1024,
-      modelTimeoutMs: endpoint.mode === 'delegated' ? 120_000 : 30_000,
+      modelTimeoutMs: effectiveRoutingPolicy(endpoint) === 'local_only' ? 30_000 : 120_000,
       toolTimeoutMs: 10_000,
     },
   );
@@ -566,8 +649,9 @@ async function proposeProfileUpdate(input: {
     request,
     {
       modelId: endpoint.modelId,
-      executionMode: endpoint.mode === 'delegated' ? 'provider_allowed' : 'local_only',
+      executionMode: effectiveRoutingPolicy(endpoint) === 'local_only' ? 'local_only' : 'provider_allowed',
       workspaceId: input.workspaceId,
+      taskKind: 'proposal',
     },
     new AbortController().signal,
   );
@@ -577,12 +661,16 @@ async function proposeProfileUpdate(input: {
   if (!latest) {
     throw new Error(`The model did not create a structured file proposal. ${runResult.content.trim() || 'Try refining the recommendation.'}`);
   }
+  const route = routed.router?.getLastDecision() ?? simulatedRoute();
+  latest.routingJson = JSON.stringify(route);
+  await getPersistence().savePendingAction(latest);
   return {
     id: latest.id,
     status: latest.status,
     workspaceId: latest.workspaceId,
     targetPath: latest.targetPath,
     diff: latest.diff,
+    route,
     ...(latest.rejectionReason ? { rejectionReason: latest.rejectionReason } : {}),
   };
 }
@@ -684,7 +772,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.listPendingActions, async () => {
     if ((await getPersistence().listWorkspaces()).length === 0) return [];
     const { service } = await approvals();
-    return service.listPending();
+    return (await service.listPending()).map((action) => ({
+      ...action,
+      ...(action.routingJson ? { route: JSON.parse(action.routingJson) as RoutingDecision } : {}),
+    }));
   });
 
   ipcMain.handle(IPC_CHANNELS.testEndpointConnection, async (_event, payload: unknown) => {

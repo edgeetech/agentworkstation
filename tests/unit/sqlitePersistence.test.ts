@@ -19,8 +19,11 @@ describe('sqlite persistence', () => {
       targetPath: 'README.md',
       proposedContent: 'x',
       diff: '---',
+      routingJson: '{\"providerId\":\"codex\"}',
     });
-    await expect(db.getPendingAction('1')).resolves.toMatchObject({ id: '1', targetPath: 'README.md' });
+    await expect(db.getPendingAction('1')).resolves.toMatchObject({
+      id: '1', targetPath: 'README.md', routingJson: '{\"providerId\":\"codex\"}',
+    });
   });
 
   it('persists multiple workspaces in deterministic order and remembers selection', async () => {
@@ -95,6 +98,7 @@ describe('sqlite persistence', () => {
       role: 'assistant',
       content: 'hi there',
       sourceReferencesJson: '[{\"type\":\"memory\"}]',
+      routingJson: '{\"providerId\":\"ollama\"}',
       createdAt: now,
     });
 
@@ -104,5 +108,8 @@ describe('sqlite persistence', () => {
       expect.objectContaining({ sequence: 1, role: 'user', content: 'hello' }),
       expect.objectContaining({ sequence: 2, role: 'assistant', content: 'hi there' }),
     ]);
+    await expect(db.listChatMessages('session-1')).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ sequence: 2, routingJson: '{\"providerId\":\"ollama\"}' }),
+    ]));
   });
 });

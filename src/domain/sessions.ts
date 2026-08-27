@@ -18,5 +18,6 @@ export type ChatMessage = {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   sourceReferencesJson: string;
+  routingJson?: string | null;
   createdAt: string;
 };

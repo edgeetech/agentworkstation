@@ -27,6 +27,10 @@ export class NodeCliProcessRunner implements CliProcessRunner {
 
   async run(command: string, args: string[], stdin: string, signal: AbortSignal): Promise<CliExecutionResult> {
     return new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new Error('Delegated provider request was cancelled or timed out'));
+        return;
+      }
       const child = spawn(command, args, {
         cwd: this.cwd,
         windowsHide: true,
@@ -35,19 +39,32 @@ export class NodeCliProcessRunner implements CliProcessRunner {
       });
       let stdout = '';
       let stderr = '';
+      let settled = false;
+      const fail = (error: Error): void => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
       const append = (current: string, chunk: Buffer): string => {
         const next = current + chunk.toString('utf8');
         if (Buffer.byteLength(next, 'utf8') > 1024 * 1024) {
           child.kill();
-          reject(new Error('Delegated provider output exceeded 1 MB'));
+          fail(new Error('Delegated provider output exceeded 1 MB'));
         }
         return next;
       };
       child.stdout.on('data', (chunk: Buffer) => { stdout = append(stdout, chunk); });
       child.stderr.on('data', (chunk: Buffer) => { stderr = append(stderr, chunk); });
-      child.on('error', reject);
-      child.on('close', (exitCode) => resolve({ stdout, stderr, exitCode: exitCode ?? 1 }));
-      signal.addEventListener('abort', () => child.kill(), { once: true });
+      child.on('error', fail);
+      child.on('close', (exitCode) => {
+        if (settled) return;
+        settled = true;
+        resolve({ stdout, stderr, exitCode: exitCode ?? 1 });
+      });
+      signal.addEventListener('abort', () => {
+        child.kill();
+        fail(new Error('Delegated provider request was cancelled or timed out'));
+      }, { once: true });
       child.stdin.end(stdin);
     });
   }

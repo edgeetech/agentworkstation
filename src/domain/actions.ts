@@ -13,4 +13,5 @@ export type PendingAction = {
   diff: string;
   decidedAt?: string;
   rejectionReason?: string;
+  routingJson?: string | null;
 };

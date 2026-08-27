@@ -38,9 +38,14 @@ const endpointConfigSchema = z.object({
   baseUrl: z.string().min(1),
   modelId: z.string().min(1),
   providerId: z.string().regex(/^[a-z0-9-]+$/).optional(),
+  providerModelId: z.string().min(1).optional(),
+  routingPolicy: z.enum(['local_only', 'local_first', 'adaptive']).optional(),
 }).superRefine((value, context) => {
   if (value.mode === 'delegated' && !value.providerId) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'Delegated mode requires providerId' });
+  }
+  if (value.mode === 'local' && value.routingPolicy !== undefined && value.routingPolicy !== 'local_only' && !value.providerId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Cloud-permitting routing requires providerId' });
   }
 });
 
@@ -92,6 +97,8 @@ export function parseEndpointConfigInput(value: unknown): {
   baseUrl: string;
   modelId: string;
   providerId?: string;
+  providerModelId?: string;
+  routingPolicy?: 'local_only' | 'local_first' | 'adaptive';
 } {
   return endpointConfigSchema.parse(value);
 }
