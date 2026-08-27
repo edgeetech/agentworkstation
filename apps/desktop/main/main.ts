@@ -21,12 +21,14 @@ import {
   parseChatMessageInput,
   parseCreateChatSessionInput,
   parseEndpointConfigInput,
+  parseModelDiscoveryInput,
   parseProposeProfileUpdateInput,
   parseRegisterWorkspaceInput,
   parseRejectPendingActionInput,
   parseWorkspaceIdInput,
 } from './ipcContract';
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
+import { discoverOllamaModels } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
 
 const userDataOverride = process.env.AW_USER_DATA_PATH?.trim();
 if (userDataOverride) app.setPath('userData', userDataOverride);
@@ -518,6 +520,11 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.getEndpointConfig, async () => getEndpointConfig());
+
+  ipcMain.handle(IPC_CHANNELS.discoverLocalModels, async (_event, payload: unknown) => {
+    const { baseUrl } = parseModelDiscoveryInput(payload);
+    return discoverOllamaModels(baseUrl, new DefaultNetworkGateway(), new AbortController().signal);
+  });
 
   ipcMain.handle(IPC_CHANNELS.saveEndpointConfig, async (_event, payload: unknown) => {
     const config = parseEndpointConfigInput(payload);

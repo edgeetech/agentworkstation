@@ -169,22 +169,29 @@ The MVP is successful when the user can:
 1.  Launch the desktop application locally.
 2.  Select the built-in Career Agent.
 3.  Register approved local workspaces.
-4.  Chat with the Career Agent.
-5.  Let the agent inspect:
+4.  Discover and select installed local models without manually copying model
+    IDs.
+5.  Connect supported delegated cloud providers, beginning with the user's
+    existing Codex and GitHub Copilot CLI sign-ins.
+6.  Choose `Local only`, `Local first`, or `Adaptive` execution, with the
+    selected provider and routing reason visible for every request. A request
+    may leave the machine only after the user selects a policy that permits it.
+7.  Chat with the Career Agent.
+8.  Let the agent inspect:
     -   local career memory,
     -   GitHub profile source repository,
     -   selected project repositories,
     -   CV source when configured.
-6.  Ask:
+9.  Ask:
     -   "What is missing from my GitHub profile?"
     -   "What changed in this repository that should appear in my CV?"
     -   "Compare my recent work with my current professional profile."
-7.  Receive an evidence-backed Career Profile Audit.
-8.  See which local sources were used.
-9.  Request a profile update.
-10. See the proposed file diff.
-11. Approve or reject the change.
-12. Persist agent/session state locally.
+10. Receive an evidence-backed Career Profile Audit.
+11. See which local sources were used.
+12. Request a profile update.
+13. See the proposed file diff.
+14. Approve or reject the change.
+15. Persist agent/session state locally.
 
 ------------------------------------------------------------------------
 

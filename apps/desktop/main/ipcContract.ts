@@ -8,6 +8,7 @@ export const IPC_CHANNELS = {
   selectWorkspace: 'agentWorkstation:selectWorkspace',
   removeWorkspace: 'agentWorkstation:removeWorkspace',
   getEndpointConfig: 'agentWorkstation:getEndpointConfig',
+  discoverLocalModels: 'agentWorkstation:discoverLocalModels',
   saveEndpointConfig: 'agentWorkstation:saveEndpointConfig',
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
   listChatSessions: 'agentWorkstation:listChatSessions',
@@ -49,6 +50,10 @@ const proposeProfileUpdateSchema = z.object({
   workspaceId: z.string().min(1),
   targetPath: z.string().min(1),
   recommendation: z.string().min(1),
+});
+
+const modelDiscoverySchema = z.object({
+  baseUrl: z.string().url(),
 });
 
 const approveSchema = z.object({
@@ -98,6 +103,10 @@ export function parseProposeProfileUpdateInput(value: unknown): {
   recommendation: string;
 } {
   return proposeProfileUpdateSchema.parse(value);
+}
+
+export function parseModelDiscoveryInput(value: unknown): { baseUrl: string } {
+  return modelDiscoverySchema.parse(value);
 }
 
 export function parseRejectPendingActionInput(value: unknown): { actionId: string; reason: string } {

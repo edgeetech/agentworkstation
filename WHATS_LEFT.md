@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-27
 Implementation base audited at: `235bd25` on `main`; this document describes the complete takeover changes in the current `main` worktree/commit
-Current objective: **Windows MVP completed; preserve acceptance while continuing post-MVP work**
+Current objective: **MVP reopened: complete model discovery, provider connections, and policy-visible adaptive routing**
 
 ## Non-Negotiable Completion Boundary
 
@@ -15,13 +15,18 @@ Continue autonomously until a real user can complete this flow in Electron:
 1. Launch the desktop application.
 2. Select the built-in Career Agent.
 3. Register and select real local workspaces.
-4. Configure and use a local OpenAI-compatible model endpoint (Ollama reference).
-5. Chat with arbitrary prompts and run a multi-workspace Career Audit.
-6. Inspect the audit's real file/Git/memory source references.
-7. Ask the agent for a concrete Markdown/profile update.
-8. Inspect the exact proposed diff without changing the file.
-9. Reject safely or approve and atomically apply the change.
-10. Restart the app and recover workspace, session, message, and pending-action state.
+4. Automatically discover and select an installed local model (Ollama reference).
+5. Detect and connect supported delegated providers, beginning with existing
+   Codex and GitHub Copilot CLI sign-ins.
+6. Run locally by default, or use an explicitly permitted cloud provider for a
+   request, with the chosen provider and routing reason visible.
+7. Chat with arbitrary prompts and run a multi-workspace Career Audit.
+8. Inspect the audit's real file/Git/memory source references.
+9. Ask the agent for a concrete Markdown/profile update.
+10. Inspect the exact proposed diff without changing the file.
+11. Reject safely or approve and atomically apply the change.
+12. Restart the app and recover workspace, session, message, pending-action,
+    connection, and execution-policy state.
 
 The MVP is complete only when that flow passes through the real desktop boundary
 with both deterministic/mock coverage and a documented local-model run. Update
@@ -49,10 +54,21 @@ this file after every completed capability or newly discovered blocker.
 
 ## Windows MVP Completion Status
 
-- ✅ The Windows MVP is implemented and accepted end to end.
+- ⚠️ The original local-only Windows acceptance flow is implemented, but the
+  product MVP is reopened after hands-on validation exposed two missing product
+  boundaries: Mock mode could masquerade as readiness, and model/provider
+  selection had no discovery or adaptive intelligence.
 - ✅ The desktop now has a neutral, agent-first shell with an agent library,
   Career Agent-scoped navigation, first-run readiness, and clear task flows.
 - ✅ Local inference is the default; mock mode is an explicitly labelled demo.
+- ✅ Mock mode no longer counts as real-model readiness and must be explicitly
+  enabled for each app session. Ollama models are automatically discovered from
+  the local `/api/tags` endpoint and presented as a one-click selector; manual
+  model ID entry remains as the offline/non-Ollama fallback.
+- ❌ Codex and GitHub Copilot delegated connections, per-request provider
+  visibility, and adaptive routing are not implemented yet. The current runtime
+  still selects one persisted OpenAI-compatible endpoint; it contains no model
+  selection intelligence.
 - ✅ Mock E2E uses visible controls for agent selection, setup, chat, audit,
   proposal review, restart recovery, and approval (only the native picker result
   is stubbed).
@@ -337,9 +353,13 @@ Status update (2026-08-27):
 ## Out of MVP Scope
 
 - Manual macOS package/runtime validation (Release 0.4 compatibility release).
-- SaaS providers and encrypted SaaS credential workflows.
+- Raw long-lived SaaS API-key storage. Prefer delegated CLI/app-server/ACP
+  connections that reuse provider-managed sign-in and operating-system credential
+  storage. Any future raw-key path requires an encrypted credential store.
 - MCP/ACP and plugin ecosystem work.
-- Browser/computer use, adaptive routing, model management, scheduling, and RAG.
+- Browser/computer use, dynamic benchmarking, scheduling, and RAG. Minimal model
+  discovery, provider connections, capability metadata, and policy-visible
+  adaptive routing are now inside the MVP boundary.
 
 ## Resume Instructions for Any Agent
 

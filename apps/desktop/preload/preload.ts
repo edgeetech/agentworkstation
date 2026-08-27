@@ -9,6 +9,7 @@ const IPC_CHANNELS = {
   selectWorkspace: 'agentWorkstation:selectWorkspace',
   removeWorkspace: 'agentWorkstation:removeWorkspace',
   getEndpointConfig: 'agentWorkstation:getEndpointConfig',
+  discoverLocalModels: 'agentWorkstation:discoverLocalModels',
   saveEndpointConfig: 'agentWorkstation:saveEndpointConfig',
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
   listChatSessions: 'agentWorkstation:listChatSessions',
@@ -36,6 +37,8 @@ const api: AgentWorkstationApi = {
   selectWorkspace: async (id) => ipcRenderer.invoke(IPC_CHANNELS.selectWorkspace, { id }),
   removeWorkspace: async (id) => ipcRenderer.invoke(IPC_CHANNELS.removeWorkspace, { id }),
   getEndpointConfig: async () => ipcRenderer.invoke(IPC_CHANNELS.getEndpointConfig),
+  discoverLocalModels: async (baseUrl) =>
+    ipcRenderer.invoke(IPC_CHANNELS.discoverLocalModels, { baseUrl }),
   saveEndpointConfig: async (config) => ipcRenderer.invoke(IPC_CHANNELS.saveEndpointConfig, config),
   testEndpointConnection: async (config) => ipcRenderer.invoke(IPC_CHANNELS.testEndpointConnection, config),
   listChatSessions: async () => ipcRenderer.invoke(IPC_CHANNELS.listChatSessions),

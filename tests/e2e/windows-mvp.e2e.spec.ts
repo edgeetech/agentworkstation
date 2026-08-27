@@ -52,10 +52,12 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await expect(page.getByRole('heading', { name: 'project', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: /Model settings/ }).click();
-    await page.locator('.settings select').selectOption('mock');
+    await page.getByLabel('Execution mode').selectOption('mock');
     await page.locator('.settings input').nth(1).fill('mock-model');
     await page.getByRole('button', { name: 'Save model settings' }).click();
-    await expect(page.getByText('Demo mode — responses are simulated.')).toBeVisible();
+    await expect(page.getByText('Simulated demo is not AI.')).toBeVisible();
+    await page.getByRole('button', { name: 'Enable simulated demo for this session' }).click();
+    await expect(page.getByText('Simulated demo enabled for this session. No AI model will be used.')).toBeVisible();
 
     await page.locator('nav').getByRole('button', { name: /Career chat/ }).click();
     await page.getByLabel('Message Career Agent').fill('What changed that should appear in my profile?');
@@ -80,7 +82,8 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
   const secondRun = await launch();
   try {
     const page = await secondRun.firstWindow();
-    await expect(page.getByText('Demo · mock')).toBeVisible();
+    await expect(page.getByText('Real local model required')).toBeVisible();
+    await expect(page.getByText('Simulated demo is configured but inactive')).toBeVisible();
     await page.locator('nav').getByRole('button', { name: /Workspaces/ }).click();
     await expect(page.getByRole('heading', { name: 'profile', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'project', exact: true })).toBeVisible();

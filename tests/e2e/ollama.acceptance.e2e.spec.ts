@@ -38,9 +38,14 @@ test('Career Agent reaches a real Ollama model through the desktop UI', async ()
     await page.getByRole('button', { name: 'Choose folder and add' }).click();
 
     await page.getByRole('button', { name: /Model settings/ }).click();
-    await page.locator('.settings select').selectOption('local');
+    await page.getByLabel('Execution mode').selectOption('local');
     await page.locator('.settings input').nth(0).fill('http://localhost:11434');
-    await page.locator('.settings input').nth(1).fill('qwen2.5:3b');
+    const discoveredModel = page.getByLabel('Installed Ollama model');
+    if (await discoveredModel.count()) {
+      await discoveredModel.selectOption('qwen2.5:3b');
+    } else {
+      await page.getByLabel('Model ID').fill('qwen2.5:3b');
+    }
     await page.getByRole('button', { name: 'Test connection' }).click();
     await expect(page.getByText('Connected to qwen2.5:3b.')).toBeVisible({ timeout: 60_000 });
     await page.getByRole('button', { name: 'Save model settings' }).click();

@@ -6,6 +6,7 @@ import type {
   DemoAudit,
   EndpointConfig,
   PendingAction,
+  LocalModel,
   WorkspaceRecord,
 } from "../shared/api";
 import "./styles.css";
@@ -72,9 +73,18 @@ function App(): JSX.Element {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const endpointReady = endpoint.configured === true;
+  const [localModels, setLocalModels] = useState<LocalModel[]>([]);
+  const [modelDiscoveryBusy, setModelDiscoveryBusy] = useState(false);
+  const [modelDiscoveryError, setModelDiscoveryError] = useState<string | null>(null);
+  const [demoSessionEnabled, setDemoSessionEnabled] = useState(false);
+  const localEndpointReady =
+    endpoint.configured === true && endpoint.mode === "local";
+  const demoConfigured =
+    endpoint.configured === true && endpoint.mode === "mock";
+  const endpointReady = localEndpointReady || demoSessionEnabled;
   const workspaceReady = workspaces.length > 0;
   const ready = endpointReady && workspaceReady;
+  const realReady = localEndpointReady && workspaceReady;
   const profileWorkspaces = useMemo(
     () => workspaces.filter((w) => w.kind !== "project"),
     [workspaces],
@@ -121,6 +131,20 @@ function App(): JSX.Element {
     setSessions(nextSessions);
     setHistory(nextHistory);
   };
+  const loadLocalModels = async (baseUrl = endpoint.baseUrl): Promise<void> => {
+    setModelDiscoveryBusy(true);
+    setModelDiscoveryError(null);
+    try {
+      const models = await api.discoverLocalModels(baseUrl);
+      setLocalModels(models);
+      if (models.length === 0) setModelDiscoveryError('Ollama is running but has no installed models.');
+    } catch (value) {
+      setLocalModels([]);
+      setModelDiscoveryError(`Could not discover Ollama models: ${messageOf(value)}`);
+    } finally {
+      setModelDiscoveryBusy(false);
+    }
+  };
   useEffect(() => {
     void Promise.all([
       api.getEndpointConfig(),
@@ -136,6 +160,7 @@ function App(): JSX.Element {
         setSessions(nextSessions);
         setHistory(nextHistory);
         setProposalWorkspace(chooseProposalWorkspace(records));
+        if (config.mode === "local") void loadLocalModels(config.baseUrl);
       })
       .catch((value: unknown) => setError(messageOf(value)));
   }, [api]);
@@ -158,16 +183,24 @@ function App(): JSX.Element {
             every proposed edit before anything changes.
           </p>
         </div>
-        <div className={`readiness ${ready ? "ready" : ""}`}>
-          <span>{ready ? "Ready" : "Setup needed"}</span>
+        <div className={`readiness ${realReady ? "ready" : ""}`}>
+          <span>
+            {realReady
+              ? "Ready"
+              : demoSessionEnabled
+                ? "Simulated demo"
+                : "Setup needed"}
+          </span>
           <strong>
-            {ready
-              ? "Career Agent can work"
-              : `${Number(workspaceReady) + Number(endpointReady)} of 2 steps complete`}
+            {realReady
+              ? `Using ${endpoint.modelId} locally`
+              : demoSessionEnabled
+                ? "No AI model is being used"
+                : `${Number(workspaceReady) + Number(localEndpointReady)} of 2 steps complete`}
           </strong>
         </div>
       </section>
-      {!ready ? (
+      {!realReady ? (
         <section className="panel">
           <div className="section-heading">
             <div>
@@ -189,11 +222,11 @@ function App(): JSX.Element {
               <small>Register your profile and recent projects.</small>
             </button>
             <button
-              className={`step-card ${endpointReady ? "complete" : ""}`}
+              className={`step-card ${localEndpointReady ? "complete" : ""}`}
               type="button"
               onClick={() => go("settings")}
             >
-              <span>{endpointReady ? "✓" : "2"}</span>
+              <span>{localEndpointReady ? "✓" : "2"}</span>
               <strong>Connect a local model</strong>
               <small>Use Ollama or another compatible endpoint.</small>
             </button>
@@ -205,7 +238,7 @@ function App(): JSX.Element {
           <span>01</span>
           <h2>Ask</h2>
           <p>Discuss your positioning with the Career Agent.</p>
-          <button type="button" onClick={() => go("chat")}>
+          <button type="button" disabled={!ready} onClick={() => go("chat")}>
             Open career chat
           </button>
         </article>
@@ -660,19 +693,40 @@ function App(): JSX.Element {
       />
       {endpoint.mode === "mock" ? (
         <div className="demo">
-          <strong>Demo mode — responses are simulated.</strong>
-          <span>Use Local model for real Career Agent work.</span>
+          <strong>Simulated demo is not AI.</strong>
+          <span>
+            Ask, Audit, and Improve stay locked until you explicitly enable the
+            demo for this app session. Choose Local model for real Career Agent
+            work.
+          </span>
+          <button
+            type="button"
+            data-testid="enable-demo-session"
+            disabled={!demoConfigured || demoSessionEnabled}
+            onClick={() => {
+              setDemoSessionEnabled(true);
+              setNotice(
+                "Simulated demo enabled for this session. No AI model will be used.",
+              );
+            }}
+          >
+            {demoSessionEnabled
+              ? "Simulated demo enabled"
+              : "Enable simulated demo for this session"}
+          </button>
         </div>
       ) : null}
       <section className="panel form settings">
         <label>
           <span>Mode</span>
           <select
+            aria-label="Execution mode"
             value={endpoint.mode}
             onChange={(e) =>
               setEndpoint((old) => ({
                 ...old,
                 mode: e.target.value as "mock" | "local",
+                configured: false,
               }))
             }
           >
@@ -685,19 +739,64 @@ function App(): JSX.Element {
           <input
             value={endpoint.baseUrl}
             onChange={(e) =>
-              setEndpoint((old) => ({ ...old, baseUrl: e.target.value }))
+              setEndpoint((old) => ({
+                ...old,
+                baseUrl: e.target.value,
+                configured: false,
+              }))
             }
           />
         </label>
         <label>
-          <span>Model ID</span>
-          <input
-            value={endpoint.modelId}
-            onChange={(e) =>
-              setEndpoint((old) => ({ ...old, modelId: e.target.value }))
-            }
-          />
+          <span>Installed Ollama model</span>
+          {endpoint.mode === "local" && localModels.length > 0 ? (
+            <select
+              aria-label="Installed Ollama model"
+              value={localModels.some((model) => model.id === endpoint.modelId) ? endpoint.modelId : ""}
+              onChange={(e) =>
+                setEndpoint((old) => ({
+                  ...old,
+                  modelId: e.target.value,
+                  configured: false,
+                }))
+              }
+            >
+              <option value="" disabled>Select an installed model</option>
+              {localModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.id} · {(model.size / 1024 / 1024 / 1024).toFixed(1)} GB
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              aria-label="Model ID"
+              value={endpoint.modelId}
+              onChange={(e) =>
+                setEndpoint((old) => ({
+                  ...old,
+                  modelId: e.target.value,
+                  configured: false,
+                }))
+              }
+            />
+          )}
         </label>
+        {endpoint.mode === "local" ? (
+          <div className="actions model-discovery">
+            <button
+              type="button"
+              disabled={modelDiscoveryBusy}
+              onClick={() => void loadLocalModels()}
+            >
+              {modelDiscoveryBusy ? "Finding models…" : "Refresh installed models"}
+            </button>
+            {modelDiscoveryError ? <small>{modelDiscoveryError}</small> : null}
+            {localModels.length > 0 ? (
+              <small>{localModels.length} installed model{localModels.length === 1 ? "" : "s"} found.</small>
+            ) : null}
+          </div>
+        ) : null}
         <small>
           Ollama default: http://localhost:11434 with a model you have already
           pulled.
@@ -724,9 +823,10 @@ function App(): JSX.Element {
               void task("endpoint", async () => {
                 await api.saveEndpointConfig(endpoint);
                 setEndpoint((old) => ({ ...old, configured: true }));
+                setDemoSessionEnabled(false);
                 setNotice(
                   endpoint.mode === "mock"
-                    ? "Demo mode saved. Responses will be simulated."
+                    ? "Simulated demo configured but inactive. Enable it explicitly to run without AI."
                     : "Local model settings saved.",
                 );
               })
@@ -831,7 +931,13 @@ function App(): JSX.Element {
             onClick={() => go("settings")}
           >
             <span>Model settings</span>
-            <small>{endpointReady ? endpoint.modelId : "Setup required"}</small>
+            <small>
+              {localEndpointReady
+                ? `${endpoint.modelId} · real local AI`
+                : demoSessionEnabled
+                  ? "Simulated demo · no AI"
+                  : "Real model required"}
+            </small>
           </button>
           <div className="privacy">
             <strong>● Local only</strong>
@@ -842,20 +948,28 @@ function App(): JSX.Element {
       <main>
         <header>
           <div>
-            <i className={endpointReady ? "connected" : ""} />
-            {endpointReady
-              ? `${endpoint.mode === "mock" ? "Demo" : endpoint.modelId} · ${endpoint.mode}`
-              : "Model setup required"}
+            <i className={localEndpointReady ? "connected" : ""} />
+            {localEndpointReady
+              ? `${endpoint.modelId} · real local AI`
+              : demoSessionEnabled
+                ? "Simulated demo · no AI model"
+                : "Real local model required"}
           </div>
           <button type="button" onClick={() => go("settings")}>
             Configure
           </button>
         </header>
-        {endpoint.mode === "mock" && endpointReady && view !== "settings" ? (
+        {demoConfigured && view !== "settings" ? (
           <div className="demo top">
-            <strong>Demo mode</strong>
+            <strong>
+              {demoSessionEnabled
+                ? "Simulated demo active — no AI model"
+                : "Simulated demo is configured but inactive"}
+            </strong>
             <span>
-              Responses are simulated and do not prove local AI operation.
+              {demoSessionEnabled
+                ? "Ask, Audit, and Improve return deterministic test responses."
+                : "Connect a local model to use Career Agent, or explicitly enable the demo in Model settings."}
             </span>
           </div>
         ) : null}

@@ -39,6 +39,12 @@ export type EndpointConfig = {
   configured?: boolean;
 };
 
+export type LocalModel = {
+  id: string;
+  size: number;
+  modifiedAt?: string;
+};
+
 export type ProposalRequest = {
   workspaceId: string;
   targetPath: string;
@@ -67,6 +73,7 @@ export type AgentWorkstationApi = {
   selectWorkspace: (id: string) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
   getEndpointConfig: () => Promise<EndpointConfig>;
+  discoverLocalModels: (baseUrl: string) => Promise<LocalModel[]>;
   saveEndpointConfig: (config: EndpointConfig) => Promise<void>;
   testEndpointConnection: (config: EndpointConfig) => Promise<{ ok: true; message: string }>;
   listChatSessions: () => Promise<ChatSessionRecord[]>;
