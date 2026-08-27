@@ -1,9 +1,9 @@
 # Agent Workstation: Complete MVP Handoff
 
 Last updated: 2026-08-27
-Implementation base before the current UX increment: `72bb308` on `main`; this
-document describes the current `main` HEAD. Local verification, including the
-real Ollama Electron path, is complete; GitHub CI is the remaining remote check.
+Current implementation commit: `cf12712` on `main`. Local verification,
+including the real Ollama Electron path, is complete. GitHub Actions run
+`33099497722` passed the Windows quality and macOS compatibility gates.
 Current objective: **Windows MVP complete; preserve the acceptance boundary and
 continue only with documented post-MVP work**
 
