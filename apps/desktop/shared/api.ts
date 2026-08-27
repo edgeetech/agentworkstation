@@ -33,16 +33,29 @@ export type WorkspaceRecord = {
 };
 
 export type EndpointConfig = {
-  mode: 'mock' | 'local';
+  mode: 'mock' | 'local' | 'delegated';
   baseUrl: string;
   modelId: string;
+  providerId?: string;
   configured?: boolean;
+};
+
+export type ProviderConnection = {
+  id: string;
+  label: string;
+  kind: 'delegated_cli';
+  installed: boolean;
+  authenticated: boolean | null;
+  detail: string;
+  defaultModel: string;
 };
 
 export type LocalModel = {
   id: string;
   size: number;
   modifiedAt?: string;
+  capabilities: string[];
+  toolCalling: boolean;
 };
 
 export type ProposalRequest = {
@@ -73,6 +86,7 @@ export type AgentWorkstationApi = {
   selectWorkspace: (id: string) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
   getEndpointConfig: () => Promise<EndpointConfig>;
+  listProviderConnections: () => Promise<ProviderConnection[]>;
   discoverLocalModels: (baseUrl: string) => Promise<LocalModel[]>;
   saveEndpointConfig: (config: EndpointConfig) => Promise<void>;
   testEndpointConnection: (config: EndpointConfig) => Promise<{ ok: true; message: string }>;

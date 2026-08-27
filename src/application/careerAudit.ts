@@ -2,7 +2,7 @@ import type { AgentDefinition } from './agents/types';
 import { ContextBuilder, type ContextBudget } from './context';
 import type { AgentRunResult } from './intelligence';
 import type { WorkspaceRegistryPort } from './workspaces';
-import type { ModelMessage, ModelRequest, ModelToolDefinition, SourceReference } from '@domain/intelligence';
+import type { ExecutionMode, ModelMessage, ModelRequest, ModelToolDefinition, SourceReference } from '@domain/intelligence';
 
 export type CareerAuditResult = AgentRunResult & {
   workspaceIds: string[];
@@ -32,7 +32,7 @@ export class CareerAuditService {
     private readonly runtime: {
       runWithTrace(request: ModelRequest, context: {
         modelId: string;
-        executionMode: 'local_only';
+        executionMode: ExecutionMode;
         workspaceId: string;
       }, signal: AbortSignal): Promise<AgentRunResult>;
     },
@@ -44,6 +44,7 @@ export class CareerAuditService {
     agent: AgentDefinition;
     userMessage: string;
     modelId: string;
+    executionMode?: ExecutionMode;
     tools?: ModelToolDefinition[];
     preloadedEvidence?: {
       messages: ModelMessage[];
@@ -72,7 +73,7 @@ export class CareerAuditService {
     }, this.budget);
     const result = await this.runtime.runWithTrace(built.request, {
       modelId: input.modelId,
-      executionMode: 'local_only',
+      executionMode: input.executionMode ?? 'local_only',
       workspaceId: selected.id,
     }, signal);
 

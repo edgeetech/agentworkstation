@@ -54,7 +54,18 @@ export class OpenAICompatibleLocalAdapter implements IntelligencePort {
       signal,
     );
     if (resp.status < 200 || resp.status >= 300) {
-      return { type: 'error', error: `HTTP ${resp.status}` };
+      let detail = resp.body.trim();
+      try {
+        const errorBody = JSON.parse(resp.body) as { error?: { message?: unknown } | string };
+        detail = typeof errorBody.error === 'string'
+          ? errorBody.error
+          : typeof errorBody.error?.message === 'string'
+            ? errorBody.error.message
+            : detail;
+      } catch {
+        // Preserve the bounded raw response when a compatible endpoint returns non-JSON.
+      }
+      return { type: 'error', error: `HTTP ${resp.status}${detail ? `: ${detail.slice(0, 500)}` : ''}` };
     }
     const json = JSON.parse(resp.body) as {
       choices?: Array<{

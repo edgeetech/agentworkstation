@@ -36,8 +36,8 @@ this file after every completed capability or newly discovered blocker.
 
 - The takeover started from synchronized `HEAD`/`origin/main` commit `235bd25`
   and preserved the full Copilot implementation before correcting and extending it.
-- Local review verification of the resulting implementation passes: lint; 72 tests across
-  22 files; 6 architecture tests; renderer/Electron builds; the visible mock
+- Local review verification of the resulting implementation passes: lint; 80 tests across
+  24 files; 6 architecture tests; renderer/Electron builds; the visible mock
   Electron E2E; a real Ollama chat/audit/proposal run with `qwen2.5:3b`; and a
   production audit with 0 vulnerabilities.
 - No pull request is open.
@@ -65,10 +65,31 @@ this file after every completed capability or newly discovered blocker.
   enabled for each app session. Ollama models are automatically discovered from
   the local `/api/tags` endpoint and presented as a one-click selector; manual
   model ID entry remains as the offline/non-Ollama fallback.
-- ❌ Codex and GitHub Copilot delegated connections, per-request provider
-  visibility, and adaptive routing are not implemented yet. The current runtime
-  still selects one persisted OpenAI-compatible endpoint; it contains no model
-  selection intelligence.
+- ⚠️ At `cc43794`, delegated provider connections and adaptive routing were not
+  implemented; the runtime still selected one persisted OpenAI-compatible
+  endpoint. The worktree status below supersedes that baseline.
+- ✅ Provider connection implementation is complete in the current main
+  increment: a provider-neutral delegated CLI registry covers Codex, GitHub
+  Copilot, and Claude; the desktop detects installations/authentication, allows
+  explicit provider selection, keeps credentials provider-managed, blocks
+  delegated execution under `local_only`, disables provider-native tools, and
+  displays why bounded context may leave the machine. Delegated inference has
+  bounded, provider-appropriate timeouts and Codex ignores user configuration
+  and rules so Agent Workstation remains the only tool boundary. Codex and Copilot
+  non-interactive smoke calls succeeded. Claude is installed and reports an
+  authenticated `claude.ai` session, but its non-interactive smoke call hung and
+  remains unverified. Automatic Adaptive selection/fallback is still unfinished.
+- ✅ Ollama capability inspection now uses `/api/show`. Models without the
+  `tools` capability are labelled and disabled for Career Agent, and stale
+  incompatible selections fail with an actionable explanation. On this PC,
+  `deepseek-coder:6.7b` reports completion only while `qwen2.5:3b` reports
+  completion plus tools.
+- ℹ️ Recommended model path for this PC (32 GB RAM, RTX 3070 Laptop 8 GB):
+  install `qwen3:8b` as the primary local Career Agent model and keep
+  `qwen2.5:3b` as the fast fallback. `qwen3:14b` exceeds the available VRAM
+  before runtime overhead and is not the default recommendation. An Ollama
+  subscription is optional for local models; cloud models can be added later as
+  explicitly permitted delegated routes.
 - ✅ Mock E2E uses visible controls for agent selection, setup, chat, audit,
   proposal review, restart recovery, and approval (only the native picker result
   is stubbed).
@@ -332,7 +353,7 @@ Status update (2026-08-27):
   approved atomic write. Only the native directory dialog response is stubbed.
 - Optional `tests/e2e/ollama.acceptance.e2e.spec.ts` passes model connection,
   non-mock chat, audit, and structured proposal generation with `qwen2.5:3b`.
-- lint, architecture, 71-test Vitest suite, renderer/Electron compile, mock E2E,
+- lint, architecture, 80-test Vitest suite, renderer/Electron compile, mock E2E,
   Ollama acceptance, and production audit pass locally.
 - `electron:pack` now invokes `electron-builder`, includes Career Agent files via
   `extraResources`, and no longer depends on `process.cwd()` when packaged.

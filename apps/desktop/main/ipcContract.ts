@@ -8,6 +8,7 @@ export const IPC_CHANNELS = {
   selectWorkspace: 'agentWorkstation:selectWorkspace',
   removeWorkspace: 'agentWorkstation:removeWorkspace',
   getEndpointConfig: 'agentWorkstation:getEndpointConfig',
+  listProviderConnections: 'agentWorkstation:listProviderConnections',
   discoverLocalModels: 'agentWorkstation:discoverLocalModels',
   saveEndpointConfig: 'agentWorkstation:saveEndpointConfig',
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
@@ -33,9 +34,14 @@ const registerWorkspaceSchema = z.object({
 });
 
 const endpointConfigSchema = z.object({
-  mode: z.enum(['mock', 'local']),
+  mode: z.enum(['mock', 'local', 'delegated']),
   baseUrl: z.string().min(1),
   modelId: z.string().min(1),
+  providerId: z.string().regex(/^[a-z0-9-]+$/).optional(),
+}).superRefine((value, context) => {
+  if (value.mode === 'delegated' && !value.providerId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Delegated mode requires providerId' });
+  }
 });
 
 const chatMessageSchema = z.object({
@@ -82,9 +88,10 @@ export function parseRegisterWorkspaceInput(value: unknown): {
 }
 
 export function parseEndpointConfigInput(value: unknown): {
-  mode: 'mock' | 'local';
+  mode: 'mock' | 'local' | 'delegated';
   baseUrl: string;
   modelId: string;
+  providerId?: string;
 } {
   return endpointConfigSchema.parse(value);
 }

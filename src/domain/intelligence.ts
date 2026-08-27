@@ -1,4 +1,4 @@
-export type ExecutionMode = 'local_only';
+export type ExecutionMode = 'local_only' | 'provider_allowed';
 
 export type SourceReference = {
   type: 'file' | 'git_commit' | 'git_diff' | 'git_status' | 'memory';

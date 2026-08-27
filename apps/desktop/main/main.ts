@@ -12,6 +12,12 @@ import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../s
 import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
 import { gitDiffTool, gitLogTool, gitStatusTool } from '../../../src/infrastructure/git/gitTools';
 import { OpenAICompatibleLocalAdapter } from '../../../src/infrastructure/intelligence/openaiCompatibleLocalAdapter';
+import {
+  DelegatedCliIntelligenceAdapter,
+  NodeCliProcessRunner,
+  delegatedProviders,
+  getDelegatedProvider,
+} from '../../../src/infrastructure/intelligence/delegatedCliAdapter';
 import { MockIntelligenceAdapter } from '../../../src/infrastructure/mock/mockIntelligence';
 import { DefaultNetworkGateway } from '../../../src/infrastructure/network/DefaultNetworkGateway';
 import { SqlitePersistence } from '../../../src/infrastructure/persistence/sqlite';
@@ -28,7 +34,7 @@ import {
   parseWorkspaceIdInput,
 } from './ipcContract';
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
-import { discoverOllamaModels } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
+import { discoverOllamaModels, inspectOllamaModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
 
 const userDataOverride = process.env.AW_USER_DATA_PATH?.trim();
 if (userDataOverride) app.setPath('userData', userDataOverride);
@@ -82,9 +88,10 @@ async function approvals(): Promise<{ service: ApprovalService; workspaceId: str
 }
 
 type EndpointConfig = {
-  mode: 'mock' | 'local';
+  mode: 'mock' | 'local' | 'delegated';
   baseUrl: string;
   modelId: string;
+  providerId?: string;
   configured?: boolean;
 };
 
@@ -93,9 +100,16 @@ async function getEndpointConfig(): Promise<EndpointConfig> {
   if (!raw) return { mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', configured: false };
   try {
     const parsed = JSON.parse(raw) as Partial<EndpointConfig>;
-    if (parsed.mode !== 'mock' && parsed.mode !== 'local') throw new Error('Invalid mode');
+    if (parsed.mode !== 'mock' && parsed.mode !== 'local' && parsed.mode !== 'delegated') throw new Error('Invalid mode');
     if (!parsed.baseUrl || !parsed.modelId) throw new Error('Invalid endpoint config');
-    return { mode: parsed.mode, baseUrl: parsed.baseUrl, modelId: parsed.modelId, configured: true };
+    if (parsed.mode === 'delegated' && !parsed.providerId) throw new Error('Invalid delegated provider');
+    return {
+      mode: parsed.mode,
+      baseUrl: parsed.baseUrl,
+      modelId: parsed.modelId,
+      ...(parsed.providerId ? { providerId: parsed.providerId } : {}),
+      configured: true,
+    };
   } catch {
     return { mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', configured: false };
   }
@@ -107,14 +121,98 @@ async function saveEndpointConfig(config: EndpointConfig): Promise<void> {
 
 async function testEndpointConnection(config: EndpointConfig): Promise<{ ok: true; message: string }> {
   if (config.mode === 'mock') return { ok: true, message: 'Demo mode is available. Responses will be simulated.' };
-  const adapter = new OpenAICompatibleLocalAdapter(config.baseUrl, new DefaultNetworkGateway());
-  const response = await adapter.execute(
-    { messages: [{ role: 'user', content: 'Reply with OK.' }] },
-    { modelId: config.modelId, executionMode: 'local_only' },
-    new AbortController().signal,
-  );
-  if (response.type !== 'text' || !response.content.trim()) throw new Error('The local model returned an empty response');
-  return { ok: true, message: `Connected to ${config.modelId}.` };
+  if (config.mode === 'local') {
+    try {
+      const capability = await inspectOllamaModel(
+        config.baseUrl, config.modelId, new DefaultNetworkGateway(), new AbortController().signal,
+      );
+      if (!capability.toolCalling) {
+        throw new Error(`${config.modelId} is installed but does not support tool calling required by Career Agent. Choose a model marked Career Agent ready.`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('does not support tool calling')) throw error;
+      // Non-Ollama OpenAI-compatible endpoints may not expose /api/show.
+    }
+  }
+  const adapter: IntelligencePort = config.mode === 'delegated'
+    ? new DelegatedCliIntelligenceAdapter(
+        getDelegatedProvider(config.providerId ?? ''),
+        new NodeCliProcessRunner(app.getPath('temp')),
+      )
+    : new OpenAICompatibleLocalAdapter(config.baseUrl, new DefaultNetworkGateway());
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.mode === 'delegated' ? 60_000 : 30_000);
+  let response;
+  try {
+    response = await adapter.execute(
+      { messages: [{ role: 'user', content: 'Return the required JSON text envelope with content exactly OK.' }] },
+      { modelId: config.modelId, executionMode: config.mode === 'local' ? 'local_only' : 'provider_allowed' },
+      controller.signal,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (response.type !== 'text' || !response.content.trim()) throw new Error('The provider returned an empty response');
+  const providerLabel = config.mode === 'delegated'
+    ? getDelegatedProvider(config.providerId ?? '').label
+    : config.modelId;
+  return { ok: true, message: `Connected to ${providerLabel}.` };
+}
+
+async function assertEndpointWorkflowCompatible(endpoint: EndpointConfig): Promise<void> {
+  if (endpoint.mode !== 'local') return;
+  try {
+    const capability = await inspectOllamaModel(
+      endpoint.baseUrl, endpoint.modelId, new DefaultNetworkGateway(), new AbortController().signal,
+    );
+    if (!capability.toolCalling) {
+      throw new Error(`${endpoint.modelId} cannot run Career Agent because it does not support tool calling. Choose a model marked Career Agent ready in Model settings.`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('cannot run Career Agent')) throw error;
+    // Preserve support for non-Ollama OpenAI-compatible local endpoints.
+  }
+}
+
+async function listProviderConnections(): Promise<Array<{
+  id: string; label: string; kind: 'delegated_cli'; installed: boolean;
+  authenticated: boolean | null; detail: string; defaultModel: string;
+}>> {
+  const runner = new NodeCliProcessRunner(app.getPath('temp'));
+  return Promise.all(delegatedProviders.map(async (provider) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5_000);
+    try {
+      const version = await runner.run(provider.command, ['--version'], '', controller.signal);
+      if (version.exitCode !== 0) throw new Error(version.stderr);
+      if (!provider.statusArgs) {
+        return {
+          id: provider.id, label: provider.label, kind: 'delegated_cli' as const,
+          installed: true, authenticated: null,
+          detail: 'Installed; authentication is verified on first request.',
+          defaultModel: provider.defaultModel,
+        };
+      }
+      const status = await runner.run(provider.command, provider.statusArgs, '', controller.signal);
+      return {
+        id: provider.id, label: provider.label, kind: 'delegated_cli' as const,
+        installed: true, authenticated: status.exitCode === 0,
+        detail: status.exitCode === 0
+          ? 'Signed in through the provider CLI; use Test connection to verify inference.'
+          : 'CLI installed; sign-in required.',
+        defaultModel: provider.defaultModel,
+      };
+    } catch {
+      return {
+        id: provider.id, label: provider.label, kind: 'delegated_cli' as const,
+        installed: false, authenticated: false,
+        detail: `Install ${provider.command} and sign in to connect.`,
+        defaultModel: provider.defaultModel,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }));
 }
 
 async function ensureChatSession(): Promise<{ id: string; name: string; createdAt: string; updatedAt: string }> {
@@ -200,6 +298,7 @@ async function runChatMessage(message: string): Promise<{
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
 }> {
   const endpoint = await getEndpointConfig();
+  await assertEndpointWorkflowCompatible(endpoint);
   const workspaceContext = await ensureWorkspaceSelection();
   const approvalContext = await approvals();
   const chatSession = await ensureChatSession();
@@ -238,7 +337,7 @@ async function runChatMessage(message: string): Promise<{
     built.request,
     {
       modelId: endpoint.modelId,
-      executionMode: 'local_only',
+      executionMode: endpoint.mode === 'delegated' ? 'provider_allowed' : 'local_only',
       workspaceId: workspaceContext.selectedWorkspaceId,
     },
     new AbortController().signal,
@@ -258,7 +357,12 @@ function createRuntime(
 ): AgentRuntime {
   const intelligence: IntelligencePort = endpoint.mode === 'mock'
     ? new DesktopMockIntelligenceAdapter()
-    : new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway());
+    : endpoint.mode === 'delegated'
+      ? new DelegatedCliIntelligenceAdapter(
+          getDelegatedProvider(endpoint.providerId ?? ''),
+          new NodeCliProcessRunner(app.getPath('temp')),
+        )
+      : new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway());
   return new AgentRuntime(
     intelligence,
     {
@@ -270,7 +374,7 @@ function createRuntime(
       maxSteps: 6,
       maxToolCalls: 8,
       maxToolResultBytes: 64 * 1024,
-      modelTimeoutMs: 30_000,
+      modelTimeoutMs: endpoint.mode === 'delegated' ? 120_000 : 30_000,
       toolTimeoutMs: 10_000,
     },
   );
@@ -286,6 +390,7 @@ async function runCareerAudit(): Promise<{
   };
 }> {
   const endpoint = await getEndpointConfig();
+  await assertEndpointWorkflowCompatible(endpoint);
   const workspaceContext = await ensureWorkspaceSelection();
   const approvalContext = await approvals();
   const db = getPersistence();
@@ -357,6 +462,7 @@ async function runCareerAudit(): Promise<{
       agent,
       userMessage: 'Compare my recent project activity with my current professional profile and identify important gaps.',
       modelId: endpoint.modelId,
+      executionMode: endpoint.mode === 'delegated' ? 'provider_allowed' : 'local_only',
       tools: toolRegistry.getModelTools(),
       preloadedEvidence: { messages: evidenceMessages, sourceReferences: evidenceSources },
     },
@@ -386,6 +492,7 @@ async function proposeProfileUpdate(input: {
   rejectionReason?: string;
 }> {
   const endpoint = await getEndpointConfig();
+  await assertEndpointWorkflowCompatible(endpoint);
   const workspaceContext = await ensureWorkspaceSelection();
   const approvalContext = await approvals();
   const workspace = await getPersistence().getWorkspace(input.workspaceId);
@@ -437,7 +544,7 @@ async function proposeProfileUpdate(input: {
       maxSteps: 3,
       maxToolCalls: 3,
       maxToolResultBytes: 64 * 1024,
-      modelTimeoutMs: 30_000,
+      modelTimeoutMs: endpoint.mode === 'delegated' ? 120_000 : 30_000,
       toolTimeoutMs: 10_000,
     },
   );
@@ -457,7 +564,11 @@ async function proposeProfileUpdate(input: {
   };
   const runResult = await runtime.runWithTrace(
     request,
-    { modelId: endpoint.modelId, executionMode: 'local_only', workspaceId: input.workspaceId },
+    {
+      modelId: endpoint.modelId,
+      executionMode: endpoint.mode === 'delegated' ? 'provider_allowed' : 'local_only',
+      workspaceId: input.workspaceId,
+    },
     new AbortController().signal,
   );
 
@@ -520,6 +631,8 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.getEndpointConfig, async () => getEndpointConfig());
+
+  ipcMain.handle(IPC_CHANNELS.listProviderConnections, async () => listProviderConnections());
 
   ipcMain.handle(IPC_CHANNELS.discoverLocalModels, async (_event, payload: unknown) => {
     const { baseUrl } = parseModelDiscoveryInput(payload);

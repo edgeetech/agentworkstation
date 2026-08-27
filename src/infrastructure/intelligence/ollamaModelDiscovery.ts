@@ -4,11 +4,38 @@ export type OllamaModel = {
   id: string;
   size: number;
   modifiedAt?: string;
+  capabilities: string[];
+  toolCalling: boolean;
 };
 
 type OllamaTagsResponse = {
   models?: Array<{ name?: unknown; size?: unknown; modified_at?: unknown }>;
 };
+
+export async function inspectOllamaModel(
+  baseUrl: string,
+  modelId: string,
+  gateway: NetworkGateway,
+  signal: AbortSignal,
+): Promise<{ capabilities: string[]; toolCalling: boolean }> {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
+  const response = await gateway.send({
+    url: `${normalizedBaseUrl}/api/show`,
+    method: 'POST',
+    headers: { Accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: modelId }),
+    purpose: 'ollama-model-capability-discovery',
+    executionMode: 'local_only',
+  }, signal);
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Ollama model inspection failed with status ${response.status}`);
+  }
+  const payload = JSON.parse(response.body) as { capabilities?: unknown };
+  const capabilities = Array.isArray(payload.capabilities)
+    ? payload.capabilities.filter((value): value is string => typeof value === 'string')
+    : [];
+  return { capabilities, toolCalling: capabilities.includes('tools') };
+}
 
 export async function discoverOllamaModels(
   baseUrl: string,
@@ -37,7 +64,7 @@ export async function discoverOllamaModels(
     throw new Error('Ollama returned invalid model-list JSON');
   }
 
-  return (payload.models ?? [])
+  const models = (payload.models ?? [])
     .flatMap((model) =>
       typeof model.name === 'string' && model.name.trim()
         ? [{
@@ -48,4 +75,8 @@ export async function discoverOllamaModels(
         : [],
     )
     .sort((left, right) => left.id.localeCompare(right.id));
+  return Promise.all(models.map(async (model) => ({
+    ...model,
+    ...(await inspectOllamaModel(baseUrl, model.id, gateway, signal)),
+  })));
 }

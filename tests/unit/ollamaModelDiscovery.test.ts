@@ -4,16 +4,20 @@ import { discoverOllamaModels } from '../../src/infrastructure/intelligence/olla
 
 describe('Ollama model discovery', () => {
   it('loads, normalizes, and sorts installed models through the local-only gateway', async () => {
-    let request: Parameters<NetworkGateway['send']>[0] | undefined;
+    const requests: Array<Parameters<NetworkGateway['send']>[0]> = [];
     const gateway: NetworkGateway = {
       async send(value) {
-        request = value;
+        requests.push(value);
         return {
           status: 200,
-          body: JSON.stringify({ models: [
-            { name: 'qwen2.5:3b', size: 1_900_000_000 },
-            { name: 'deepseek-coder:6.7b', size: 3_800_000_000 },
-          ] }),
+          body: value.url.endsWith('/api/tags')
+            ? JSON.stringify({ models: [
+                { name: 'qwen2.5:3b', size: 1_900_000_000 },
+                { name: 'deepseek-coder:6.7b', size: 3_800_000_000 },
+              ] })
+            : JSON.stringify({
+                capabilities: value.body?.includes('qwen2.5:3b') ? ['completion', 'tools'] : ['completion'],
+              }),
           activity: {
             url: value.url,
             method: value.method,
@@ -29,14 +33,16 @@ describe('Ollama model discovery', () => {
 
     await expect(discoverOllamaModels('http://localhost:11434/v1/', gateway, new AbortController().signal))
       .resolves.toEqual([
-        { id: 'deepseek-coder:6.7b', size: 3_800_000_000 },
-        { id: 'qwen2.5:3b', size: 1_900_000_000 },
+        { id: 'deepseek-coder:6.7b', size: 3_800_000_000, capabilities: ['completion'], toolCalling: false },
+        { id: 'qwen2.5:3b', size: 1_900_000_000, capabilities: ['completion', 'tools'], toolCalling: true },
       ]);
-    expect(request).toMatchObject({
+    expect(requests[0]).toMatchObject({
       url: 'http://localhost:11434/api/tags',
       method: 'GET',
       executionMode: 'local_only',
     });
+    expect(requests.slice(1)).toHaveLength(2);
+    expect(requests[1]).toMatchObject({ url: 'http://localhost:11434/api/show', method: 'POST' });
   });
 
   it('fails clearly on an invalid response', async () => {

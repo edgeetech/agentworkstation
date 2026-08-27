@@ -30,6 +30,11 @@ describe('ipc contract', () => {
   it('validates endpoint config and chat payloads', () => {
     expect(parseEndpointConfigInput({ mode: 'mock', baseUrl: 'http://localhost:11434', modelId: 'llama3.1' }))
       .toEqual({ mode: 'mock', baseUrl: 'http://localhost:11434', modelId: 'llama3.1' });
+    expect(parseEndpointConfigInput({
+      mode: 'delegated', baseUrl: 'http://localhost:11434', modelId: 'default', providerId: 'codex',
+    })).toEqual({
+      mode: 'delegated', baseUrl: 'http://localhost:11434', modelId: 'default', providerId: 'codex',
+    });
     expect(parseChatMessageInput({ message: 'hello' })).toEqual({ message: 'hello' });
     expect(parseCreateChatSessionInput({ name: 'Session A' })).toEqual({ name: 'Session A' });
     expect(parseProposeProfileUpdateInput({
@@ -39,5 +44,8 @@ describe('ipc contract', () => {
     })).toEqual({ workspaceId: 'profile', targetPath: 'README.md', recommendation: 'update summary' });
     expect(() => parseProposeProfileUpdateInput({ recommendation: 'update summary' })).toThrow();
     expect(() => parseEndpointConfigInput({ mode: 'unknown', baseUrl: '', modelId: '' })).toThrow();
+    expect(() => parseEndpointConfigInput({
+      mode: 'delegated', baseUrl: 'http://localhost:11434', modelId: 'default',
+    })).toThrow();
   });
 });

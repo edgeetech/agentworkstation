@@ -53,7 +53,6 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
 
     await page.getByRole('button', { name: /Model settings/ }).click();
     await page.getByLabel('Execution mode').selectOption('mock');
-    await page.locator('.settings input').nth(1).fill('mock-model');
     await page.getByRole('button', { name: 'Save model settings' }).click();
     await expect(page.getByText('Simulated demo is not AI.')).toBeVisible();
     await page.getByRole('button', { name: 'Enable simulated demo for this session' }).click();

@@ -7,6 +7,7 @@ import type {
   EndpointConfig,
   PendingAction,
   LocalModel,
+  ProviderConnection,
   WorkspaceRecord,
 } from "../shared/api";
 import "./styles.css";
@@ -74,17 +75,24 @@ function App(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
+  const [providerConnections, setProviderConnections] = useState<ProviderConnection[]>([]);
   const [modelDiscoveryBusy, setModelDiscoveryBusy] = useState(false);
   const [modelDiscoveryError, setModelDiscoveryError] = useState<string | null>(null);
   const [demoSessionEnabled, setDemoSessionEnabled] = useState(false);
+  const selectedLocalModel = localModels.find((model) => model.id === endpoint.modelId);
+  const localModelIncompatible = selectedLocalModel?.toolCalling === false;
   const localEndpointReady =
-    endpoint.configured === true && endpoint.mode === "local";
+    endpoint.configured === true && endpoint.mode === "local" && !localModelIncompatible;
+  const delegatedConnection = providerConnections.find((provider) => provider.id === endpoint.providerId);
+  const delegatedEndpointReady = endpoint.configured === true && endpoint.mode === "delegated" &&
+    delegatedConnection?.installed === true && delegatedConnection.authenticated !== false;
+  const realEndpointReady = localEndpointReady || delegatedEndpointReady;
   const demoConfigured =
     endpoint.configured === true && endpoint.mode === "mock";
-  const endpointReady = localEndpointReady || demoSessionEnabled;
+  const endpointReady = realEndpointReady || demoSessionEnabled;
   const workspaceReady = workspaces.length > 0;
   const ready = endpointReady && workspaceReady;
-  const realReady = localEndpointReady && workspaceReady;
+  const realReady = realEndpointReady && workspaceReady;
   const profileWorkspaces = useMemo(
     () => workspaces.filter((w) => w.kind !== "project"),
     [workspaces],
@@ -163,6 +171,9 @@ function App(): JSX.Element {
         if (config.mode === "local") void loadLocalModels(config.baseUrl);
       })
       .catch((value: unknown) => setError(messageOf(value)));
+    void api.listProviderConnections()
+      .then(setProviderConnections)
+      .catch(() => setProviderConnections([]));
   }, [api]);
   const go = (next: View): void => {
     setView(next);
@@ -193,10 +204,12 @@ function App(): JSX.Element {
           </span>
           <strong>
             {realReady
-              ? `Using ${endpoint.modelId} locally`
+              ? endpoint.mode === "delegated"
+                ? `Using ${delegatedConnection?.label ?? endpoint.providerId} with explicit cloud permission`
+                : `Using ${endpoint.modelId} locally`
               : demoSessionEnabled
                 ? "No AI model is being used"
-                : `${Number(workspaceReady) + Number(localEndpointReady)} of 2 steps complete`}
+                : `${Number(workspaceReady) + Number(realEndpointReady)} of 2 steps complete`}
           </strong>
         </div>
       </section>
@@ -222,13 +235,13 @@ function App(): JSX.Element {
               <small>Register your profile and recent projects.</small>
             </button>
             <button
-              className={`step-card ${localEndpointReady ? "complete" : ""}`}
+              className={`step-card ${realEndpointReady ? "complete" : ""}`}
               type="button"
               onClick={() => go("settings")}
             >
-              <span>{localEndpointReady ? "✓" : "2"}</span>
-              <strong>Connect a local model</strong>
-              <small>Use Ollama or another compatible endpoint.</small>
+              <span>{realEndpointReady ? "✓" : "2"}</span>
+              <strong>Connect intelligence</strong>
+              <small>Use Ollama locally or a delegated provider CLI.</small>
             </button>
           </div>
         </section>
@@ -689,7 +702,7 @@ function App(): JSX.Element {
       <Heading
         eyebrow="Private intelligence"
         title="Model settings"
-        description="Connect an OpenAI-compatible model running on this computer."
+        description="Choose local inference or reuse a provider CLI connection. Credentials remain provider-managed."
       />
       {endpoint.mode === "mock" ? (
         <div className="demo">
@@ -721,20 +734,40 @@ function App(): JSX.Element {
           <span>Mode</span>
           <select
             aria-label="Execution mode"
-            value={endpoint.mode}
-            onChange={(e) =>
-              setEndpoint((old) => ({
-                ...old,
-                mode: e.target.value as "mock" | "local",
-                configured: false,
-              }))
-            }
+            value={endpoint.mode === "delegated" ? `delegated:${endpoint.providerId ?? ""}` : endpoint.mode}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value.startsWith("delegated:")) {
+                const providerId = value.slice("delegated:".length);
+                const provider = providerConnections.find((item) => item.id === providerId);
+                setEndpoint((old) => ({
+                  ...old,
+                  mode: "delegated",
+                  providerId,
+                  modelId: provider?.defaultModel ?? "default",
+                  configured: false,
+                }));
+              } else {
+                setEndpoint((old) => ({
+                  ...old,
+                  mode: value as "mock" | "local",
+                  providerId: undefined,
+                  configured: false,
+                }));
+              }
+              setDemoSessionEnabled(false);
+            }}
           >
             <option value="local">Local model</option>
+            {providerConnections.map((provider) => (
+              <option key={provider.id} value={`delegated:${provider.id}`} disabled={!provider.installed}>
+                {provider.label} · {provider.installed ? "delegated CLI" : "not installed"}
+              </option>
+            ))}
             <option value="mock">Demo mode (simulated)</option>
           </select>
         </label>
-        <label>
+        {endpoint.mode === "local" ? <label>
           <span>Endpoint URL</span>
           <input
             value={endpoint.baseUrl}
@@ -746,9 +779,9 @@ function App(): JSX.Element {
               }))
             }
           />
-        </label>
-        <label>
-          <span>Installed Ollama model</span>
+        </label> : null}
+        {endpoint.mode !== "mock" ? <label>
+          <span>{endpoint.mode === "local" ? "Installed Ollama model" : "Provider model"}</span>
           {endpoint.mode === "local" && localModels.length > 0 ? (
             <select
               aria-label="Installed Ollama model"
@@ -763,8 +796,8 @@ function App(): JSX.Element {
             >
               <option value="" disabled>Select an installed model</option>
               {localModels.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.id} · {(model.size / 1024 / 1024 / 1024).toFixed(1)} GB
+                <option key={model.id} value={model.id} disabled={!model.toolCalling}>
+                  {model.id} · {(model.size / 1024 / 1024 / 1024).toFixed(1)} GB · {model.toolCalling ? "Career Agent ready" : "chat only — no tools"}
                 </option>
               ))}
             </select>
@@ -781,7 +814,17 @@ function App(): JSX.Element {
               }
             />
           )}
-        </label>
+        </label> : null}
+        {localModelIncompatible ? (
+          <div className="demo">
+            <strong>{endpoint.modelId} cannot run Career Agent workflows.</strong>
+            <span>
+              This model supports text completion but not tool calling. Choose a
+              model marked Career Agent ready; on this computer, qwen2.5:3b is
+              compatible.
+            </span>
+          </div>
+        ) : null}
         {endpoint.mode === "local" ? (
           <div className="actions model-discovery">
             <button
@@ -797,10 +840,27 @@ function App(): JSX.Element {
             ) : null}
           </div>
         ) : null}
-        <small>
-          Ollama default: http://localhost:11434 with a model you have already
-          pulled.
-        </small>
+        {endpoint.mode === "delegated" ? (
+          <div className="demo">
+            <strong>{delegatedConnection?.label ?? "Provider"} sends bounded Career Agent context to the cloud.</strong>
+            <span>
+              Routing reason: you explicitly selected this provider. Its CLI manages authentication;
+              Agent Workstation stores only provider and model IDs.
+            </span>
+          </div>
+        ) : null}
+        <div className="provider-list">
+          {providerConnections.map((provider) => (
+            <div className="source-row" key={provider.id}>
+              <span>{provider.installed ? "Detected" : "Unavailable"}</span>
+              <strong>{provider.label}</strong>
+              <small>{provider.detail}</small>
+            </div>
+          ))}
+        </div>
+        {endpoint.mode === "local" ? <small>
+          Ollama default: http://localhost:11434 with a model you have already pulled.
+        </small> : null}
         <div className="actions">
           <button
             type="button"
@@ -827,7 +887,9 @@ function App(): JSX.Element {
                 setNotice(
                   endpoint.mode === "mock"
                     ? "Simulated demo configured but inactive. Enable it explicitly to run without AI."
-                    : "Local model settings saved.",
+                    : endpoint.mode === "delegated"
+                      ? `${delegatedConnection?.label ?? "Provider"} connection saved.`
+                      : "Local model settings saved.",
                 );
               })
             }
@@ -932,25 +994,29 @@ function App(): JSX.Element {
           >
             <span>Model settings</span>
             <small>
-              {localEndpointReady
-                ? `${endpoint.modelId} · real local AI`
+              {realEndpointReady
+                ? endpoint.mode === "delegated"
+                  ? `${delegatedConnection?.label ?? endpoint.providerId} · cloud allowed`
+                  : `${endpoint.modelId} · real local AI`
                 : demoSessionEnabled
                   ? "Simulated demo · no AI"
                   : "Real model required"}
             </small>
           </button>
           <div className="privacy">
-            <strong>● Local only</strong>
-            <small>Registered folders stay on this computer.</small>
+            <strong>{endpoint.mode === "delegated" ? "● Provider allowed" : "● Local only"}</strong>
+            <small>{endpoint.mode === "delegated" ? "Bounded context is sent through the selected CLI." : "Registered folders stay on this computer."}</small>
           </div>
         </div>
       </aside>
       <main>
         <header>
           <div>
-            <i className={localEndpointReady ? "connected" : ""} />
-            {localEndpointReady
-              ? `${endpoint.modelId} · real local AI`
+            <i className={realEndpointReady ? "connected" : ""} />
+            {realEndpointReady
+              ? endpoint.mode === "delegated"
+                ? `${delegatedConnection?.label ?? endpoint.providerId} · provider allowed`
+                : `${endpoint.modelId} · real local AI`
               : demoSessionEnabled
                 ? "Simulated demo · no AI model"
                 : "Real local model required"}
@@ -970,6 +1036,15 @@ function App(): JSX.Element {
               {demoSessionEnabled
                 ? "Ask, Audit, and Improve return deterministic test responses."
                 : "Connect a local model to use Career Agent, or explicitly enable the demo in Model settings."}
+            </span>
+          </div>
+        ) : null}
+        {delegatedEndpointReady && view !== "settings" ? (
+          <div className="demo top">
+            <strong>{delegatedConnection?.label ?? "Cloud provider"} selected</strong>
+            <span>
+              Routing reason: explicit provider selection. Bounded Career Agent
+              context may leave this computer through the provider-managed CLI.
             </span>
           </div>
         ) : null}

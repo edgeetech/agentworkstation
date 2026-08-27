@@ -96,4 +96,33 @@ describe('agent runtime', () => {
       new AbortController().signal,
     )).resolves.toBe('proposal created');
   });
+
+  it('returns bounded tool failures to the model so it can recover', async () => {
+    const requests: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+    let call = 0;
+    const runtime = new AgentRuntime(
+      {
+        async execute(request) {
+          requests.push(request as typeof requests[number]);
+          call += 1;
+          return call === 1
+            ? { type: 'tool_call' as const, call: { id: 'missing-1', toolName: 'filesystem.read', input: { relativePath: 'profile.md' } } }
+            : { type: 'text' as const, content: 'recovered' };
+        },
+      },
+      {
+        execute: async () => { throw new Error('ENOENT: profile.md'); },
+        getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: true }),
+      },
+      { decide: () => 'allow' },
+      { maxSteps: 2, maxToolCalls: 2, maxToolResultBytes: 1024, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
+    );
+
+    await expect(runtime.run(
+      { messages: [{ role: 'user', content: 'inspect profile' }] },
+      { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' },
+      new AbortController().signal,
+    )).resolves.toBe('recovered');
+    expect(requests[1].messages.at(-1)?.content).toContain('ENOENT: profile.md');
+  });
 });

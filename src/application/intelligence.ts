@@ -1,4 +1,4 @@
-import type { IntelligencePort, ModelRequest, SourceReference } from '@domain/intelligence';
+import type { ExecutionMode, IntelligencePort, ModelRequest, SourceReference } from '@domain/intelligence';
 import type { ToolMetadata } from '@domain/intelligence';
 
 export type ExecutionLimits = {
@@ -25,11 +25,11 @@ export class AgentRuntime {
     private readonly limits: ExecutionLimits,
   ) {}
 
-  async run(request: ModelRequest, context: { modelId: string; executionMode: 'local_only'; workspaceId: string }, signal: AbortSignal): Promise<string> {
+  async run(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId: string }, signal: AbortSignal): Promise<string> {
     return (await this.runWithTrace(request, context, signal)).content;
   }
 
-  async runWithTrace(request: ModelRequest, context: { modelId: string; executionMode: 'local_only'; workspaceId: string }, signal: AbortSignal): Promise<AgentRunResult> {
+  async runWithTrace(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId: string }, signal: AbortSignal): Promise<AgentRunResult> {
     let toolCalls = 0;
     const sourceReferences: SourceReference[] = [];
     for (let step = 0; step < this.limits.maxSteps; step += 1) {
@@ -52,12 +52,39 @@ export class AgentRuntime {
         throw new Error('Tool not allowed');
       }
       const toolAbort = new AbortController();
-      const result = await this.withTimeout(
-        () => this.toolExecutor.execute(response.call.toolName, response.call.input, { workspaceId: context.workspaceId, signal: AbortSignal.any([signal, toolAbort.signal]) }),
-        this.limits.toolTimeoutMs,
-        toolAbort,
-        'Tool timeout exceeded',
-      );
+      let result: { output: unknown; sourceReferences: SourceReference[] };
+      try {
+        result = await this.withTimeout(
+          () => this.toolExecutor.execute(response.call.toolName, response.call.input, { workspaceId: context.workspaceId, signal: AbortSignal.any([signal, toolAbort.signal]) }),
+          this.limits.toolTimeoutMs,
+          toolAbort,
+          'Tool timeout exceeded',
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        request = {
+          messages: [
+            ...request.messages,
+            {
+              role: 'assistant',
+              content: '',
+              toolCalls: [{
+                id: response.call.id,
+                toolName: response.call.toolName,
+                input: response.call.input,
+              }],
+            },
+            {
+              role: 'tool',
+              content: JSON.stringify({ error: message.slice(0, 1_000) }),
+              toolCallId: response.call.id,
+              toolName: response.call.toolName,
+            },
+          ],
+          tools: request.tools,
+        };
+        continue;
+      }
       const output = result !== null && typeof result === 'object' && 'output' in result
         ? (result as { output: unknown }).output
         : result;
