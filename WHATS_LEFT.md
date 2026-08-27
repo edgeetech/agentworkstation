@@ -1,7 +1,7 @@
 # Agent Workstation: Complete MVP Handoff
 
 Last updated: 2026-08-27
-Repository state audited at: `345c04f` on `main`
+Implementation base audited at: `235bd25` on `main`; this document describes the complete takeover changes in the current `main` worktree/commit
 Current objective: **complete the Windows MVP end to end**
 
 ## Non-Negotiable Completion Boundary
@@ -29,8 +29,12 @@ this file after every completed capability or newly discovered blocker.
 
 ## Verified Current State
 
-- Worktree is clean and synchronized with `origin/main` at `345c04f`.
-- GitHub CI passes at `345c04f`: <https://github.com/edgeetech/agentworkstation/actions/runs/33021863046>.
+- The takeover started from synchronized `HEAD`/`origin/main` commit `235bd25`
+  and preserved the full Copilot implementation before correcting and extending it.
+- Local review verification of the resulting implementation passes: lint; 72 tests across
+  22 files; 6 architecture tests; renderer/Electron builds; the visible mock
+  Electron E2E; a real Ollama chat/audit/proposal run with `qwen2.5:3b`; and a
+  production audit with 0 vulnerabilities.
 - No pull request is open.
 - Releases 0.1-0.3 have substantial foundations:
   - secure `WorkspaceGateway` and bounded filesystem/Git tools,
@@ -43,34 +47,98 @@ this file after every completed capability or newly discovered blocker.
   - renderer views for audit output, sources, diffs, approve, and reject,
   - Windows and macOS automated CI compatibility gates.
 
-## Why the MVP Is Not Complete Yet
+## Windows MVP Completion Status
 
-- The preload exposes APIs by assigning `window.agentWorkstation` directly even
-  though Electron uses `contextIsolation: true`; it does not use
-  `contextBridge.exposeInMainWorld`, and there is no real IPC application host.
-- The desktop calls `buildDeterministicCareerAuditScenario()` rather than the
-  real Career Agent, `AgentRuntime`, tools, and local endpoint adapter.
-- No workspace management UI exists. The preload silently registers
-  `process.cwd()` as `agentworkstation`; users cannot add, remove, inspect, or
-  select their own profile/project workspaces.
-- No Career Agent selector or arbitrary chat input/history UI exists.
-- No endpoint settings, connection test, model selection, or Ollama-backed
-  desktop execution path exists.
-- The "Propose README update" action uses hard-coded target content rather than
-  a proposal produced from the audit/chat result.
-- SQLite does not persist sessions or messages, despite this being an explicit
-  MVP success criterion.
-- Existing acceptance tests exercise application services in Vitest; they do
-  not drive the packaged/dev Electron UI. Playwright scripts exist in
-  `package.json`, but there is no real Windows critical-path E2E suite.
-- The declarative career memory files still contain placeholder text and no UI
-  exists to configure or edit the user's actual profile facts.
-- A real local Ollama acceptance run is claimed as available but is not wired or
-  documented as an end-to-end desktop result.
+- ⚠️ The functional Windows MVP flow is implemented and locally accepted; the
+  remaining release blocker is producing and smoke-testing the installer.
+- ✅ The desktop now has a neutral, agent-first shell with an agent library,
+  Career Agent-scoped navigation, first-run readiness, and clear task flows.
+- ✅ Local inference is the default; mock mode is an explicitly labelled demo.
+- ✅ Mock E2E uses visible controls for agent selection, setup, chat, audit,
+  proposal review, restart recovery, and approval (only the native picker result
+  is stubbed).
+- ✅ Proposals are bound to the selected workspace/path, require a structured tool
+  call, fail closed, and use an order-aware diff with duplicate/reorder coverage.
+- ✅ A real Ollama UI acceptance test passes chat, audit, and structured proposal
+  generation through the Electron boundary with `qwen2.5:3b`.
+- ⚠️ `electron-builder` and packaged-resource loading are configured, but this PC
+  returns `EPERM` while renaming its freshly extracted `win-unpacked.tmp`; no
+  installer artifact has been produced locally yet.
+- ⚠️ macOS runtime/package validation remains explicitly out of MVP scope.
+
+## Product/UX Recovery Plan — Must Complete Before MVP Acceptance
+
+### A. Fix correctness and safety blockers first
+
+Status: safety work completed; installer artifact verification remains blocked
+by the local Windows `EPERM` extraction/rename failure described below.
+
+- Remove the arbitrary model-response-to-full-file fallback.
+- Stop overriding structured model proposals with a forced `README.md` body.
+- Replace the line-membership pseudo-diff with a trustworthy order-aware unified
+  diff implementation and regression tests for duplicates and reordered lines.
+- Add a real packaging pipeline and load declarative agent resources from a
+  packaged resource location rather than `process.cwd()`.
+
+### B. Replace the flat page with a task-oriented product shell
+
+Status: ✅ Completed, including the later agent-first navigation and restrained
+near-monochrome palette requirement.
+
+- Add first-run onboarding: explain the Career Agent, choose a profile source,
+  add project repositories, configure/test Ollama, and show readiness.
+- Use clear destinations: `Chat`, `Career Audit`, `Changes`, `Sources`, and
+  `Settings`; keep administrative configuration out of the main task flow.
+- Give the user one obvious primary action per state and use progressive
+  disclosure for secondary/advanced settings.
+- Add labelled fields, concise help text, busy/disabled states, success/error
+  feedback, confirmation for destructive actions, and accessible focus behavior.
+- Present source references as readable evidence cards rather than raw technical
+  strings.
+
+### C. Make real local intelligence the honest product path
+
+Status: ✅ Completed and verified through the optional real-Ollama Playwright
+acceptance test.
+
+- Default the product journey to endpoint onboarding and a tested local model.
+- Keep mock mode explicitly labelled `Demo mode — responses are simulated` and
+  visually distinct from real inference.
+- Always show the active endpoint/model in Chat and Career Audit.
+- Add a `Test connection` action with actionable offline/model-not-found errors.
+- Never count a mock response as proof of real chat or audit behavior.
+
+### D. Make Career Audit an explicit workflow
+
+Status: ✅ MVP path completed: audit is explicit, readiness-gated, rerunnable,
+and rendered with its evidence list. Per-finding interactive drill-down remains
+a post-MVP refinement.
+
+- Do not auto-run an audit before setup is complete.
+- Add a visible `Run Career Audit` action, prerequisite/readiness state, progress,
+  cancellation, and rerun behavior after workspace/model changes.
+- Structure results into findings and recommendations with evidence attached to
+  each item.
+- Allow `Propose change` from a selected recommendation and carry its target,
+  rationale, and sources into the review screen.
+
+### E. Strengthen desktop acceptance around the user experience
+
+Status: ✅ Completed for functional acceptance; installer smoke testing remains
+the release blocker.
+
+- Rewrite the Electron E2E so workspace registration, endpoint configuration,
+  audit execution, chat, proposal review, reject, approve, and restart recovery
+  happen through visible UI controls; use direct API calls only for fixture setup
+  that a user could not perform.
+- Add assertions for first-run guidance, active model/mode, readiness, loading,
+  errors, source presentation, exact diff, and safe confirmation.
+- Keep deterministic mock E2E, then run/document the same essential flow through
+  Ollama without exposing mock output as product behavior.
 
 ## Execution Plan — Continue Through All Items
 
-### 1. Repair and formalize the Electron boundary
+### 1. Repair and formalize the Electron boundary ✅ Completed
 
 - Move application composition and privileged filesystem/database/model work to
   the Electron main process.
@@ -84,7 +152,15 @@ this file after every completed capability or newly discovered blocker.
 Completion evidence: renderer receives the API under isolation; privileged Node
 capabilities are not executed in the renderer/preload world.
 
-### 2. Implement real workspace management
+Status update (2026-08-27):
+- privileged composition for audit/pending-action flows moved into Electron main
+  process with `ipcMain.handle(...)`,
+- preload replaced with typed `contextBridge.exposeInMainWorld` proxy using
+  `ipcRenderer.invoke(...)`,
+- IPC payload validation added via `apps/desktop/main/ipcContract.ts`,
+- contract coverage added in `tests/unit/ipcContract.test.ts`.
+
+### 2. Implement real workspace management ✅ Completed
 
 - Add native directory selection and user-controlled workspace registration.
 - List, select, and remove persisted workspaces; never auto-register the process
@@ -97,7 +173,21 @@ capabilities are not executed in the renderer/preload world.
 Completion evidence: register at least a profile repository and two project
 repositories in the desktop, restart, and recover them deterministically.
 
-### 3. Add endpoint settings and real local chat
+Status update (2026-08-27):
+- native directory picker is wired via main-process `dialog.showOpenDialog`,
+- typed workspace IPC added (`pick/register/list/select/remove`),
+- desktop workspace panel added (kinded workspace registration, list, selection,
+  removal),
+- persistence now stores workspace `kind` metadata and deterministic reselection
+  after selected-workspace removal,
+- auto-registration of `process.cwd()` was removed from product behavior.
+
+Completion evidence (2026-08-27):
+- validated by Playwright Electron E2E (`tests/e2e/windows-mvp.e2e.spec.ts`)
+  with restart: recovers `profile` + 2 `project` workspaces and preserves
+  selected workspace.
+
+### 3. Add endpoint settings and real local chat ✅ Completed
 
 - Persist a local OpenAI-compatible endpoint configuration (base URL, model ID,
   optional non-secret display metadata).
@@ -112,7 +202,23 @@ repositories in the desktop, restart, and recover them deterministically.
 Completion evidence: a desktop prompt reaches mock and Ollama paths through the
 same application contract and returns a visible response.
 
-### 4. Persist sessions and messages
+Status update (2026-08-27):
+- endpoint configuration API is now implemented in the main process and persisted
+  in SQLite (`mode`, `baseUrl`, `modelId`),
+- renderer has endpoint settings controls plus arbitrary chat input/history,
+- chat requests now cross the typed IPC boundary into main-process runtime
+  composition and return visible assistant output + source references,
+- mock and local modes are wired through a shared contract.
+
+Status update (2026-08-27, live local check):
+- pulled tool-capable Ollama model `qwen2.5:3b`,
+- validated local-mode desktop chat through IPC/runtime,
+- validated proposal creation + approval path in local mode with persisted
+  endpoint/workspace configuration.
+- local mode is now the unconfigured default, demo mode is visibly labelled,
+  and Model Settings includes a real connection test action.
+
+### 4. Persist sessions and messages ✅ Completed
 
 - Add SQLite migrations and application ports/services for sessions and ordered
   messages, including tool-call/result metadata needed to restore a conversation.
@@ -123,7 +229,18 @@ same application contract and returns a visible response.
 Completion evidence: restart Electron and resume the same conversation without
 losing workspace selection, messages, sources, or pending actions.
 
-### 5. Run the real multi-workspace Career Audit
+Status update (2026-08-27):
+- SQLite chat session and ordered message persistence is implemented
+  (`chat_sessions`, `chat_messages`),
+- endpoint settings persistence is implemented (`app_settings`),
+- desktop UI can create/select chat sessions and reload history through IPC,
+- main-process chat path now rebuilds request context from persisted messages.
+
+Completion evidence (2026-08-27):
+- validated by restart-aware Playwright E2E: selected chat session + persisted
+  history are recovered after relaunch before approving a pending action.
+
+### 5. Run the real multi-workspace Career Audit ✅ Completed
 
 - Replace `getDemoAudit()` with an operation that runs `CareerAuditService`
   against registered workspaces and the selected endpoint.
@@ -137,7 +254,18 @@ losing workspace selection, messages, sources, or pending actions.
 Completion evidence: the desktop compares actual recent project activity with
 the current professional profile and identifies evidence-backed gaps.
 
-### 6. Connect model-driven proposals to safe editing
+Status update (2026-08-27):
+- `getDemoAudit` no longer returns the static deterministic scenario,
+- desktop audit now executes the real `CareerAuditService` path in the
+  main-process composition root with registered tools and selected endpoint
+  config, and returns runtime source references to the renderer.
+
+Completion evidence (2026-08-27):
+- mock Playwright E2E executes the explicit visible audit flow after setup,
+- real Ollama Playwright acceptance executes non-mock audit through Electron
+  using `qwen2.5:3b`.
+
+### 6. Connect model-driven proposals to safe editing ✅ Completed
 
 - Let the agent create `filesystem.proposeWrite` actions from a selected audit
   recommendation; remove the hard-coded README body.
@@ -150,7 +278,24 @@ the current professional profile and identifies evidence-backed gaps.
 Completion evidence: request a profile update, inspect its diff, reject one
 proposal, then approve another and verify the intended file changed atomically.
 
-### 7. Add real desktop acceptance coverage
+Status update (2026-08-27):
+- proposal flow now executes through runtime/tool-calling with
+  `filesystem.proposeWrite` (mock path deterministically emits the tool call,
+  local path uses the OpenAI-compatible adapter),
+- hard-coded one-click README write body was removed from the product path;
+  the user chooses the target workspace/path and the model must return a valid
+  structured proposal for that exact target,
+- free-form model output now fails closed instead of becoming replacement file
+  content, and the LCS-based diff preserves ordering and duplicate lines,
+- pending actions continue to show exact diffs and approve/reject controls.
+
+Completion evidence (2026-08-27):
+- restart path verified in Electron E2E (proposal created pre-restart,
+  recovered post-restart, approved and applied atomically),
+- stale/duplicate execution behaviors remain covered by unit/evaluation suites
+  (`tests/unit/approvals.test.ts`, `tests/evaluation/safeEditing.acceptance.test.ts`).
+
+### 7. Add real desktop acceptance coverage — Installer artifact blocked
 
 - Add Playwright Electron E2E for the complete Windows critical path using the
   deterministic mock endpoint.
@@ -165,6 +310,22 @@ proposal, then approve another and verify the intended file changed atomically.
 Completion evidence: automated Windows critical-path E2E passes, local Ollama
 evidence is documented, all CI gates are green, and no acceptance item above is
 represented only by a static demo or hard-coded response.
+
+Status update (2026-08-27):
+- Windows Electron critical-path E2E now uses visible UI controls and passes,
+  including first-run setup, agent selection, restart recovery, diff review, and
+  approved atomic write. Only the native directory dialog response is stubbed.
+- Optional `tests/e2e/ollama.acceptance.e2e.spec.ts` passes model connection,
+  non-mock chat, audit, and structured proposal generation with `qwen2.5:3b`.
+- lint, architecture, 71-test Vitest suite, renderer/Electron compile, mock E2E,
+  Ollama acceptance, and production audit pass locally.
+- `electron:pack` now invokes `electron-builder`, includes Career Agent files via
+  `extraResources`, and no longer depends on `process.cwd()` when packaged.
+- Remaining blocker: both `release` and a clean `release-build` output fail at
+  Electron extraction with `EPERM: operation not permitted, rename
+  '...win-unpacked.tmp' -> '...win-unpacked'` on this PC. Re-run packaging in CI
+  or after resolving the local Windows filesystem/security lock, then smoke-test
+  the produced installer before declaring the release artifact complete.
 
 ## Out of MVP Scope
 

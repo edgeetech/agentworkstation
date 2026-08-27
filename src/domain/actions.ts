@@ -5,6 +5,7 @@ export type PendingAction = {
   sessionId: string;
   createdAt: string;
   status: PendingActionStatus;
+  workspaceId: string;
   expectedOriginalHash: string;
   proposedContentHash: string;
   targetPath: string;

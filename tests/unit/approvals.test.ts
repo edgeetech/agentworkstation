@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ApprovalService } from '../../src/application/approvals';
+import { ApprovalService, buildUnifiedDiff } from '../../src/application/approvals';
 import { DefaultWorkspaceGateway } from '../../src/infrastructure/filesystem/workspaceGateway';
 import { SqlitePersistence } from '../../src/infrastructure/persistence/sqlite';
 import { createFilesystemProposeWriteTool } from '../../src/infrastructure/filesystem/filesystemTools';
@@ -13,6 +13,17 @@ function makeDb(): SqlitePersistence {
 }
 
 describe('approval service', () => {
+  it('preserves line order and duplicate occurrences in review diffs', () => {
+    const diff = buildUnifiedDiff('profile.md', 'alpha\nbeta\nalpha\n', 'alpha\nalpha\nbeta\n');
+
+    expect(diff).toContain(' alpha\n+alpha\n beta\n-alpha');
+  });
+
+  it('rejects files too large for a safe in-memory review diff', () => {
+    expect(() => buildUnifiedDiff('large.md', 'line\n'.repeat(2_001), 'changed\n'))
+      .toThrow('safe review limit');
+  });
+
   it('creates pending actions with a deterministic diff and executes approved writes atomically', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-approval-ws-'));
     fs.writeFileSync(path.join(root, 'README.md'), 'old text\n');

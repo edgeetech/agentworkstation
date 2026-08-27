@@ -1,83 +1,54 @@
-import { buildDeterministicCareerAuditScenario } from '../../../src/application/careerAuditScenario';
-import { ApprovalService } from '../../../src/application/approvals';
-import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
-import { SqlitePersistence } from '../../../src/infrastructure/persistence/sqlite';
-import { DefaultPlatformService } from '../../../src/infrastructure/platform/defaultPlatformService';
-import type { PendingAction } from '../../../src/domain/actions';
-import { join } from 'node:path';
+import { contextBridge, ipcRenderer } from 'electron';
+import type { AgentWorkstationApi } from '../shared/api';
 
-type CareerAuditApi = {
-  getDemoAudit: () => Promise<ReturnType<typeof buildDeterministicCareerAuditScenario>>;
-  listPendingActions: () => Promise<PendingAction[]>;
-  proposeReadmeUpdate: () => Promise<PendingAction>;
-  approvePendingAction: (actionId: string) => Promise<PendingAction>;
-  rejectPendingAction: (actionId: string, reason: string) => Promise<PendingAction>;
-};
+const IPC_CHANNELS = {
+  getDemoAudit: 'agentWorkstation:getDemoAudit',
+  pickWorkspaceDirectory: 'agentWorkstation:pickWorkspaceDirectory',
+  registerWorkspace: 'agentWorkstation:registerWorkspace',
+  listWorkspaces: 'agentWorkstation:listWorkspaces',
+  selectWorkspace: 'agentWorkstation:selectWorkspace',
+  removeWorkspace: 'agentWorkstation:removeWorkspace',
+  getEndpointConfig: 'agentWorkstation:getEndpointConfig',
+  saveEndpointConfig: 'agentWorkstation:saveEndpointConfig',
+  testEndpointConnection: 'agentWorkstation:testEndpointConnection',
+  listChatSessions: 'agentWorkstation:listChatSessions',
+  createChatSession: 'agentWorkstation:createChatSession',
+  selectChatSession: 'agentWorkstation:selectChatSession',
+  getChatHistory: 'agentWorkstation:getChatHistory',
+  sendChatMessage: 'agentWorkstation:sendChatMessage',
+  listPendingActions: 'agentWorkstation:listPendingActions',
+  proposeProfileUpdate: 'agentWorkstation:proposeProfileUpdate',
+  approvePendingAction: 'agentWorkstation:approvePendingAction',
+  rejectPendingAction: 'agentWorkstation:rejectPendingAction',
+} as const;
 
 declare global {
   interface Window {
-    agentWorkstation?: CareerAuditApi;
+    agentWorkstation: AgentWorkstationApi;
   }
 }
 
-const platform = new DefaultPlatformService();
-let persistencePromise: Promise<SqlitePersistence> | null = null;
-const sessionId = `desktop-${Date.now()}`;
-
-async function ensureWorkspaceSelection(): Promise<{ selectedWorkspaceId: string; gateway: DefaultWorkspaceGateway }> {
-  const persistence = await getPersistence();
-  const workspaces = await persistence.listWorkspaces();
-  if (workspaces.length === 0) {
-    await persistence.saveWorkspace({ id: 'agentworkstation', rootPath: process.cwd() });
-    await persistence.selectWorkspace('agentworkstation');
-  }
-  const current = await persistence.getSelectedWorkspace() ?? (await persistence.listWorkspaces())[0];
-  if (!current) throw new Error('No workspace configured');
-  const all = await persistence.listWorkspaces();
-  const roots = Object.fromEntries(all.map((workspace) => [workspace.id, workspace.rootPath]));
-  return { selectedWorkspaceId: current.id, gateway: new DefaultWorkspaceGateway(roots) };
-}
-
-async function approvals(): Promise<{ service: ApprovalService; workspaceId: string }> {
-  const persistence = await getPersistence();
-  const context = await ensureWorkspaceSelection();
-  return {
-    service: new ApprovalService(persistence, context.gateway),
-    workspaceId: context.selectedWorkspaceId,
-  };
-}
-
-async function getPersistence(): Promise<SqlitePersistence> {
-  if (persistencePromise) return persistencePromise;
-  persistencePromise = (async () => {
-    const appDataDirectory = await platform.getAppDataDirectory();
-    return new SqlitePersistence(join(appDataDirectory, 'agentworkstation.db'));
-  })();
-  return persistencePromise;
-}
-
-window.agentWorkstation = {
-  getDemoAudit: async () => buildDeterministicCareerAuditScenario(),
-  listPendingActions: async () => {
-    const { service } = await approvals();
-    return service.listPending();
-  },
-  proposeReadmeUpdate: async () => {
-    const { service, workspaceId } = await approvals();
-    const existing = await service.proposeWrite({
-      workspaceId,
-      targetPath: 'README.md',
-      proposedContent: '# Agent Workstation\n\nLocal Career Agent workstation for evidence-backed profile audits.\n',
-      sessionId,
-    });
-    return existing;
-  },
-  approvePendingAction: async (actionId) => {
-    const { service, workspaceId } = await approvals();
-    return service.approveAndExecute(actionId, workspaceId);
-  },
-  rejectPendingAction: async (actionId, reason) => {
-    const { service } = await approvals();
-    return service.rejectAction(actionId, reason);
-  },
+const api: AgentWorkstationApi = {
+  getDemoAudit: async () => ipcRenderer.invoke(IPC_CHANNELS.getDemoAudit),
+  pickWorkspaceDirectory: async () => ipcRenderer.invoke(IPC_CHANNELS.pickWorkspaceDirectory),
+  registerWorkspace: async (input) => ipcRenderer.invoke(IPC_CHANNELS.registerWorkspace, input),
+  listWorkspaces: async () => ipcRenderer.invoke(IPC_CHANNELS.listWorkspaces),
+  selectWorkspace: async (id) => ipcRenderer.invoke(IPC_CHANNELS.selectWorkspace, { id }),
+  removeWorkspace: async (id) => ipcRenderer.invoke(IPC_CHANNELS.removeWorkspace, { id }),
+  getEndpointConfig: async () => ipcRenderer.invoke(IPC_CHANNELS.getEndpointConfig),
+  saveEndpointConfig: async (config) => ipcRenderer.invoke(IPC_CHANNELS.saveEndpointConfig, config),
+  testEndpointConnection: async (config) => ipcRenderer.invoke(IPC_CHANNELS.testEndpointConnection, config),
+  listChatSessions: async () => ipcRenderer.invoke(IPC_CHANNELS.listChatSessions),
+  createChatSession: async (name) => ipcRenderer.invoke(IPC_CHANNELS.createChatSession, { name }),
+  selectChatSession: async (id) => ipcRenderer.invoke(IPC_CHANNELS.selectChatSession, { id }),
+  getChatHistory: async () => ipcRenderer.invoke(IPC_CHANNELS.getChatHistory),
+  sendChatMessage: async (message) => ipcRenderer.invoke(IPC_CHANNELS.sendChatMessage, { message }),
+  listPendingActions: async () => ipcRenderer.invoke(IPC_CHANNELS.listPendingActions),
+  proposeProfileUpdate: async (input) => ipcRenderer.invoke(IPC_CHANNELS.proposeProfileUpdate, input),
+  approvePendingAction: async (actionId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.approvePendingAction, { actionId }),
+  rejectPendingAction: async (actionId, reason) =>
+    ipcRenderer.invoke(IPC_CHANNELS.rejectPendingAction, { actionId, reason }),
 };
+
+contextBridge.exposeInMainWorld('agentWorkstation', api);

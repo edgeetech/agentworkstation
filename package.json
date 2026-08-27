@@ -2,6 +2,8 @@
   "name": "agentworkstation",
   "private": true,
   "version": "0.1.0",
+  "description": "A local-first desktop workstation for evidence-backed career agents.",
+  "author": "EDGEETECH",
   "type": "commonjs",
   "main": "electron-main.cjs",
   "scripts": {
@@ -10,17 +12,17 @@
     "electron:build-main": "tsc -p tsconfig.electron.json",
     "electron:dev": "concurrently -k \"npm run dev\" \"npm:electron:start\"",
     "electron:start": "npm run electron:build-main && electron .",
-    "electron:pack": "npm run build && npm run electron:build-main",
+    "electron:prepare": "npm run build && npm run electron:build-main",
+    "electron:pack": "npm run electron:prepare && electron-builder --win nsis",
     "test": "vitest run --environment node",
     "test:watch": "vitest --environment node",
     "lint": "eslint .",
     "check:architecture": "vitest run tests/architecture",
-    "test:e2e": "playwright test",
-    "e2e": "playwright test"
+    "test:e2e": "npm run electron:prepare && playwright test",
+    "e2e": "npm run electron:prepare && playwright test"
   },
   "dependencies": {
     "better-sqlite3": "^11.9.1",
-    "electron": "^44.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "yaml": "^2.8.1",
@@ -37,10 +39,40 @@
     "@typescript-eslint/parser": "^8.68.0",
     "@vitejs/plugin-react": "^4.4.0",
     "concurrently": "^9.0.1",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.25.1",
     "jsdom": "^26.1.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
     "vitest": "^3.1.2"
+  },
+  "build": {
+    "appId": "com.edgeetech.agentworkstation",
+    "productName": "Agent Workstation",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "electron-main.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "src/agents/career",
+        "to": "agents/career"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "Agent-Workstation-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

@@ -1,144 +1,946 @@
-import React, { useEffect, useState } from 'react';
-import ReactDOM from 'react-dom/client';
+import React, { useEffect, useMemo, useState } from "react";
+import ReactDOM from "react-dom/client";
+import type {
+  ChatExchange,
+  ChatSessionRecord,
+  DemoAudit,
+  EndpointConfig,
+  PendingAction,
+  WorkspaceRecord,
+} from "../shared/api";
+import "./styles.css";
 
-type SourceReference = {
-  type: string;
-  workspaceId?: string;
-  relativePath?: string;
-  commitSha?: string;
-  label?: string;
-};
-
-type DemoAudit = {
-  title: string;
-  summary: string;
-  result: {
-    content: string;
-    workspaceIds: string[];
-    sourceReferences: SourceReference[];
-  };
-};
-
-type PendingAction = {
-  id: string;
-  status: 'PROPOSED' | 'APPROVED' | 'EXECUTED' | 'REJECTED' | 'STALE';
-  targetPath: string;
-  diff: string;
-  rejectionReason?: string;
-};
+type View =
+  | "agents"
+  | "home"
+  | "chat"
+  | "audit"
+  | "changes"
+  | "sources"
+  | "settings";
+type Busy =
+  | "workspace"
+  | "endpoint"
+  | "chat"
+  | "audit"
+  | "proposal"
+  | "approval"
+  | null;
+const careerNav: Array<{ id: View; label: string; hint: string }> = [
+  { id: "home", label: "Overview", hint: "Readiness and next step" },
+  { id: "chat", label: "Career chat", hint: "Explore your evidence" },
+  { id: "audit", label: "Career audit", hint: "Find profile gaps" },
+  { id: "changes", label: "Review changes", hint: "Approve safe edits" },
+  { id: "sources", label: "Workspaces", hint: "Choose local evidence" },
+];
+const messageOf = (value: unknown): string =>
+  value instanceof Error ? value.message : String(value);
+const sourceLabel = (
+  source: DemoAudit["result"]["sourceReferences"][number],
+): string =>
+  source.label ??
+  source.relativePath ??
+  source.commitSha ??
+  source.workspaceId ??
+  "Local evidence";
 
 function App(): JSX.Element {
+  const api = window.agentWorkstation;
+  const [view, setView] = useState<View>("home");
   const [audit, setAudit] = useState<DemoAudit | null>(null);
-  const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
+  const [actions, setActions] = useState<PendingAction[]>([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [workspaceKind, setWorkspaceKind] = useState<
+    "profile" | "project" | "cv"
+  >("project");
+  const [endpoint, setEndpoint] = useState<EndpointConfig>({
+    mode: "local",
+    baseUrl: "http://localhost:11434",
+    modelId: "llama3.1",
+    configured: false,
+  });
+  const [history, setHistory] = useState<ChatExchange[]>([]);
+  const [sessions, setSessions] = useState<ChatSessionRecord[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [sessionName, setSessionName] = useState("Career Agent Session");
+  const [proposalWorkspace, setProposalWorkspace] = useState("");
+  const [targetPath, setTargetPath] = useState("README.md");
+  const [recommendation, setRecommendation] = useState(
+    "Highlight the strongest recent project outcome with supporting evidence.",
+  );
+  const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const endpointReady = endpoint.configured === true;
+  const workspaceReady = workspaces.length > 0;
+  const ready = endpointReady && workspaceReady;
+  const profileWorkspaces = useMemo(
+    () => workspaces.filter((w) => w.kind !== "project"),
+    [workspaces],
+  );
 
-  const loadPendingActions = (): void => {
-    const api = window.agentWorkstation;
-    if (!api) return;
-    void api.listPendingActions().then(setPendingActions).catch((value: unknown) => {
-      setError(value instanceof Error ? value.message : String(value));
-    });
+  const task = async (
+    name: Exclude<Busy, null>,
+    work: () => Promise<void>,
+  ): Promise<void> => {
+    setBusy(name);
+    setError(null);
+    setNotice(null);
+    try {
+      await work();
+    } catch (value) {
+      setError(messageOf(value));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const chooseProposalWorkspace = (
+    records: WorkspaceRecord[],
+    current = "",
+  ): string =>
+    records.find((w) => w.id === current)?.id ??
+    records.find((w) => w.kind !== "project")?.id ??
+    records.find((w) => w.selected)?.id ??
+    records[0]?.id ??
+    "";
+  const loadWorkspaces = async (): Promise<void> => {
+    const records = await api.listWorkspaces();
+    setWorkspaces(records);
+    setProposalWorkspace((current) =>
+      chooseProposalWorkspace(records, current),
+    );
+  };
+  const loadActions = async (): Promise<void> =>
+    setActions(await api.listPendingActions());
+  const loadChat = async (): Promise<void> => {
+    const [nextSessions, nextHistory] = await Promise.all([
+      api.listChatSessions(),
+      api.getChatHistory(),
+    ]);
+    setSessions(nextSessions);
+    setHistory(nextHistory);
+  };
+  useEffect(() => {
+    void Promise.all([
+      api.getEndpointConfig(),
+      api.listWorkspaces(),
+      api.listPendingActions(),
+      api.listChatSessions(),
+      api.getChatHistory(),
+    ])
+      .then(([config, records, pending, nextSessions, nextHistory]) => {
+        setEndpoint(config);
+        setWorkspaces(records);
+        setActions(pending);
+        setSessions(nextSessions);
+        setHistory(nextHistory);
+        setProposalWorkspace(chooseProposalWorkspace(records));
+      })
+      .catch((value: unknown) => setError(messageOf(value)));
+  }, [api]);
+  const go = (next: View): void => {
+    setView(next);
+    setError(null);
+    setNotice(null);
   };
 
-  useEffect(() => {
-    const api = window.agentWorkstation;
-    if (!api) {
-      setAudit({
-        title: 'Agent Workstation',
-        summary: 'Local agent bridge unavailable.',
-        result: { content: 'No local agent data was exposed over the preload bridge.', workspaceIds: [], sourceReferences: [] },
-      });
-      return;
-    }
-
-    void api.getDemoAudit().then((demo) => setAudit(demo));
-    loadPendingActions();
-  }, []);
-
-  if (!audit) {
-    return <div style={{ padding: 24, fontFamily: 'sans-serif' }}>Loading Career Audit…</div>;
-  }
-
-  return (
-    <main style={{ padding: 24, fontFamily: 'sans-serif', lineHeight: 1.5 }}>
-      <h1 style={{ marginTop: 0 }}>Agent Workstation</h1>
-      <h2>{audit.title}</h2>
-      <p>{audit.summary}</p>
-      <ul>
-        {audit.result.workspaceIds.map((workspaceId) => (
-          <li key={workspaceId}>{workspaceId}</li>
-        ))}
-      </ul>
-      <pre style={{ whiteSpace: 'pre-wrap', background: '#f5f5f5', padding: 16, borderRadius: 8 }}>
-        {audit.result.content}
-      </pre>
-      <h3>Source references</h3>
-      <ul>
-        {audit.result.sourceReferences.map((reference, index) => (
-          <li key={`${reference.type}-${reference.label ?? reference.relativePath ?? reference.commitSha ?? index}`}>
-            {reference.type}:{reference.label ?? reference.relativePath ?? reference.commitSha ?? reference.workspaceId ?? 'unknown'}
-          </li>
-        ))}
-      </ul>
-
-      <h3>Pending actions</h3>
-      {error ? <p style={{ color: '#b00020' }}>{error}</p> : null}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-        <button
-          type="button"
-          onClick={() => {
-            const api = window.agentWorkstation;
-            if (!api) return;
-            void api.proposeReadmeUpdate()
-              .then(() => loadPendingActions())
-              .catch((value: unknown) => setError(value instanceof Error ? value.message : String(value)));
-          }}
-        >
-          Propose README update
-        </button>
-        <button type="button" onClick={loadPendingActions}>Refresh pending actions</button>
-      </div>
-      {pendingActions.length === 0 ? <p>No pending actions.</p> : null}
-      {pendingActions.map((action) => (
-        <section key={action.id} style={{ border: '1px solid #ddd', padding: 12, marginBottom: 12, borderRadius: 8 }}>
-          <p style={{ margin: '0 0 8px 0' }}>
-            <strong>{action.status}</strong> — {action.targetPath}
+  const Home = (): JSX.Element => (
+    <div className="page-stack">
+      <section className="hero">
+        <div>
+          <p className="eyebrow">Career Agent · local-first</p>
+          <h1>
+            Turn real project work into an evidence-backed professional profile.
+          </h1>
+          <p className="hero-copy">
+            Connect local folders and a local model, inspect gaps, then review
+            every proposed edit before anything changes.
           </p>
-          <pre style={{ whiteSpace: 'pre-wrap', background: '#f8f8f8', padding: 12, borderRadius: 8 }}>{action.diff}</pre>
-          {action.rejectionReason ? <p>Reason: {action.rejectionReason}</p> : null}
-          <div style={{ display: 'flex', gap: 8 }}>
+        </div>
+        <div className={`readiness ${ready ? "ready" : ""}`}>
+          <span>{ready ? "Ready" : "Setup needed"}</span>
+          <strong>
+            {ready
+              ? "Career Agent can work"
+              : `${Number(workspaceReady) + Number(endpointReady)} of 2 steps complete`}
+          </strong>
+        </div>
+      </section>
+      {!ready ? (
+        <section className="panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">First run</p>
+              <h2>Finish setup</h2>
+            </div>
+            <p>
+              Your files stay local. The agent reads only folders you register.
+            </p>
+          </div>
+          <div className="step-grid">
             <button
+              className={`step-card ${workspaceReady ? "complete" : ""}`}
               type="button"
-              onClick={() => {
-                const api = window.agentWorkstation;
-                if (!api) return;
-                void api.approvePendingAction(action.id)
-                  .then(() => loadPendingActions())
-                  .catch((value: unknown) => setError(value instanceof Error ? value.message : String(value)));
-              }}
+              onClick={() => go("sources")}
             >
-              Approve and execute
+              <span>{workspaceReady ? "✓" : "1"}</span>
+              <strong>Add workspaces</strong>
+              <small>Register your profile and recent projects.</small>
             </button>
             <button
+              className={`step-card ${endpointReady ? "complete" : ""}`}
               type="button"
-              onClick={() => {
-                const api = window.agentWorkstation;
-                if (!api) return;
-                void api.rejectPendingAction(action.id, 'Rejected from desktop review UI')
-                  .then(() => loadPendingActions())
-                  .catch((value: unknown) => setError(value instanceof Error ? value.message : String(value)));
-              }}
+              onClick={() => go("settings")}
             >
-              Reject
+              <span>{endpointReady ? "✓" : "2"}</span>
+              <strong>Connect a local model</strong>
+              <small>Use Ollama or another compatible endpoint.</small>
             </button>
           </div>
         </section>
-      ))}
-    </main>
+      ) : null}
+      <section className="workflow-grid">
+        <article>
+          <span>01</span>
+          <h2>Ask</h2>
+          <p>Discuss your positioning with the Career Agent.</p>
+          <button type="button" onClick={() => go("chat")}>
+            Open career chat
+          </button>
+        </article>
+        <article>
+          <span>02</span>
+          <h2>Audit</h2>
+          <p>Compare repository activity with profile sources.</p>
+          <button type="button" disabled={!ready} onClick={() => go("audit")}>
+            Run career audit
+          </button>
+        </article>
+        <article>
+          <span>03</span>
+          <h2>Improve</h2>
+          <p>Create an edit and inspect the exact diff.</p>
+          <button type="button" disabled={!ready} onClick={() => go("changes")}>
+            Review changes
+          </button>
+        </article>
+      </section>
+    </div>
+  );
+
+  const Chat = (): JSX.Element => (
+    <div className="page-stack">
+      <Heading
+        eyebrow="Explore"
+        title="Career Agent chat"
+        description="Ask questions grounded in your registered workspaces and agent memory."
+      />
+      {!ready ? <Setup onGo={go} /> : null}
+      <section className="panel">
+        <div className="session-bar">
+          <label>
+            <span>Conversation</span>
+            <select
+              value={sessions.find((s) => s.selected)?.id ?? ""}
+              onChange={(e) =>
+                void task("chat", async () => {
+                  await api.selectChatSession(e.target.value);
+                  await loadChat();
+                })
+              }
+            >
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>New conversation</span>
+            <div className="inline">
+              <input
+                value={sessionName}
+                onChange={(e) => setSessionName(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  void task("chat", async () => {
+                    if (!sessionName.trim()) return;
+                    await api.createChatSession(sessionName.trim());
+                    await loadChat();
+                    setNotice("New conversation created.");
+                  })
+                }
+              >
+                Create
+              </button>
+            </div>
+          </label>
+        </div>
+        <div className="conversation" aria-live="polite">
+          {history.length === 0 ? (
+            <Empty
+              title="Start with a concrete question"
+              text="Try asking what important outcomes are missing from your profile."
+            />
+          ) : (
+            history.map((exchange, i) => (
+              <div className="exchange" key={`${exchange.userMessage}-${i}`}>
+                <div className="message user">
+                  <span>You</span>
+                  <p>{exchange.userMessage}</p>
+                </div>
+                <div className="message assistant">
+                  <span>Career Agent</span>
+                  <p>{exchange.assistantMessage}</p>
+                  {exchange.sourceReferences.length ? (
+                    <div className="chips">
+                      {exchange.sourceReferences.map((s, j) => (
+                        <span key={`${s.type}-${j}`}>{sourceLabel(s)}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <small>No source references returned.</small>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <form
+          className="composer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const prompt = chatInput.trim();
+            if (!prompt || !ready) return;
+            void task("chat", async () => {
+              const result = await api.sendChatMessage(prompt);
+              setHistory((old) => [...old, result]);
+              setChatInput("");
+              await loadChat();
+            });
+          }}
+        >
+          <textarea
+            aria-label="Message Career Agent"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            placeholder="Ask the Career Agent about your profile…"
+          />
+          <button className="primary" disabled={!ready || busy === "chat"}>
+            {busy === "chat" ? "Thinking…" : "Send message"}
+          </button>
+        </form>
+      </section>
+    </div>
+  );
+
+  const Audit = (): JSX.Element => (
+    <div className="page-stack">
+      <Heading
+        eyebrow="Evidence check"
+        title="Career audit"
+        description="Compare your current profile with recent work. The audit runs only when you ask."
+        action={
+          <button
+            className="primary"
+            data-testid="run-audit"
+            type="button"
+            disabled={!ready || busy === "audit"}
+            onClick={() =>
+              void task("audit", async () => {
+                setAudit(await api.getDemoAudit());
+                setNotice("Career audit completed.");
+              })
+            }
+          >
+            {busy === "audit"
+              ? "Auditing…"
+              : audit
+                ? "Run again"
+                : "Run career audit"}
+          </button>
+        }
+      />
+      {!ready ? <Setup onGo={go} /> : null}
+      {!audit ? (
+        <section className="panel">
+          <Empty
+            title="No audit has run yet"
+            text="Run the audit to inspect evidence and identify profile gaps."
+          />
+        </section>
+      ) : (
+        <>
+          <section className="panel result">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Result</p>
+                <h2>{audit.title}</h2>
+              </div>
+              <span className="pill">
+                {audit.result.sourceReferences.length} sources
+              </span>
+            </div>
+            <p>{audit.summary}</p>
+            <div className="agent-output">{audit.result.content}</div>
+          </section>
+          <section className="panel">
+            <div className="section-heading">
+              <h2>Evidence used</h2>
+              <button
+                className="text"
+                type="button"
+                onClick={() => go("sources")}
+              >
+                Manage workspaces
+              </button>
+            </div>
+            <div className="source-list">
+              {audit.result.sourceReferences.map((s, i) => (
+                <div className="source-row" key={`${s.type}-${i}`}>
+                  <span>{s.type}</span>
+                  <strong>{sourceLabel(s)}</strong>
+                  <small>{s.workspaceId ?? "agent memory"}</small>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+
+  const Changes = (): JSX.Element => (
+    <div className="page-stack">
+      <Heading
+        eyebrow="Human approval"
+        title="Review changes"
+        description="The agent proposes edits, but only you can write them to disk."
+        action={<span className="pill">{actions.length} pending</span>}
+      />
+      {!ready ? <Setup onGo={go} /> : null}
+      <section className="panel form">
+        <div className="section-heading">
+          <div>
+            <h2>Create a profile proposal</h2>
+            <p>Choose the exact file and describe the improvement.</p>
+          </div>
+        </div>
+        <div className="form-grid">
+          <label>
+            <span>Profile workspace</span>
+            <select
+              value={proposalWorkspace}
+              onChange={(e) => setProposalWorkspace(e.target.value)}
+            >
+              {(profileWorkspaces.length ? profileWorkspaces : workspaces).map(
+                (w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.id} · {w.kind}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+          <label>
+            <span>Target file</span>
+            <input
+              value={targetPath}
+              onChange={(e) => setTargetPath(e.target.value)}
+            />
+          </label>
+        </div>
+        <label>
+          <span>Requested improvement</span>
+          <textarea
+            value={recommendation}
+            onChange={(e) => setRecommendation(e.target.value)}
+          />
+        </label>
+        <div className="actions">
+          <button
+            className="primary"
+            data-testid="create-proposal"
+            type="button"
+            disabled={
+              !ready ||
+              !proposalWorkspace ||
+              !targetPath.trim() ||
+              !recommendation.trim() ||
+              busy === "proposal"
+            }
+            onClick={() =>
+              void task("proposal", async () => {
+                await api.proposeProfileUpdate({
+                  workspaceId: proposalWorkspace,
+                  targetPath: targetPath.trim(),
+                  recommendation: recommendation.trim(),
+                });
+                await loadActions();
+                setNotice(
+                  "Proposal created. Review the diff before approving.",
+                );
+              })
+            }
+          >
+            {busy === "proposal" ? "Creating…" : "Create proposal"}
+          </button>
+        </div>
+      </section>
+      {actions.length === 0 ? (
+        <section className="panel">
+          <Empty
+            title="No changes waiting"
+            text="New proposals appear here with an exact diff and approval controls."
+          />
+        </section>
+      ) : (
+        actions.map((action) => (
+          <article className="panel change" key={action.id}>
+            <span className="pill">{action.status}</span>
+            <h2>{action.targetPath}</h2>
+            <p>{action.workspaceId}</p>
+            <pre>{action.diff}</pre>
+            <div className="actions">
+              <button
+                className="primary"
+                type="button"
+                disabled={busy === "approval"}
+                onClick={() =>
+                  void task("approval", async () => {
+                    await api.approvePendingAction(action.id);
+                    await loadActions();
+                    setNotice(`Applied ${action.targetPath}.`);
+                  })
+                }
+              >
+                Approve and write
+              </button>
+              <button
+                className="danger"
+                type="button"
+                disabled={busy === "approval"}
+                onClick={() =>
+                  void task("approval", async () => {
+                    await api.rejectPendingAction(
+                      action.id,
+                      "Rejected from desktop review",
+                    );
+                    await loadActions();
+                    setNotice("Proposal rejected.");
+                  })
+                }
+              >
+                Reject
+              </button>
+            </div>
+          </article>
+        ))
+      )}
+    </div>
+  );
+
+  const Sources = (): JSX.Element => (
+    <div className="page-stack">
+      <Heading
+        eyebrow="Local evidence"
+        title="Workspaces"
+        description="Register only the folders the Career Agent may inspect."
+      />
+      <section className="panel form">
+        <div className="form-grid">
+          <label>
+            <span>Workspace name</span>
+            <input
+              value={workspaceId}
+              onChange={(e) => setWorkspaceId(e.target.value)}
+              placeholder="portfolio-site"
+            />
+          </label>
+          <label>
+            <span>Purpose</span>
+            <select
+              value={workspaceKind}
+              onChange={(e) =>
+                setWorkspaceKind(e.target.value as typeof workspaceKind)
+              }
+            >
+              <option value="profile">Professional profile</option>
+              <option value="project">Project evidence</option>
+              <option value="cv">CV or résumé</option>
+            </select>
+          </label>
+        </div>
+        <div className="actions">
+          <button
+            className="primary"
+            data-testid="add-workspace"
+            type="button"
+            disabled={!workspaceId.trim() || busy === "workspace"}
+            onClick={() =>
+              void task("workspace", async () => {
+                const directory = await api.pickWorkspaceDirectory();
+                if (!directory) return;
+                await api.registerWorkspace({
+                  id: workspaceId.trim(),
+                  rootPath: directory,
+                  kind: workspaceKind,
+                });
+                setWorkspaceId("");
+                await loadWorkspaces();
+                setNotice("Workspace registered.");
+              })
+            }
+          >
+            Choose folder and add
+          </button>
+        </div>
+      </section>
+      {workspaces.length === 0 ? (
+        <section className="panel">
+          <Empty
+            title="No workspaces registered"
+            text="Add your profile folder, then projects containing supporting evidence."
+          />
+        </section>
+      ) : (
+        workspaces.map((w) => (
+          <article className="panel workspace" key={w.id}>
+            <div>
+              <span className="pill">{w.kind}</span>
+              <h2>{w.id}</h2>
+              <p>{w.rootPath}</p>
+            </div>
+            <div className="actions">
+              {!w.selected ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void task("workspace", async () => {
+                      await api.selectWorkspace(w.id);
+                      await loadWorkspaces();
+                    })
+                  }
+                >
+                  Use by default
+                </button>
+              ) : (
+                <strong className="selected">● Default</strong>
+              )}
+              <button
+                className="danger text"
+                type="button"
+                onClick={() =>
+                  void task("workspace", async () => {
+                    await api.removeWorkspace(w.id);
+                    await loadWorkspaces();
+                    setNotice("Workspace removed. Files were not deleted.");
+                  })
+                }
+              >
+                Remove
+              </button>
+            </div>
+          </article>
+        ))
+      )}
+    </div>
+  );
+
+  const Settings = (): JSX.Element => (
+    <div className="page-stack">
+      <Heading
+        eyebrow="Private intelligence"
+        title="Model settings"
+        description="Connect an OpenAI-compatible model running on this computer."
+      />
+      {endpoint.mode === "mock" ? (
+        <div className="demo">
+          <strong>Demo mode — responses are simulated.</strong>
+          <span>Use Local model for real Career Agent work.</span>
+        </div>
+      ) : null}
+      <section className="panel form settings">
+        <label>
+          <span>Mode</span>
+          <select
+            value={endpoint.mode}
+            onChange={(e) =>
+              setEndpoint((old) => ({
+                ...old,
+                mode: e.target.value as "mock" | "local",
+              }))
+            }
+          >
+            <option value="local">Local model</option>
+            <option value="mock">Demo mode (simulated)</option>
+          </select>
+        </label>
+        <label>
+          <span>Endpoint URL</span>
+          <input
+            value={endpoint.baseUrl}
+            onChange={(e) =>
+              setEndpoint((old) => ({ ...old, baseUrl: e.target.value }))
+            }
+          />
+        </label>
+        <label>
+          <span>Model ID</span>
+          <input
+            value={endpoint.modelId}
+            onChange={(e) =>
+              setEndpoint((old) => ({ ...old, modelId: e.target.value }))
+            }
+          />
+        </label>
+        <small>
+          Ollama default: http://localhost:11434 with a model you have already
+          pulled.
+        </small>
+        <div className="actions">
+          <button
+            type="button"
+            disabled={busy === "endpoint"}
+            onClick={() =>
+              void task("endpoint", async () => {
+                const result = await api.testEndpointConnection(endpoint);
+                setNotice(result.message);
+              })
+            }
+          >
+            Test connection
+          </button>
+          <button
+            className="primary"
+            data-testid="save-endpoint"
+            type="button"
+            disabled={busy === "endpoint"}
+            onClick={() =>
+              void task("endpoint", async () => {
+                await api.saveEndpointConfig(endpoint);
+                setEndpoint((old) => ({ ...old, configured: true }));
+                setNotice(
+                  endpoint.mode === "mock"
+                    ? "Demo mode saved. Responses will be simulated."
+                    : "Local model settings saved.",
+                );
+              })
+            }
+          >
+            {busy === "endpoint" ? "Working…" : "Save model settings"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+
+  const Agents = (): JSX.Element => (
+    <div className="page-stack">
+      <Heading
+        eyebrow="Agent library"
+        title="Choose an agent"
+        description="Each agent has its own conversations, tools, workspaces, and workflows."
+      />
+      <section className="agent-grid">
+        <article className="panel agent-card active-agent">
+          <div className="agent-icon">CA</div>
+          <div>
+            <span className="pill">Available now</span>
+            <h2>Career Agent</h2>
+            <p>
+              Turns local project evidence into career guidance, audits, and
+              reviewable profile changes.
+            </p>
+          </div>
+          <button className="primary" type="button" onClick={() => go("home")}>
+            Open Career Agent
+          </button>
+        </article>
+        <article className="panel agent-card future-agent">
+          <div className="agent-icon">+</div>
+          <div>
+            <span className="pill">Future</span>
+            <h2>More agents</h2>
+            <p>
+              New specialists will appear here without changing the Career Agent
+              workspace.
+            </p>
+          </div>
+        </article>
+      </section>
+    </div>
+  );
+
+  const pages: Record<View, () => JSX.Element> = {
+    agents: Agents,
+    home: Home,
+    chat: Chat,
+    audit: Audit,
+    changes: Changes,
+    sources: Sources,
+    settings: Settings,
+  };
+  return (
+    <div className="shell">
+      <aside>
+        <div className="brand">
+          <span>AW</span>
+          <div>
+            <strong>Agent Workstation</strong>
+            <small>Local agent desktop</small>
+          </div>
+        </div>
+        <button
+          className={`agent-picker ${view === "agents" ? "active" : ""}`}
+          type="button"
+          onClick={() => go("agents")}
+        >
+          <span className="agent-avatar">CA</span>
+          <span>
+            <small>Active agent</small>
+            <strong>Career Agent</strong>
+          </span>
+          <b>⌄</b>
+        </button>
+        <span className="sidebar-label">Career Agent</span>
+        <nav>
+          {careerNav.map((item) => (
+            <button
+              className={view === item.id ? "active" : ""}
+              type="button"
+              key={item.id}
+              onClick={() => go(item.id)}
+            >
+              <strong>{item.label}</strong>
+              <small>{item.hint}</small>
+              {item.id === "changes" && actions.length ? (
+                <b>{actions.length}</b>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <button
+            className="settings-link"
+            type="button"
+            onClick={() => go("settings")}
+          >
+            <span>Model settings</span>
+            <small>{endpointReady ? endpoint.modelId : "Setup required"}</small>
+          </button>
+          <div className="privacy">
+            <strong>● Local only</strong>
+            <small>Registered folders stay on this computer.</small>
+          </div>
+        </div>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <i className={endpointReady ? "connected" : ""} />
+            {endpointReady
+              ? `${endpoint.mode === "mock" ? "Demo" : endpoint.modelId} · ${endpoint.mode}`
+              : "Model setup required"}
+          </div>
+          <button type="button" onClick={() => go("settings")}>
+            Configure
+          </button>
+        </header>
+        {endpoint.mode === "mock" && endpointReady && view !== "settings" ? (
+          <div className="demo top">
+            <strong>Demo mode</strong>
+            <span>
+              Responses are simulated and do not prove local AI operation.
+            </span>
+          </div>
+        ) : null}
+        {error ? (
+          <Toast kind="error" text={error} close={() => setError(null)} />
+        ) : null}
+        {notice ? (
+          <Toast kind="success" text={notice} close={() => setNotice(null)} />
+        ) : null}
+        <div className="page">{pages[view]()}</div>
+      </main>
+    </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+function Heading({
+  eyebrow,
+  title,
+  description,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  action?: React.ReactNode;
+}): JSX.Element {
+  return (
+    <div className="page-heading">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+function Setup({ onGo }: { onGo: (view: View) => void }): JSX.Element {
+  return (
+    <div className="setup">
+      <div>
+        <strong>Finish setup to use this feature</strong>
+        <span>Add workspaces and save local model settings first.</span>
+      </div>
+      <div>
+        <button type="button" onClick={() => onGo("sources")}>
+          Workspaces
+        </button>
+        <button type="button" onClick={() => onGo("settings")}>
+          Model settings
+        </button>
+      </div>
+    </div>
+  );
+}
+function Empty({ title, text }: { title: string; text: string }): JSX.Element {
+  return (
+    <div className="empty">
+      <strong>{title}</strong>
+      <p>{text}</p>
+    </div>
+  );
+}
+function Toast({
+  kind,
+  text,
+  close,
+}: {
+  kind: string;
+  text: string;
+  close: () => void;
+}): JSX.Element {
+  return (
+    <div
+      className={`toast ${kind}`}
+      role={kind === "error" ? "alert" : "status"}
+    >
+      <span>{text}</span>
+      <button type="button" onClick={close}>
+        ×
+      </button>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,

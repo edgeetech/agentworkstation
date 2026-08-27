@@ -33,31 +33,41 @@ type GitStatusOutput = {
 
 type GitDiffInput = {
   workspaceId: string;
-  scope: 'working' | 'staged' | 'range';
+  scope?: 'working' | 'staged' | 'range';
   maxBytes?: number;
   from?: string;
   to?: string;
 };
 
 type GitDiffOutput = {
-  scope: GitDiffInput['scope'];
+  scope: 'working' | 'staged' | 'range';
   diff: string;
   truncated: boolean;
   originalBytes: number;
 };
 
-const gitDiffInput = z.discriminatedUnion('scope', [
-  workspaceInput.extend({
-    scope: z.enum(['working', 'staged']),
-    maxBytes: z.number().int().positive().max(MAX_DIFF_BYTES).default(DEFAULT_DIFF_BYTES),
-  }),
-  workspaceInput.extend({
-    scope: z.literal('range'),
-    from: gitRef,
-    to: gitRef,
-    maxBytes: z.number().int().positive().max(MAX_DIFF_BYTES).default(DEFAULT_DIFF_BYTES),
-  }),
-]);
+const gitDiffInput = workspaceInput.extend({
+  scope: z.enum(['working', 'staged', 'range']).default('working'),
+  from: gitRef.optional(),
+  to: gitRef.optional(),
+  maxBytes: z.number().int().positive().default(DEFAULT_DIFF_BYTES),
+}).superRefine((input, refinementContext) => {
+  if (input.scope !== 'range') return;
+  if (!input.from) {
+    refinementContext.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['from'],
+      message: '"from" is required when scope="range"',
+    });
+  }
+  if (!input.to) {
+    refinementContext.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['to'],
+      message: '"to" is required when scope="range"',
+    });
+  }
+});
 
 async function runGit(workspacePath: string, args: string[], signal: AbortSignal): Promise<string> {
   const { stdout } = await execFileAsync('git', ['-C', workspacePath, ...args], {
@@ -144,27 +154,28 @@ export const gitStatusTool: AgentTool<{ workspaceId: string }, ToolResult> = {
   },
 };
 
-export const gitLogTool: AgentTool<{ workspaceId: string; limit: number }, ToolResult> = {
+export const gitLogTool: AgentTool<{ workspaceId: string; limit?: number }, ToolResult> = {
   id: 'git.log',
   description: 'Read recent git history',
-  inputSchema: workspaceInput.extend({ limit: z.number().int().positive().max(20) }),
+  inputSchema: workspaceInput.extend({ limit: z.number().int().positive().default(10) }),
   inputJsonSchema: {
     type: 'object',
     properties: {
       workspaceId: { type: 'string', minLength: 1 },
-      limit: { type: 'integer', minimum: 1, maximum: 20 },
+      limit: { type: 'integer', minimum: 1, default: 10 },
     },
-    required: ['workspaceId', 'limit'],
+    required: ['workspaceId'],
     additionalProperties: false,
   },
   metadata: { readOnly: true, sideEffect: 'none', sensitive: false },
   async execute(input, context): Promise<ToolResult> {
     const workspacePath = requireWorkspaceRoot(context, input.workspaceId);
-    const stdout = await runGit(workspacePath, ['log', `-${input.limit}`, '--oneline'], context.signal);
+    const limit = Math.min(input.limit ?? 10, 20);
+    const stdout = await runGit(workspacePath, ['log', `-${limit}`, '--oneline'], context.signal);
     const sourceRef: SourceReference = {
       type: 'git_commit',
       workspaceId: input.workspaceId,
-      label: `git.log(limit=${input.limit})`,
+      label: `git.log(limit=${limit})`,
     };
     return { output: stdout.trim(), sourceReferences: [sourceRef] };
   },
@@ -175,42 +186,29 @@ export const gitDiffTool: AgentTool<GitDiffInput, ToolResult> = {
   description: 'Read a bounded working-tree, staged, or commit-range diff',
   inputSchema: gitDiffInput,
   inputJsonSchema: {
-    oneOf: [
-      {
-        type: 'object',
-        properties: {
-          workspaceId: { type: 'string', minLength: 1 },
-          scope: { enum: ['working', 'staged'] },
-          maxBytes: { type: 'integer', minimum: 1, maximum: MAX_DIFF_BYTES, default: DEFAULT_DIFF_BYTES },
-        },
-        required: ['workspaceId', 'scope'],
-        additionalProperties: false,
-      },
-      {
-        type: 'object',
-        properties: {
-          workspaceId: { type: 'string', minLength: 1 },
-          scope: { const: 'range' },
-          from: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]*$' },
-          to: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]*$' },
-          maxBytes: { type: 'integer', minimum: 1, maximum: MAX_DIFF_BYTES, default: DEFAULT_DIFF_BYTES },
-        },
-        required: ['workspaceId', 'scope', 'from', 'to'],
-        additionalProperties: false,
-      },
-    ],
+    type: 'object',
+    properties: {
+      workspaceId: { type: 'string', minLength: 1 },
+      scope: { enum: ['working', 'staged', 'range'], default: 'working' },
+      from: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]*$' },
+      to: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._/~^@{}-]*$' },
+      maxBytes: { type: 'integer', minimum: 1, default: DEFAULT_DIFF_BYTES },
+    },
+    required: ['workspaceId'],
+    additionalProperties: false,
   },
   metadata: { readOnly: true, sideEffect: 'none', sensitive: false },
   async execute(input, context): Promise<ToolResult> {
     const workspacePath = requireWorkspaceRoot(context, input.workspaceId);
-    const maxBytes = input.maxBytes ?? DEFAULT_DIFF_BYTES;
+    const maxBytes = Math.min(input.maxBytes ?? DEFAULT_DIFF_BYTES, MAX_DIFF_BYTES);
+    const scope = input.scope ?? 'working';
 
     let args: string[];
     let label: string;
-    if (input.scope === 'working') {
+    if (scope === 'working') {
       args = ['diff', '--no-ext-diff', '--'];
       label = 'git.diff(working)';
-    } else if (input.scope === 'staged') {
+    } else if (scope === 'staged') {
       args = ['diff', '--cached', '--no-ext-diff', '--'];
       label = 'git.diff(staged)';
     } else {
@@ -223,13 +221,13 @@ export const gitDiffTool: AgentTool<GitDiffInput, ToolResult> = {
     const stdout = await runGit(workspacePath, args, context.signal);
     const bounded = truncateUtf8(stdout, maxBytes);
     const output: GitDiffOutput = {
-      scope: input.scope,
+      scope,
       diff: bounded.value,
       truncated: bounded.truncated,
       originalBytes: bounded.originalBytes,
     };
 
-    const rangeRef = input.scope === 'range' ? { from: input.from ?? '', to: input.to ?? '' } : undefined;
+    const rangeRef = scope === 'range' ? { from: input.from ?? '', to: input.to ?? '' } : undefined;
     const sourceRef: SourceReference = {
       type: 'git_diff',
       workspaceId: input.workspaceId,

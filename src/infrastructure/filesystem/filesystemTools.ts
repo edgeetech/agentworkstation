@@ -39,14 +39,14 @@ export function createFilesystemProposeWriteTool(
     inputSchema: z.object({
       workspaceId: z.string().min(1),
       targetPath: z.string().min(1),
-      proposedContent: z.string(),
+      proposedContent: z.string().max(256 * 1024),
     }),
     inputJsonSchema: {
       type: 'object',
       properties: {
         workspaceId: { type: 'string', minLength: 1 },
         targetPath: { type: 'string', minLength: 1 },
-        proposedContent: { type: 'string' },
+        proposedContent: { type: 'string', maxLength: 256 * 1024 },
       },
       required: ['workspaceId', 'targetPath', 'proposedContent'],
       additionalProperties: false,

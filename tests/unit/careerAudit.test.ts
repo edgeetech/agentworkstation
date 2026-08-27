@@ -32,14 +32,15 @@ const agent: AgentDefinition = {
 
 function registry(): WorkspaceRegistryPort {
   const workspaces = [
-    { id: 'profile', rootPath: 'C:\\profile' },
-    { id: 'project', rootPath: 'C:\\project' },
+    { id: 'profile', rootPath: 'C:\\profile', kind: 'profile' as const },
+    { id: 'project', rootPath: 'C:\\project', kind: 'project' as const },
   ];
   return {
     saveWorkspace: vi.fn(),
     getWorkspace: async (id) => workspaces.find((workspace) => workspace.id === id) ?? null,
     listWorkspaces: async () => workspaces,
     selectWorkspace: vi.fn(),
+    removeWorkspace: vi.fn(),
     getSelectedWorkspace: async () => workspaces[1],
   };
 }

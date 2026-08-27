@@ -17,6 +17,10 @@ function makeRegistry(): WorkspaceRegistryPort {
       if (!registrations.has(id)) throw new Error(`Unknown workspace: ${id}`);
       selectedId = id;
     },
+    async removeWorkspace(id) {
+      registrations.delete(id);
+      if (selectedId === id) selectedId = null;
+    },
     async getSelectedWorkspace() { return selectedId ? registrations.get(selectedId) ?? null : null; },
   };
 }
@@ -29,8 +33,8 @@ describe('WorkspaceService', () => {
     await service.register({ id: ' project ', rootPath: ' C:\\work\\project ' });
     await service.select('project');
 
-    await expect(service.list()).resolves.toEqual([{ id: 'project', rootPath: 'C:\\work\\project' }]);
-    await expect(service.selected()).resolves.toEqual({ id: 'project', rootPath: 'C:\\work\\project' });
+    await expect(service.list()).resolves.toEqual([{ id: 'project', rootPath: 'C:\\work\\project', kind: 'project' }]);
+    await expect(service.selected()).resolves.toEqual({ id: 'project', rootPath: 'C:\\work\\project', kind: 'project' });
   });
 
   it('rejects blank registration fields', async () => {

@@ -20,6 +20,70 @@ conditions. Continue autonomously while safe in-scope work remains. Keep
 `WHATS_LEFT.md` current after every completed capability or newly discovered
 gap so another agent can resume without repeating the audit.
 
+### MVP Product Experience Gate
+
+The MVP must be understandable as a product, not merely operable as an
+engineering harness. A first-time user must be able to answer, without reading
+the repository or guessing:
+
+1. What does the Career Agent do?
+2. What information can it inspect?
+3. What setup is required before it can work?
+4. Which model and workspaces are active?
+5. What is the next safe action?
+6. What evidence supports an audit finding or proposed change?
+
+The desktop must therefore provide:
+
+- a short first-run setup flow for profile sources, project workspaces, and the
+  local model endpoint;
+- a task-oriented application shell separating conversations, Career Audit,
+  proposed changes, sources, and settings;
+- an agent-first hierarchy: global navigation exposes an agent library and
+  model settings, while chat, audit, sources, and change review live beneath
+  the selected agent so future agents can add their own workflows cleanly;
+- a restrained, near-monochrome visual system similar in density and focus to
+  modern Grok/Ollama chat clients, reserving colour for semantic status only;
+- progressive disclosure so endpoint/workspace administration does not compete
+  visually with the primary Career Agent workflow;
+- explicit ready, running, success, empty, offline, and error states;
+- clear primary actions such as `Run Career Audit`, `Ask Career Agent`, and
+  `Review proposed change`;
+- human-readable source references and a trustworthy exact diff before approval;
+- keyboard-accessible labelled controls, focus states, disabled/busy states,
+  confirmations, and destructive-action safeguards.
+
+A single long page of raw forms, technical identifiers, source strings, and
+equally weighted buttons does not pass MVP acceptance even if its APIs and tests
+work.
+
+### Mock Versus Real Local Intelligence
+
+Mock Intelligence is required for deterministic automated tests and may be
+available as an explicitly labelled developer/demo mode. It is not the normal
+MVP product experience and must never be presented as though the Career Agent
+performed real analysis.
+
+For product acceptance:
+
+- first launch must guide the user to configure and test a local endpoint, or
+  display an unmistakable `Demo mode — responses are simulated` state;
+- every conversation and audit must show the active endpoint and model;
+- the default user journey must use the configured OpenAI-compatible local
+  endpoint (Ollama reference), not silently return `Mock response`;
+- automated E2E may use mock mode, but a separate documented Ollama acceptance
+  run must exercise chat, Career Audit, evidence, proposal, and approval through
+  the same desktop contract;
+- mock output must never be cited as evidence that real local inference works.
+
+### Safe Proposal UX Gate
+
+The application must never convert arbitrary free-form model output into an
+entire replacement file as a fallback. A proposed edit must have an explicit
+workspace, target path, intended content or patch, provenance, and an exact
+order-aware diff. If the model does not produce a valid structured proposal,
+the operation must fail safely and explain what the user can do next.
+
 ## 0. Project Identity
 
 -   **Repository working name:** `agentworkstation`

@@ -98,7 +98,7 @@ describe('Career Agent loader integration', () => {
     expect(toolMessage?.content).toContain('initial project setup');
     expect(toolMessage?.content).toContain('[source: git_commit:git.log(limit=5)]');
     expect(modelRequests[1].tools?.[0].inputSchema).toMatchObject({
-      required: ['workspaceId', 'limit'],
+      required: ['workspaceId'],
     });
   });
 });

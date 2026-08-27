@@ -115,14 +115,18 @@ describe('career audit acceptance demo', () => {
     const registry = {
       saveWorkspace: async () => undefined,
       getWorkspace: async (id: string) =>
-        [{ id: 'profile', rootPath: profileRepo }, { id: 'project', rootPath: projectRepo }]
+        [
+          { id: 'profile', rootPath: profileRepo, kind: 'profile' as const },
+          { id: 'project', rootPath: projectRepo, kind: 'project' as const },
+        ]
           .find((workspace) => workspace.id === id) ?? null,
       listWorkspaces: async () => [
-        { id: 'profile', rootPath: profileRepo },
-        { id: 'project', rootPath: projectRepo },
+        { id: 'profile', rootPath: profileRepo, kind: 'profile' as const },
+        { id: 'project', rootPath: projectRepo, kind: 'project' as const },
       ],
       selectWorkspace: async () => undefined,
-      getSelectedWorkspace: async () => ({ id: 'project', rootPath: projectRepo }),
+      removeWorkspace: async () => undefined,
+      getSelectedWorkspace: async () => ({ id: 'project', rootPath: projectRepo, kind: 'project' as const }),
     };
 
     const audit = new CareerAuditService(

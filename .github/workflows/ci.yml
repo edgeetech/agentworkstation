@@ -42,6 +42,19 @@ jobs:
       - name: Compile Electron main process
         run: npm run electron:build-main
 
+      - name: Validate Electron user journey
+        run: npm run test:e2e
+
+      - name: Package Windows installer
+        run: npm run electron:pack
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: agent-workstation-windows-installer
+          path: release/*.exe
+          if-no-files-found: error
+
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=moderate
 
