@@ -4364,6 +4364,12 @@ Ollama connection details use progressive disclosure; workspace role remains a
 structured evidence-routing field with a Project default; and Electron's native
 application menu is disabled.
 
+Conversation management now follows the same agent-first desktop pattern:
+saved chats live in a left sidebar, the transcript owns the primary visible
+scroll region, and the composer remains stable. Provider quota failures are
+rendered as accessible in-transcript Career Agent errors, preserving both the
+submitted prompt and the original HTTP status/message.
+
 Codex/Copilot should execute the live checklist in `WHATS_LEFT.md` from top to
 bottom and continue across checkpoint commits until every Section 4 success
 criterion and the Section 39 Windows critical path passes in Electron.

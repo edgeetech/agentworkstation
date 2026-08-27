@@ -66,6 +66,10 @@ class DesktopMockIntelligenceAdapter implements IntelligencePort {
         signal.addEventListener('abort', onAbort, { once: true });
       });
     }
+    const configuredError = !app.isPackaged && process.env.AW_RENDERER_MODE === 'file'
+      ? process.env.AW_MOCK_RESPONSE_ERROR?.trim()
+      : undefined;
+    if (configuredError) throw new Error(configuredError);
     const lastUserMessage = [...request.messages].reverse().find((message) => message.role === 'user');
     const content = lastUserMessage?.content ?? '';
     return { type: 'text', content: `Mock response: ${content}` };

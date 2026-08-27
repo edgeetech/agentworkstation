@@ -37,6 +37,15 @@ const careerNav: Array<{ id: View; label: string; hint: string }> = [
 ];
 const messageOf = (value: unknown): string =>
   value instanceof Error ? value.message : String(value);
+const chatErrorMessage = (value: unknown): string => {
+  const message = messageOf(value);
+  const httpError = message.match(/HTTP\s+\d{3}\b[\s\S]*/i);
+  if (httpError) return httpError[0];
+  return message.replace(
+    /^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/i,
+    "",
+  );
+};
 const sourceLabel = (
   source: DemoAudit["result"]["sourceReferences"][number],
 ): string =>
@@ -81,7 +90,11 @@ function App(): JSX.Element {
   const [sessions, setSessions] = useState<ChatSessionRecord[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [pendingChatInput, setPendingChatInput] = useState<string | null>(null);
-  const conversationEnd = useRef<HTMLDivElement>(null);
+  const [chatFailure, setChatFailure] = useState<{
+    prompt: string;
+    message: string;
+  } | null>(null);
+  const conversation = useRef<HTMLDivElement>(null);
   const [sessionName, setSessionName] = useState("Career Agent Session");
   const [proposalWorkspace, setProposalWorkspace] = useState("");
   const [targetPath, setTargetPath] = useState("README.md");
@@ -195,8 +208,13 @@ function App(): JSX.Element {
       .catch(() => setProviderConnections([]));
   }, [api]);
   useEffect(() => {
-    if (pendingChatInput) conversationEnd.current?.scrollIntoView({ block: "nearest" });
-  }, [pendingChatInput]);
+    if (view !== "chat") return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const transcript = conversation.current;
+      if (transcript) transcript.scrollTop = transcript.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [view, history, pendingChatInput, chatFailure]);
   const go = (next: View): void => {
     setView(next);
     setError(null);
@@ -298,47 +316,36 @@ function App(): JSX.Element {
   );
 
   const Chat = (): JSX.Element => (
-    <div className="page-stack">
+    <div className="page-stack chat-page">
       <Heading
         eyebrow="Explore"
         title="Career Agent chat"
         description="Ask questions grounded in your registered workspaces and agent memory."
       />
       {!ready ? <Setup onGo={go} /> : null}
-      <section className="panel">
-        <div className="session-bar">
-          <label>
-            <span>Conversation</span>
-            <select
-              value={sessions.find((s) => s.selected)?.id ?? ""}
-              onChange={(e) =>
-                void task("chat", async () => {
-                  await api.selectChatSession(e.target.value);
-                  await loadChat();
-                })
-              }
-            >
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>New conversation</span>
-            <div className="inline">
+      <section className="panel chat-panel">
+        <div className="chat-layout">
+          <aside className="conversation-sidebar" aria-label="Career Agent conversations">
+            <div className="conversation-sidebar-heading">
+              <span>Conversations</span>
+              <small>{sessions.length}</small>
+            </div>
+            <div className="new-conversation">
+              <label htmlFor="new-conversation-name">New conversation</label>
               <input
+                id="new-conversation-name"
                 value={sessionName}
                 onChange={(e) => setSessionName(e.target.value)}
+                placeholder="Conversation name"
               />
               <button
                 type="button"
+                disabled={busy === "chat" || !sessionName.trim()}
                 onClick={() =>
                   void task("chat", async () => {
-                    if (!sessionName.trim()) return;
                     await api.createChatSession(sessionName.trim());
                     await loadChat();
+                    setChatFailure(null);
                     setNotice("New conversation created.");
                   })
                 }
@@ -346,90 +353,141 @@ function App(): JSX.Element {
                 Create
               </button>
             </div>
-          </label>
-        </div>
-        <div className="conversation" aria-live="polite">
-          {history.length === 0 && !pendingChatInput ? (
-            <Empty
-              title="Start with a concrete question"
-              text="Try asking what important outcomes are missing from your profile."
-            />
-          ) : (
-            history.map((exchange, i) => (
-              <div className="exchange" key={`${exchange.userMessage}-${i}`}>
-                <div className="message user">
-                  <span>You</span>
-                  <p>{exchange.userMessage}</p>
-                </div>
-                <div className="message assistant">
-                  <span>Career Agent</span>
-                  <p>{exchange.assistantMessage}</p>
-                  <RouteNote route={exchange.route} />
-                  {exchange.sourceReferences.length ? (
-                    <div className="chips">
-                      {exchange.sourceReferences.map((s, j) => (
-                        <span key={`${s.type}-${j}`}>{sourceLabel(s)}</span>
-                      ))}
-                    </div>
-                  ) : (
-                    <small>No source references returned.</small>
-                  )}
-                </div>
+            <ul className="session-list" aria-label="Saved conversations">
+              {sessions.map((session) => (
+                <li key={session.id}>
+                  <button
+                    type="button"
+                    className={session.selected ? "active" : ""}
+                    aria-current={session.selected ? "true" : undefined}
+                    disabled={busy === "chat"}
+                    onClick={() =>
+                      void task("chat", async () => {
+                        await api.selectChatSession(session.id);
+                        await loadChat();
+                        setChatFailure(null);
+                      })
+                    }
+                  >
+                    <span>{session.name}</span>
+                    {session.selected ? <small>Current</small> : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </aside>
+          <div className="chat-workspace">
+            <div className="active-conversation-heading">
+              <div>
+                <small>Current conversation</small>
+                <strong>{sessions.find((session) => session.selected)?.name ?? "Career Agent"}</strong>
               </div>
-            ))
-          )}
-          {pendingChatInput ? (
-            <div className="exchange pending-exchange">
-              <div className="message user">
-                <span>You</span>
-                <p>{pendingChatInput}</p>
-              </div>
-              <div
-                className="message assistant thinking-message"
-                role="status"
-                aria-label="Career Agent is thinking"
-              >
-                <span>Career Agent</span>
-                <div className="thinking-dots" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </div>
-                <small>Thinking…</small>
-              </div>
+              <span>{history.length} {history.length === 1 ? "response" : "responses"}</span>
             </div>
-          ) : null}
-          <div ref={conversationEnd} aria-hidden="true" />
+            <div className="conversation" ref={conversation} aria-live="polite">
+              {history.length === 0 && !pendingChatInput && !chatFailure ? (
+                <Empty
+                  title="Start with a concrete question"
+                  text="Try asking what important outcomes are missing from your profile."
+                />
+              ) : (
+                history.map((exchange, i) => (
+                  <div className="exchange" key={`${exchange.userMessage}-${i}`}>
+                    <div className="message user">
+                      <span>You</span>
+                      <p>{exchange.userMessage}</p>
+                    </div>
+                    <div className="message assistant">
+                      <span>Career Agent</span>
+                      <p>{exchange.assistantMessage}</p>
+                      <RouteNote route={exchange.route} />
+                      {exchange.sourceReferences.length ? (
+                        <div className="chips">
+                          {exchange.sourceReferences.map((s, j) => (
+                            <span key={`${s.type}-${j}`}>{sourceLabel(s)}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <small>No source references returned.</small>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+              {chatFailure ? (
+                <div className="exchange failed-exchange">
+                  <div className="message user">
+                    <span>You</span>
+                    <p>{chatFailure.prompt}</p>
+                  </div>
+                  <div className="message assistant error-message" role="alert">
+                    <span>Career Agent</span>
+                    <strong>
+                      {/HTTP\s+429/i.test(chatFailure.message)
+                        ? "Usage limit reached"
+                        : "Message could not be completed"}
+                    </strong>
+                    <p>{chatFailure.message}</p>
+                    <small>Your message was not lost. Try again when the provider is available.</small>
+                  </div>
+                </div>
+              ) : null}
+              {pendingChatInput ? (
+                <div className="exchange pending-exchange">
+                  <div className="message user">
+                    <span>You</span>
+                    <p>{pendingChatInput}</p>
+                  </div>
+                  <div
+                    className="message assistant thinking-message"
+                    role="status"
+                    aria-label="Career Agent is thinking"
+                  >
+                    <span>Career Agent</span>
+                    <div className="thinking-dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </div>
+                    <small>Thinking…</small>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <form
+              className="composer"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const prompt = chatInput.trim();
+                if (!prompt || !ready || busy === "chat") return;
+                setChatInput("");
+                setChatFailure(null);
+                setPendingChatInput(prompt);
+                void task("chat", async () => {
+                  try {
+                    const result = await api.sendChatMessage(prompt);
+                    setHistory((old) => [...old, result]);
+                    await loadChat();
+                  } catch (value) {
+                    setChatFailure({ prompt, message: chatErrorMessage(value) });
+                  } finally {
+                    setPendingChatInput(null);
+                  }
+                });
+              }}
+            >
+              <textarea
+                aria-label="Message Career Agent"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Ask the Career Agent about your profile…"
+              />
+              <button className="primary" disabled={!ready || busy === "chat"}>
+                Send message
+              </button>
+            </form>
+          </div>
         </div>
-        <form
-          className="composer"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const prompt = chatInput.trim();
-            if (!prompt || !ready) return;
-            setChatInput("");
-            setPendingChatInput(prompt);
-            void task("chat", async () => {
-              try {
-                const result = await api.sendChatMessage(prompt);
-                setHistory((old) => [...old, result]);
-                await loadChat();
-              } finally {
-                setPendingChatInput(null);
-              }
-            });
-          }}
-        >
-          <textarea
-            aria-label="Message Career Agent"
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            placeholder="Ask the Career Agent about your profile…"
-          />
-          <button className="primary" disabled={!ready || busy === "chat"}>
-            Send message
-          </button>
-        </form>
       </section>
     </div>
   );

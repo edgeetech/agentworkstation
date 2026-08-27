@@ -66,6 +66,15 @@ this file after every completed capability or newly discovered blocker.
 - ✅ Chat shows the pending user turn plus an accessible in-conversation Career
   Agent thinking indicator. The Send message label stays stable and the button
   remains disabled until the response finishes.
+- ✅ Saved conversations now live in a dedicated chat sidebar instead of a
+  control strip above the transcript. The chat workspace is viewport-bounded,
+  the composer stays in place, and the transcript is the single visible primary
+  scroll region.
+- ✅ Provider failures remain in conversational context. Electron-wrapped HTTP
+  errors are normalized, and quota failures such as `HTTP 429: you (asozyurt)
+  have reached your session usage limit` render as an accessible Career Agent
+  error response with the original prompt preserved; they no longer appear only
+  as a detached global toast.
 - ✅ Model Settings puts execution policy first, keeps installed-model selection
   prominent, and moves endpoint/discovery details into a collapsed Ollama
   connection section. Workspace role remains structured because it controls
@@ -74,7 +83,8 @@ this file after every completed capability or newly discovered blocker.
   File/Edit/View/Window toolbar.
 - ✅ Final regression verification passes: 88 tests across 25 files, 6
   architecture tests, renderer/Electron builds, mock Electron E2E (including
-  no native menu), real `qwen2.5:3b` Electron E2E (including in-chat thinking
+  no native menu, the conversation sidebar, in-chat thinking, and HTTP 429
+  presentation), real `qwen2.5:3b` Electron E2E (including in-chat thinking
   state and disabled Send), and a production audit with 0 vulnerabilities.
 - ✅ The desktop now has a neutral, agent-first shell with an agent library,
   Career Agent-scoped navigation, first-run readiness, and clear task flows.
