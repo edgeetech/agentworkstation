@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-27
 Implementation base audited at: `235bd25` on `main`; this document describes the complete takeover changes in the current `main` worktree/commit
-Current objective: **complete the Windows MVP end to end**
+Current objective: **Windows MVP completed; preserve acceptance while continuing post-MVP work**
 
 ## Non-Negotiable Completion Boundary
 
@@ -49,8 +49,7 @@ this file after every completed capability or newly discovered blocker.
 
 ## Windows MVP Completion Status
 
-- ⚠️ The functional Windows MVP flow is implemented and locally accepted; the
-  remaining release blocker is producing and smoke-testing the installer.
+- ✅ The Windows MVP is implemented and accepted end to end.
 - ✅ The desktop now has a neutral, agent-first shell with an agent library,
   Career Agent-scoped navigation, first-run readiness, and clear task flows.
 - ✅ Local inference is the default; mock mode is an explicitly labelled demo.
@@ -61,9 +60,9 @@ this file after every completed capability or newly discovered blocker.
   call, fail closed, and use an order-aware diff with duplicate/reorder coverage.
 - ✅ A real Ollama UI acceptance test passes chat, audit, and structured proposal
   generation through the Electron boundary with `qwen2.5:3b`.
-- ⚠️ `electron-builder` and packaged-resource loading are configured, but this PC
-  returns `EPERM` while renaming its freshly extracted `win-unpacked.tmp`; no
-  installer artifact has been produced locally yet.
+- ✅ GitHub Actions produced the Windows NSIS installer; the downloaded artifact
+  was extracted and its packaged application passed a launch/SQLite IPC/Career
+  Agent resource smoke test on this PC.
 - ⚠️ macOS runtime/package validation remains explicitly out of MVP scope.
 
 ## Product/UX Recovery Plan — Must Complete Before MVP Acceptance
@@ -295,7 +294,7 @@ Completion evidence (2026-08-27):
 - stale/duplicate execution behaviors remain covered by unit/evaluation suites
   (`tests/unit/approvals.test.ts`, `tests/evaluation/safeEditing.acceptance.test.ts`).
 
-### 7. Add real desktop acceptance coverage — Installer artifact blocked
+### 7. Add real desktop acceptance coverage ✅ Completed
 
 - Add Playwright Electron E2E for the complete Windows critical path using the
   deterministic mock endpoint.
@@ -325,9 +324,15 @@ Status update (2026-08-27):
   attempt then failed because electron-builder implicitly tried to publish
   without a GitHub token. `electron:pack` now passes `--publish never`, leaving
   publication to the explicit artifact-upload step.
-- Remaining release gate: confirm the corrected CI run uploads the installer,
-  then smoke-test that artifact. Local packaging still hits `EPERM` while
-  renaming `win-unpacked.tmp`, so CI is the authoritative clean packaging host.
+- Corrected CI run `33056427909` passed Windows and macOS gates and uploaded
+  `agent-workstation-windows-installer` (113,639,760-byte artifact archive).
+- Downloaded `Agent-Workstation-0.1.0-Setup.exe` is 113,640,646 bytes with SHA-256
+  `1E2FBE37B8401166A985B9516FC8AF28395677FB0AD09A093A5789CE4AAA0F93`.
+- Extracted installer contents include `resources/agents/career/agent.yaml`; the
+  packaged executable launched and completed SQLite IPC plus Career Agent chat.
+- Local `electron:pack` still hits an environment-specific `EPERM` during the
+  extraction rename, but the clean CI packaging and downloaded artifact smoke
+  test are authoritative and passing.
 
 ## Out of MVP Scope
 

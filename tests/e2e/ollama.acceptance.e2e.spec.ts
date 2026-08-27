@@ -56,6 +56,8 @@ test('Career Agent reaches a real Ollama model through the desktop UI', async ()
     await page.getByRole('button', { name: 'Run career audit' }).click();
     await expect(page.getByText('Career audit completed.')).toBeVisible({ timeout: 120_000 });
     await expect(page.locator('.agent-output')).not.toContainText('Mock response:');
+    await expect(page.locator('.source-row').first()).toBeVisible();
+    await expect(page.locator('.source-row').filter({ hasText: 'README.md' })).toHaveCount(1);
 
     await page.locator('nav').getByRole('button', { name: /Review changes/ }).click();
     await page.getByLabel('Requested improvement').fill('Add this exact sentence: Works with local-first AI systems.');

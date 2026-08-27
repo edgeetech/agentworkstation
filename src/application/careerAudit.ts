@@ -2,7 +2,7 @@ import type { AgentDefinition } from './agents/types';
 import { ContextBuilder, type ContextBudget } from './context';
 import type { AgentRunResult } from './intelligence';
 import type { WorkspaceRegistryPort } from './workspaces';
-import type { ModelRequest, ModelToolDefinition, SourceReference } from '@domain/intelligence';
+import type { ModelMessage, ModelRequest, ModelToolDefinition, SourceReference } from '@domain/intelligence';
 
 export type CareerAuditResult = AgentRunResult & {
   workspaceIds: string[];
@@ -45,6 +45,10 @@ export class CareerAuditService {
     userMessage: string;
     modelId: string;
     tools?: ModelToolDefinition[];
+    preloadedEvidence?: {
+      messages: ModelMessage[];
+      sourceReferences: SourceReference[];
+    };
   }, signal: AbortSignal): Promise<CareerAuditResult> {
     const registrations = await this.workspaces.listWorkspaces();
     if (registrations.length === 0) throw new Error('Career Audit requires at least one registered workspace');
@@ -60,7 +64,10 @@ export class CareerAuditService {
     const built = this.contextBuilder.buildRequest({
       systemPrompt: `${input.agent.systemPrompt}\n\n===\n\n${workspaceInstructions}`,
       memoryContext: input.agent.memoryContext,
-      conversation: [{ role: 'user', content: input.userMessage }],
+      conversation: [
+        ...(input.preloadedEvidence?.messages ?? []),
+        { role: 'user', content: input.userMessage },
+      ],
       tools: input.tools,
     }, this.budget);
     const result = await this.runtime.runWithTrace(built.request, {
@@ -72,7 +79,11 @@ export class CareerAuditService {
     return {
       ...result,
       workspaceIds,
-      sourceReferences: uniqueSources([...built.sourceReferences, ...result.sourceReferences]),
+      sourceReferences: uniqueSources([
+        ...built.sourceReferences,
+        ...(input.preloadedEvidence?.sourceReferences ?? []),
+        ...result.sourceReferences,
+      ]),
       contextUsage: built.usage,
       truncatedContext: built.truncated,
     };

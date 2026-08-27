@@ -296,6 +296,37 @@ async function runCareerAudit(): Promise<{
   toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, sessionId));
   const toolExecutor = new ToolExecutor(toolRegistry);
   const runtime = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
+  const signal = new AbortController().signal;
+
+  const evidenceMessages: ModelMessage[] = [];
+  const evidenceSources: Array<{ type: 'file' | 'git_commit' | 'git_diff' | 'git_status' | 'memory'; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }> = [];
+  const registrations = await db.listWorkspaces();
+  for (const workspace of registrations) {
+    const evidenceRequests = workspace.kind === 'profile' || workspace.kind === 'cv'
+      ? [{ toolName: 'filesystem.read', input: { workspaceId: workspace.id, relativePath: 'README.md' } }]
+      : [
+        { toolName: 'git.log', input: { workspaceId: workspace.id, maxCount: 10 } },
+        { toolName: 'git.status', input: { workspaceId: workspace.id } },
+      ];
+    for (const request of evidenceRequests) {
+      const callId = `audit-evidence-${workspace.id}-${request.toolName}`;
+      try {
+        const evidence = await toolExecutor.execute(request.toolName, request.input, {
+          workspaceId: workspace.id,
+          signal,
+          workspaceGateway: workspaceContext.gateway,
+        });
+        evidenceMessages.push(
+          { role: 'assistant', content: '', toolCalls: [{ id: callId, toolName: request.toolName, input: request.input }] },
+          { role: 'tool', content: JSON.stringify(evidence.output), toolCallId: callId, toolName: request.toolName },
+        );
+        evidenceSources.push(...evidence.sourceReferences);
+      } catch {
+        // A missing README or non-Git folder should not prevent other registered
+        // workspaces from contributing evidence to the audit.
+      }
+    }
+  }
 
   const loader = new CareerAgentLoader(new FileSystemAgentDefinitionSource(getCareerAgentDirectory()));
   const agent = loader.load();
@@ -325,8 +356,9 @@ async function runCareerAudit(): Promise<{
       userMessage: 'Compare my recent project activity with my current professional profile and identify important gaps.',
       modelId: endpoint.modelId,
       tools: toolRegistry.getModelTools(),
+      preloadedEvidence: { messages: evidenceMessages, sourceReferences: evidenceSources },
     },
-    new AbortController().signal,
+    signal,
   );
   return {
     title: 'Career Audit',
