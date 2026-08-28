@@ -1122,6 +1122,8 @@ function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 900,
+    minWidth: 1080,
+    minHeight: 680,
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,

@@ -144,13 +144,17 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await page.getByRole('button', { name: 'Run career audit' }).click();
     await expect(page.getByText('Career audit completed.')).toBeVisible();
     await expect(page.getByText(/Mock response:/).last()).toBeVisible();
+    await inspector.getByRole('tab', { name: /Evidence/ }).click();
+    await expect(inspector.getByRole('button', { name: 'Open file' }).first()).toBeVisible();
+    await inspector.getByRole('button', { name: 'Open file' }).first().click();
+    await expect(inspector.getByText('# profile-repo')).toBeVisible();
 
     await page.locator('nav').getByRole('button', { name: /Review changes/ }).click();
     await page.getByLabel('Profile workspace').selectOption('profile');
     await page.getByLabel('Requested improvement').fill('Updated summary from e2e proposal');
     await page.getByRole('button', { name: 'Create proposal' }).click();
     await expect(page.getByText('PROPOSED', { exact: true })).toBeVisible();
-    await expect(page.locator('pre')).toContainText('Updated summary from e2e proposal');
+    await expect(page.locator('main pre')).toContainText('Updated summary from e2e proposal');
     await inspector.getByRole('tab', { name: /Actions/ }).click();
     await expect(inspector.getByText('PROPOSED', { exact: true })).toBeVisible();
     await expect(inspector.locator('pre')).toContainText('Updated summary from e2e proposal');

@@ -24,6 +24,8 @@ export function FilesPanel({
   const [entries, setEntries] = useState<WorkspaceEntry[]>([]);
   const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadVersion, setReloadVersion] = useState(0);
   const request = useRef(0);
 
   useEffect(() => {
@@ -34,21 +36,33 @@ export function FilesPanel({
   useEffect(() => {
     const current = ++request.current;
     setEntries([]);
+    setError(null);
     if (!workspaceId) return;
     setLoading(true);
     void listEntries(workspaceId, directory)
       .then((next) => { if (request.current === current) setEntries(next); })
-      .catch((value: unknown) => { if (request.current === current) onError(value instanceof Error ? value.message : String(value)); })
+      .catch((value: unknown) => {
+        if (request.current !== current) return;
+        const message = value instanceof Error ? value.message : String(value);
+        setError(message);
+        onError(message);
+      })
       .finally(() => { if (request.current === current) setLoading(false); });
-  }, [directory, listEntries, onError, workspaceId]);
+  }, [directory, listEntries, onError, reloadVersion, workspaceId]);
 
   const openFile = (relativePath: string): void => {
     if (!workspaceId) return;
     const current = ++request.current;
+    setError(null);
     setLoading(true);
     void readFile(workspaceId, relativePath)
       .then((next) => { if (request.current === current) setPreview(next); })
-      .catch((value: unknown) => { if (request.current === current) onError(value instanceof Error ? value.message : String(value)); })
+      .catch((value: unknown) => {
+        if (request.current !== current) return;
+        const message = value instanceof Error ? value.message : String(value);
+        setError(message);
+        onError(message);
+      })
       .finally(() => { if (request.current === current) setLoading(false); });
   };
 
@@ -65,10 +79,16 @@ export function FilesPanel({
   return (
     <div className="files-panel">
       <div className="file-breadcrumb">
-        <button type="button" disabled={directory === '.'} onClick={() => { setPreview(null); setDirectory(parentPath(directory)); }}>←</button>
+        <button type="button" aria-label="Parent directory" disabled={directory === '.'} onClick={() => { setPreview(null); setDirectory(parentPath(directory)); }}>←</button>
         <span>{workspaceId} / {directory === '.' ? '' : directory}</span>
       </div>
-      {preview ? (
+      {error ? (
+        <div className="inspector-error" role="alert">
+          <strong>Files unavailable</strong>
+          <p>{error}</p>
+          <button type="button" onClick={() => { setPreview(null); setReloadVersion((value) => value + 1); }}>Reload directory</button>
+        </div>
+      ) : preview ? (
         <div className="file-preview">
           <div><button type="button" onClick={() => setPreview(null)}>Back to files</button><strong>{preview.relativePath}</strong></div>
           {preview.truncated ? <small>Preview limited to 64 KB.</small> : null}

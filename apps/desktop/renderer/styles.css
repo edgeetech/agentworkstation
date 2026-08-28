@@ -1492,6 +1492,12 @@ body {
   min-width: 1080px;
 }
 
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #6f8378;
+  outline-offset: 2px;
+}
+
 .shell {
   grid-template-columns: 268px minmax(0, 1fr) 320px;
 }
@@ -1780,7 +1786,8 @@ body {
 }
 
 .inspector-empty,
-.inspector-loading {
+.inspector-loading,
+.inspector-error {
   min-height: 130px;
   display: grid;
   place-content: center;
@@ -1788,6 +1795,22 @@ body {
   font-size: 12px;
   line-height: 1.5;
   text-align: center;
+}
+
+.inspector-error {
+  padding: 16px;
+  border: 1px solid #e1c9c5;
+  border-radius: 9px;
+  background: #f8ecea;
+  color: #743f39;
+}
+
+.inspector-error p {
+  margin: 5px 0 10px;
+}
+
+.inspector-error button {
+  justify-self: center;
 }
 
 .inspector-empty.standalone {
@@ -1801,6 +1824,21 @@ body {
 .privacy-details {
   display: grid;
   gap: 10px;
+}
+
+.evidence-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.composer-empty {
+  margin: -8px 0 0;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #f1eee7;
+  color: #6f6049;
+  font-size: 12px;
 }
 
 .file-breadcrumb {

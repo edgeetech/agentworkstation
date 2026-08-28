@@ -78,6 +78,8 @@ export function SessionInspector({
           <button
             type="button"
             role="tab"
+            id={`inspector-tab-${item}`}
+            aria-controls={`inspector-panel-${item}`}
             aria-selected={tab === item}
             className={tab === item ? 'active' : ''}
             key={item}
@@ -92,7 +94,12 @@ export function SessionInspector({
           </button>
         ))}
       </div>
-      <div className="inspector-content">
+      <div
+        className="inspector-content"
+        id={`inspector-panel-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`inspector-tab-${tab}`}
+      >
         {tab === 'files' ? (
           <FilesPanel
             workspaceId={requestedFile?.workspaceId ?? session.workspaceId}

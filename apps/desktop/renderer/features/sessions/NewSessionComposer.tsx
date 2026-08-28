@@ -91,6 +91,7 @@ export function NewSessionComposer({
           <small>Writes become PendingActions.</small>
         </div>
       </div>
+      {workspaces.length === 0 ? <p className="composer-empty" role="status">Add a workspace before creating a persistent session.</p> : null}
       <QuickActions actions={selectedAgent?.quickActions ?? []} onChoose={(action) => setPrompt(action.prompt)} />
       <label className="new-session-prompt">
         <span>First prompt</span>
@@ -110,7 +111,7 @@ export function NewSessionComposer({
       </label>
       <div className="new-session-actions">
         <button type="button" onClick={onCancel}>Cancel</button>
-        <button className="primary" type="button" disabled={!workspaceId || !prompt.trim() || busy} onClick={submit}>
+        <button className="primary" type="button" disabled={!workspaceId || !selectedAgent || !prompt.trim() || busy} onClick={submit}>
           Create session
         </button>
       </div>
