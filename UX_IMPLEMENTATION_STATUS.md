@@ -64,3 +64,15 @@ backend capabilities that do not exist yet:
 
 This document records completion of the requested agent-window UX evolution,
 not completion of deferred Release 0.2+ product architecture.
+
+## Final verification
+
+- ESLint: passed.
+- Architecture boundaries: 6/6 tests passed.
+- Unit, integration, security, evaluation, and architecture suite: 99/99 tests
+  passed across 28 files.
+- Electron renderer production build and Electron main/preload TypeScript build:
+  passed.
+- Playwright desktop regression suite: 2 passed; the opt-in real Ollama test was
+  skipped because its environment flag was not enabled.
+- Production dependency audit: 0 vulnerabilities.
