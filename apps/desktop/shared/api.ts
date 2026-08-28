@@ -52,6 +52,19 @@ export type EndpointConfig = {
   configured?: boolean;
 };
 
+export type WorkspaceEntry = {
+  name: string;
+  relativePath: string;
+  kind: 'file' | 'directory';
+};
+
+export type WorkspaceFilePreview = {
+  workspaceId: string;
+  relativePath: string;
+  content: string;
+  truncated: boolean;
+};
+
 export type RoutingDecision = {
   policy: 'local_only' | 'local_first' | 'adaptive';
   location: 'local' | 'external' | 'simulated';
@@ -152,6 +165,8 @@ export type AgentWorkstationApi = {
   listWorkspaces: () => Promise<WorkspaceRecord[]>;
   selectWorkspace: (id: string) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
+  listWorkspaceEntries: (workspaceId: string, relativePath: string) => Promise<WorkspaceEntry[]>;
+  readWorkspaceFile: (workspaceId: string, relativePath: string) => Promise<WorkspaceFilePreview>;
   getEndpointConfig: () => Promise<EndpointConfig>;
   listProviderConnections: () => Promise<ProviderConnection[]>;
   discoverLocalModels: (baseUrl: string) => Promise<LocalModel[]>;

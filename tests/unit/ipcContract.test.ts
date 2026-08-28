@@ -9,6 +9,7 @@ import {
   parseProposeProfileUpdateInput,
   parseApprovePendingActionInput,
   parseRejectPendingActionInput,
+  parseWorkspacePathInput,
 } from '../../apps/desktop/main/ipcContract';
 
 describe('ipc contract', () => {
@@ -17,6 +18,8 @@ describe('ipc contract', () => {
     expect(IPC_CHANNELS.approvePendingAction).toBe('agentWorkstation:approvePendingAction');
     expect(IPC_CHANNELS.testEndpointConnection).toBe('agentWorkstation:testEndpointConnection');
     expect(IPC_CHANNELS.listAgents).toBe('agentWorkstation:listAgents');
+    expect(IPC_CHANNELS.listWorkspaceEntries).toBe('agentWorkstation:listWorkspaceEntries');
+    expect(IPC_CHANNELS.readWorkspaceFile).toBe('agentWorkstation:readWorkspaceFile');
     expect(IPC_CHANNELS.renameChatSession).toBe('agentWorkstation:renameChatSession');
     expect(IPC_CHANNELS.setChatSessionMode).toBe('agentWorkstation:setChatSessionMode');
     expect(IPC_CHANNELS.deleteChatSession).toBe('agentWorkstation:deleteChatSession');
@@ -55,6 +58,9 @@ describe('ipc contract', () => {
       allowedPaths: { localModels: false, ollamaCloudModels: true, cloudProviders: false },
     })).toMatchObject({ allowedPaths: { ollamaCloudModels: true }, ollamaModelIds: ['gpt-oss:120b-cloud'] });
     expect(parseChatMessageInput({ message: 'hello' })).toEqual({ message: 'hello' });
+    expect(parseWorkspacePathInput({ workspaceId: 'profile', relativePath: 'src/index.ts' }))
+      .toEqual({ workspaceId: 'profile', relativePath: 'src/index.ts' });
+    expect(() => parseWorkspacePathInput({ workspaceId: '', relativePath: '' })).toThrow();
     expect(parseCreateChatSessionInput({ name: 'Session A', workspaceId: 'profile' })).toEqual({
       name: 'Session A',
       workspaceId: 'profile',

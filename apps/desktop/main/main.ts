@@ -39,6 +39,7 @@ import {
   parseModelDiscoveryInput,
   parseProposeProfileUpdateInput,
   parseRegisterWorkspaceInput,
+  parseWorkspacePathInput,
   parseRenameChatSessionInput,
   parseSetChatSessionModeInput,
   parseRejectPendingActionInput,
@@ -50,7 +51,6 @@ import { discoverOllamaModels, inspectOllamaModel, isOllamaCloudModel } from '..
 const userDataOverride = process.env.AW_USER_DATA_PATH?.trim();
 if (userDataOverride) app.setPath('userData', userDataOverride);
 
-const sessionId = `desktop-${Date.now()}`;
 const intelligenceHealth = new Map<string, {
   availability: 'available' | 'limited' | 'unavailable';
   lastError?: string;
@@ -466,6 +466,17 @@ async function ensureChatSession(): Promise<ChatSession> {
   return created;
 }
 
+async function bindSelectedSessionToWorkspace(workspaceId: string): Promise<void> {
+  const db = getPersistence();
+  const selectedSession = await db.getSelectedChatSession();
+  if (!selectedSession || selectedSession.workspaceId === workspaceId) return;
+  await db.saveChatSession({
+    ...selectedSession,
+    workspaceId,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 async function getChatConversation(sessionIdValue: string): Promise<ModelMessage[]> {
   const messages = await getPersistence().listChatMessages(sessionIdValue);
   return messages
@@ -596,7 +607,7 @@ async function runChatMessage(message: string): Promise<{
   toolRegistry.register(gitStatusTool);
   toolRegistry.register(gitLogTool);
   toolRegistry.register(gitDiffTool);
-  toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, sessionId));
+  toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, chatSession.id));
 
   const toolExecutor = new ToolExecutor(toolRegistry);
   const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
@@ -670,13 +681,14 @@ async function runCareerAudit(): Promise<{
   const workspaceContext = await ensureWorkspaceSelection();
   const approvalContext = await approvals();
   const db = getPersistence();
+  const chatSession = await ensureChatSession();
 
   const toolRegistry = new ToolRegistry();
   toolRegistry.register(filesystemReadTool);
   toolRegistry.register(gitStatusTool);
   toolRegistry.register(gitLogTool);
   toolRegistry.register(gitDiffTool);
-  toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, sessionId));
+  toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, chatSession.id));
   const toolExecutor = new ToolExecutor(toolRegistry);
   const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
   const signal = new AbortController().signal;
@@ -774,6 +786,7 @@ async function proposeProfileUpdate(input: {
   await assertEndpointWorkflowCompatible(endpoint);
   const workspaceContext = await ensureWorkspaceSelection();
   const approvalContext = await approvals();
+  const chatSession = await ensureChatSession();
   const workspace = await getPersistence().getWorkspace(input.workspaceId);
   if (!workspace) throw new Error(`Workspace not found: ${input.workspaceId}`);
   const current = await workspaceContext.gateway.readFileIfExists(input.workspaceId, input.targetPath);
@@ -782,7 +795,7 @@ async function proposeProfileUpdate(input: {
   const pendingBefore = new Set((await approvalContext.service.listPending()).map((action) => action.id));
 
   const toolRegistry = new ToolRegistry();
-  toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, sessionId));
+  toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, chatSession.id));
   const toolExecutor = new ToolExecutor(toolRegistry);
 
   const mockIntelligence = endpoint.mode === 'mock'
@@ -890,7 +903,10 @@ function registerIpcHandlers(): void {
     const db = getPersistence();
     await db.saveWorkspace(input);
     const selected = await db.getSelectedWorkspace();
-    if (!selected) await db.selectWorkspace(input.id);
+    if (!selected) {
+      await db.selectWorkspace(input.id);
+      await bindSelectedSessionToWorkspace(input.id);
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.listWorkspaces, async () => {
@@ -908,6 +924,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.selectWorkspace, async (_event, payload: unknown) => {
     const { id } = parseWorkspaceIdInput(payload);
     await getPersistence().selectWorkspace(id);
+    await bindSelectedSessionToWorkspace(id);
   });
 
   ipcMain.handle(IPC_CHANNELS.removeWorkspace, async (_event, payload: unknown) => {
@@ -932,6 +949,35 @@ function registerIpcHandlers(): void {
         ...(health?.lastError ? { lastError: health.lastError } : {}),
       };
     });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.listWorkspaceEntries, async (_event, payload: unknown) => {
+    const { workspaceId, relativePath } = parseWorkspacePathInput(payload);
+    const registrations = await getPersistence().listWorkspaces();
+    const gateway = new DefaultWorkspaceGateway(
+      Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])),
+    );
+    return gateway.listDirectoryEntries(workspaceId, relativePath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.readWorkspaceFile, async (_event, payload: unknown) => {
+    const { workspaceId, relativePath } = parseWorkspacePathInput(payload);
+    const registrations = await getPersistence().listWorkspaces();
+    const gateway = new DefaultWorkspaceGateway(
+      Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])),
+    );
+    const result = await gateway.readFile(workspaceId, relativePath);
+    const maximumPreviewBytes = 64 * 1024;
+    const encoded = Buffer.from(result.content, 'utf8');
+    const truncated = encoded.byteLength > maximumPreviewBytes;
+    return {
+      workspaceId,
+      relativePath,
+      content: truncated
+        ? encoded.subarray(0, maximumPreviewBytes).toString('utf8').replace(/\uFFFD$/u, '')
+        : result.content,
+      truncated,
+    };
   });
 
   ipcMain.handle(IPC_CHANNELS.saveEndpointConfig, async (_event, payload: unknown) => {

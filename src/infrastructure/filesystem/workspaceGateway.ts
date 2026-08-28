@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { WorkspaceGateway } from '@application/ports';
+import type { WorkspaceEntry, WorkspaceGateway } from '@application/ports';
 
 const denied = ['.env', '.env.', '.pem', '.key', 'id_rsa', 'id_ed25519', 'credentials.', 'secrets.'];
 
@@ -23,11 +23,22 @@ export class DefaultWorkspaceGateway implements WorkspaceGateway {
   }
 
   async listDirectory(workspaceId: string, relativePath: string): Promise<string[]> {
+    return (await this.listDirectoryEntries(workspaceId, relativePath)).map((entry) => entry.name);
+  }
+
+  async listDirectoryEntries(workspaceId: string, relativePath: string): Promise<WorkspaceEntry[]> {
     const resolved = await this.resolve(workspaceId, relativePath);
     const entries = await fs.readdir(resolved, { withFileTypes: true });
     return entries
-      .map((entry) => entry.name)
-      .filter((name) => !isSensitiveName(name));
+      .filter((entry) => !isSensitiveName(entry.name) && (entry.isFile() || entry.isDirectory()))
+      .map((entry) => ({
+        name: entry.name,
+        relativePath: path.posix.join(relativePath.replaceAll('\\', '/'), entry.name).replace(/^\.\//u, ''),
+        kind: entry.isDirectory() ? 'directory' as const : 'file' as const,
+      }))
+      .sort((left, right) => left.kind === right.kind
+        ? left.name.localeCompare(right.name)
+        : left.kind === 'directory' ? -1 : 1);
   }
 
   async readFile(workspaceId: string, relativePath: string): Promise<{ content: string; source: string }> {

@@ -7,6 +7,8 @@ export const IPC_CHANNELS = {
   listWorkspaces: 'agentWorkstation:listWorkspaces',
   selectWorkspace: 'agentWorkstation:selectWorkspace',
   removeWorkspace: 'agentWorkstation:removeWorkspace',
+  listWorkspaceEntries: 'agentWorkstation:listWorkspaceEntries',
+  readWorkspaceFile: 'agentWorkstation:readWorkspaceFile',
   getEndpointConfig: 'agentWorkstation:getEndpointConfig',
   listProviderConnections: 'agentWorkstation:listProviderConnections',
   discoverLocalModels: 'agentWorkstation:discoverLocalModels',
@@ -62,6 +64,11 @@ const endpointConfigSchema = z.object({
     && !value.allowedPaths.ollamaCloudModels && !value.allowedPaths.cloudProviders) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'Allow at least one intelligence path' });
   }
+});
+
+const workspacePathSchema = z.object({
+  workspaceId: z.string().min(1),
+  relativePath: z.string().min(1).max(4096),
 });
 
 const chatMessageSchema = z.object({
@@ -149,6 +156,10 @@ export function parseCreateChatSessionInput(value: unknown): {
   isolationMode: 'read_only';
 } {
   return createChatSessionSchema.parse(value);
+}
+
+export function parseWorkspacePathInput(value: unknown): { workspaceId: string; relativePath: string } {
+  return workspacePathSchema.parse(value);
 }
 
 export function parseRenameChatSessionInput(value: unknown): { id: string; name: string } {

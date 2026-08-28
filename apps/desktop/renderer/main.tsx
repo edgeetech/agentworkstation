@@ -5,6 +5,8 @@ import type {
   ChatContextUsage,
   ChatMode,
   ChatSessionRecord,
+  AgentSummary,
+  CreateChatSessionInput,
   DemoAudit,
   EndpointConfig,
   PendingAction,
@@ -12,17 +14,16 @@ import type {
   ProviderConnection,
   WorkspaceRecord,
 } from "../shared/api";
+import {
+  SessionsSidebar,
+  type AgentNavigationItem,
+  type AgentView,
+} from "./features/sessions/SessionsSidebar";
+import { NewSessionComposer } from "./features/sessions/NewSessionComposer";
+import { SessionInspector } from "./features/inspector/SessionInspector";
 import "./styles.css";
 
-type View =
-  | "agents"
-  | "home"
-  | "chat"
-  | "audit"
-  | "changes"
-  | "sources"
-  | "status"
-  | "settings";
+type View = AgentView;
 type Busy =
   | "workspace"
   | "endpoint"
@@ -31,7 +32,7 @@ type Busy =
   | "proposal"
   | "approval"
   | null;
-const careerNav: Array<{ id: View; label: string; hint: string }> = [
+const careerNav: AgentNavigationItem[] = [
   { id: "home", label: "Overview", hint: "Readiness and next step" },
   { id: "chat", label: "Career chat", hint: "Explore your evidence" },
   { id: "audit", label: "Career audit", hint: "Find profile gaps" },
@@ -135,6 +136,7 @@ function App(): JSX.Element {
   const api = window.agentWorkstation;
   const [view, setView] = useState<View>("home");
   const [audit, setAudit] = useState<DemoAudit | null>(null);
+  const [auditSessionId, setAuditSessionId] = useState<string | null>(null);
   const [actions, setActions] = useState<PendingAction[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -154,6 +156,8 @@ function App(): JSX.Element {
   const [history, setHistory] = useState<ChatExchange[]>([]);
   const [contextUsage, setContextUsage] = useState<ChatContextUsage | null>(null);
   const [sessions, setSessions] = useState<ChatSessionRecord[]>([]);
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [pendingChatInput, setPendingChatInput] = useState<{ prompt: string; mode: ChatMode } | null>(null);
   const [chatFailure, setChatFailure] = useState<{
@@ -162,10 +166,6 @@ function App(): JSX.Element {
     mode: ChatMode;
   } | null>(null);
   const conversation = useRef<HTMLDivElement>(null);
-  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
-  const [renameSessionName, setRenameSessionName] = useState("");
-  const [sessionMenuId, setSessionMenuId] = useState<string | null>(null);
-  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [proposalWorkspace, setProposalWorkspace] = useState("");
   const [targetPath, setTargetPath] = useState("README.md");
   const [recommendation, setRecommendation] = useState(
@@ -201,6 +201,13 @@ function App(): JSX.Element {
   const ready = endpointReady && workspaceReady;
   const realReady = realEndpointReady && workspaceReady;
   const selectedChatSession = sessions.find((session) => session.selected);
+  const selectedSessionWorkspace = workspaces.find((workspace) => workspace.id === selectedChatSession?.workspaceId);
+  const activeSessionActions = selectedChatSession
+    ? actions.filter((action) => action.sessionId === selectedChatSession.id)
+    : [];
+  const activeAuditSources = audit && auditSessionId === selectedChatSession?.id
+    ? audit.result.sourceReferences
+    : [];
   const profileWorkspaces = useMemo(
     () => workspaces.filter((w) => w.kind !== "project"),
     [workspaces],
@@ -308,13 +315,15 @@ function App(): JSX.Element {
       api.listPendingActions(),
       api.listChatSessions(),
       api.getChatHistory(),
+      api.listAgents(),
     ])
-      .then(([config, records, pending, nextSessions, nextHistory]) => {
+      .then(([config, records, pending, nextSessions, nextHistory, nextAgents]) => {
         setEndpoint(config);
         setWorkspaces(records);
         setActions(pending);
         setSessions(nextSessions);
         setHistory(nextHistory);
+        setAgents(nextAgents);
         setProposalWorkspace(chooseProposalWorkspace(records));
         void loadChatContextUsage().catch(() => setContextUsage(null));
         if ((config.allowedPaths?.localModels ?? config.mode === "local") || config.allowedPaths?.ollamaCloudModels) {
@@ -340,22 +349,50 @@ function App(): JSX.Element {
   };
 
   const createNewChat = (): void => {
+    setNewSessionOpen(true);
+    setError(null);
+    setNotice(null);
+  };
+
+  const createSession = (input: CreateChatSessionInput, prompt: string): void => {
+    const mode: ChatMode = "autopilot";
+    setNewSessionOpen(false);
+    setChatFailure(null);
+    setPendingChatInput({ prompt, mode });
+    setView("chat");
     void task("chat", async () => {
-      await api.createChatSession("New chat");
-      await loadChat();
+      try {
+        await api.createChatSession(input);
+        await loadWorkspaces();
+        const result = await api.sendChatMessage(prompt);
+        setHistory([result]);
+        await loadChat();
+      } catch (value) {
+        setChatFailure({ prompt, message: chatErrorMessage(value), mode });
+      } finally {
+        setPendingChatInput(null);
+      }
+    });
+  };
+
+  const openSession = (sessionId: string): void => {
+    void task("chat", async () => {
+      await api.selectChatSession(sessionId);
+      setAudit(null);
+      setAuditSessionId(null);
       setChatFailure(null);
+      setPendingChatInput(null);
+      await Promise.all([loadChat(), loadWorkspaces(), loadActions()]);
       setView("chat");
     });
   };
 
-  const saveChatName = (sessionId: string): void => {
-    const name = renameSessionName.trim();
+  const saveChatName = (sessionId: string, nextName: string): void => {
+    const name = nextName.trim();
     if (!name) return;
     void task("chat", async () => {
       await api.renameChatSession(sessionId, name);
       await loadChat();
-      setRenamingSessionId(null);
-      setRenameSessionName("");
     });
   };
 
@@ -363,8 +400,8 @@ function App(): JSX.Element {
     void task("chat", async () => {
       await api.deleteChatSession(sessionId);
       await loadChat();
-      setDeletingSessionId(null);
-      setSessionMenuId(null);
+      setAudit(null);
+      setAuditSessionId(null);
       setChatFailure(null);
     });
   };
@@ -402,6 +439,23 @@ function App(): JSX.Element {
       } finally {
         setPendingChatInput(null);
       }
+    });
+  };
+
+  const approveAction = (actionId: string): void => {
+    const action = actions.find((candidate) => candidate.id === actionId);
+    void task("approval", async () => {
+      await api.approvePendingAction(actionId);
+      await loadActions();
+      setNotice(action ? `Applied ${action.targetPath}.` : "Approved change applied.");
+    });
+  };
+
+  const rejectAction = (actionId: string): void => {
+    void task("approval", async () => {
+      await api.rejectPendingAction(actionId, "Rejected from desktop review");
+      await loadActions();
+      setNotice("Proposal rejected.");
     });
   };
 
@@ -618,6 +672,7 @@ function App(): JSX.Element {
             onClick={() =>
               void task("audit", async () => {
                 setAudit(await api.getDemoAudit());
+                setAuditSessionId(selectedChatSession?.id ?? null);
                 setNotice("Career audit completed.");
               })
             }
@@ -859,6 +914,7 @@ function App(): JSX.Element {
                 });
                 setWorkspaceId("");
                 await loadWorkspaces();
+                await loadChatSessions();
                 setNotice("Workspace registered.");
               })
             }
@@ -890,6 +946,7 @@ function App(): JSX.Element {
                     void task("workspace", async () => {
                       await api.selectWorkspace(w.id);
                       await loadWorkspaces();
+                      await loadChatSessions();
                     })
                   }
                 >
@@ -1217,133 +1274,24 @@ function App(): JSX.Element {
   };
   return (
     <div className="shell">
-      <aside>
-        <div className="brand">
-          <span>AW</span>
-          <div>
-            <strong>Agent Workstation</strong>
-            <small>Local agent desktop</small>
-          </div>
-        </div>
-        <button
-          className={`agent-picker ${view === "agents" ? "active" : ""}`}
-          type="button"
-          onClick={() => go("agents")}
-        >
-          <span className="agent-avatar">CA</span>
-          <span>
-            <small>Active agent</small>
-            <strong>Career Agent</strong>
-          </span>
-          <b>⌄</b>
-        </button>
-        <span className="sidebar-label">Career Agent</span>
-        <nav className={view === "chat" ? "compact-nav" : ""}>
-          {careerNav.map((item) => (
-            <button
-              className={view === item.id ? "active" : ""}
-              type="button"
-              key={item.id}
-              onClick={() => go(item.id)}
-            >
-              <strong>{item.label}</strong>
-              <small>{item.hint}</small>
-              {item.id === "changes" && actions.length ? (
-                <b>{actions.length}</b>
-              ) : null}
-            </button>
-          ))}
-        </nav>
-        {view === "chat" ? (
-          <section className="sidebar-chats" aria-label="Career Agent conversations">
-            <div className="sidebar-chats-heading">
-              <span>Chats</span>
-              <button type="button" aria-label="New chat" onClick={createNewChat} disabled={busy === "chat"}>＋</button>
-            </div>
-            <ul className="session-list" aria-label="Saved conversations">
-              {sessions.map((session) => (
-                <li className={session.selected ? "active" : ""} key={session.id}>
-                  {deletingSessionId === session.id ? (
-                    <div className="session-delete-confirm" role="group" aria-live="assertive" aria-label={`Delete ${session.name}?`}>
-                      <span>Delete this chat?</span>
-                      <div>
-                        <button type="button" autoFocus onClick={() => setDeletingSessionId(null)}>Cancel</button>
-                        <button type="button" className="danger" onClick={() => deleteChat(session.id)} disabled={busy === "chat"}>Delete</button>
-                      </div>
-                    </div>
-                  ) : renamingSessionId === session.id ? (
-                    <form onSubmit={(event) => { event.preventDefault(); saveChatName(session.id); }}>
-                      <input
-                        aria-label={`Rename ${session.name}`}
-                        autoFocus
-                        value={renameSessionName}
-                        onChange={(event) => setRenameSessionName(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") {
-                            setRenamingSessionId(null);
-                            setRenameSessionName("");
-                          }
-                         }}
-                       />
-                       <button type="submit" aria-label={`Save ${session.name} name`}>✓</button>
-                     </form>
-                  ) : (
-                    <>
-                      <button type="button" className="session-open" aria-current={session.selected ? "true" : undefined} onClick={() => void task("chat", async () => {
-                        await api.selectChatSession(session.id);
-                        await loadChat();
-                        setChatFailure(null);
-                        setSessionMenuId(null);
-                      })}>{session.name}</button>
-                      <button
-                        type="button"
-                        className="session-actions-trigger"
-                        aria-label={`Chat options for ${session.name}`}
-                        aria-haspopup="menu"
-                        aria-expanded={sessionMenuId === session.id}
-                        onClick={() => setSessionMenuId((current) => current === session.id ? null : session.id)}
-                      >···</button>
-                      {sessionMenuId === session.id ? (
-                        <div className="session-actions-menu" role="menu">
-                          <button type="button" role="menuitem" onClick={() => {
-                            setSessionMenuId(null);
-                            setRenamingSessionId(session.id);
-                            setRenameSessionName(session.name);
-                          }}>Rename</button>
-                          <button type="button" role="menuitem" className="danger" onClick={() => {
-                            setSessionMenuId(null);
-                            setDeletingSessionId(session.id);
-                          }}>Delete</button>
-                        </div>
-                      ) : null}
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-        <div className="sidebar-footer">
-          <button
-            className="settings-link"
-            type="button"
-            onClick={() => go("settings")}
-          >
-            <span>Intelligence access</span>
-            <small>
-              {realEndpointReady
-                ? `${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed)} path${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed) === 1 ? "" : "s"} allowed`
-                : demoSessionEnabled
-                  ? "Simulated demo · no AI"
-                  : "Setup required"}
-            </small>
-          </button>
-          <div className="privacy">
-            <strong>{ollamaCloudPathAllowed || cloudPathAllowed ? "● Cloud permitted" : "● On-device only"}</strong>
-            <small>{ollamaCloudPathAllowed || cloudPathAllowed ? "Career Agent may use allowed cloud intelligence when needed." : "Registered context stays on this computer."}</small>
-          </div>
-        </div>
-      </aside>
+      <SessionsSidebar
+        view={view}
+        navigation={careerNav}
+        workspaces={workspaces}
+        sessions={sessions}
+        pendingActionCount={actions.length}
+        busy={busy === "chat"}
+        intelligenceSummary={realEndpointReady
+          ? `${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed)} path${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed) === 1 ? "" : "s"} allowed`
+          : demoSessionEnabled ? "Simulated demo · no AI" : "Setup required"}
+        cloudPermitted={ollamaCloudPathAllowed || cloudPathAllowed}
+        onOpenAgents={() => go("agents")}
+        onNavigate={go}
+        onNewSession={createNewChat}
+        onOpenSession={openSession}
+        onRenameSession={saveChatName}
+        onDeleteSession={deleteChat}
+      />
       <main className={view === "chat" ? "chat-main" : ""}>
         <header>
           <div>
@@ -1380,8 +1328,36 @@ function App(): JSX.Element {
         {notice ? (
           <Toast kind="success" text={notice} close={() => setNotice(null)} />
         ) : null}
-        <div className="page">{pages[view]()}</div>
+        <div className="page">
+          {newSessionOpen ? (
+            <NewSessionComposer
+              agents={agents}
+              workspaces={workspaces}
+              defaultWorkspaceId={selectedChatSession?.workspaceId ?? workspaces.find((workspace) => workspace.selected)?.id}
+              cloudPermitted={ollamaCloudPathAllowed || cloudPathAllowed}
+              busy={busy === "chat"}
+              onCancel={() => setNewSessionOpen(false)}
+              onCreate={createSession}
+            />
+          ) : pages[view]()}
+        </div>
       </main>
+      <SessionInspector
+        key={selectedChatSession?.id ?? "no-session"}
+        session={selectedChatSession}
+        workspace={selectedSessionWorkspace}
+        history={history}
+        additionalSources={activeAuditSources}
+        actions={activeSessionActions}
+        cloudPermitted={ollamaCloudPathAllowed || cloudPathAllowed}
+        busy={busy === "approval"}
+        listEntries={api.listWorkspaceEntries}
+        readFile={api.readWorkspaceFile}
+        onApprove={approveAction}
+        onReject={rejectAction}
+        onOpenReview={() => go("changes")}
+        onError={setError}
+      />
     </div>
   );
 }

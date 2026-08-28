@@ -1,7 +1,14 @@
 import type { PendingAction } from '@domain/actions';
 
+export type WorkspaceEntry = {
+  name: string;
+  relativePath: string;
+  kind: 'file' | 'directory';
+};
+
 export interface WorkspaceGateway {
   listDirectory(workspaceId: string, relativePath: string): Promise<string[]>;
+  listDirectoryEntries(workspaceId: string, relativePath: string): Promise<WorkspaceEntry[]>;
   readFile(workspaceId: string, relativePath: string): Promise<{ content: string; source: string }>;
   readFileIfExists(workspaceId: string, relativePath: string): Promise<{ content: string; source: string } | null>;
   writeFileAtomic(workspaceId: string, relativePath: string, content: string): Promise<void>;
