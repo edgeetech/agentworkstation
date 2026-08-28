@@ -553,7 +553,7 @@ textarea {
   border-radius: 7px;
   background: transparent;
   color: #8d8d8d;
-  opacity: 0;
+  opacity: 0.72;
 }
 .session-list li:hover .session-actions-trigger,
 .session-list li.active .session-actions-trigger,
@@ -566,14 +566,17 @@ textarea {
   color: #fff;
 }
 .session-actions-menu {
-  position: absolute;
+  position: relative;
   z-index: 3;
-  top: 34px;
-  right: 2px;
-  width: 116px;
+  grid-column: 1 / -1;
+  width: auto;
+  margin: 0 4px 6px;
   padding: 5px;
   border: 1px solid #3a3a3a;
   border-radius: 9px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
   background: #202020;
   box-shadow: 0 10px 28px rgb(0 0 0 / 35%);
 }
@@ -1145,6 +1148,7 @@ body {
 }
 .brand {
   border-color: #292929;
+  padding-bottom: 16px;
 }
 .brand > span {
   background: #f3f3f1;
@@ -1156,7 +1160,7 @@ nav small {
 }
 .agent-picker {
   width: 100%;
-  margin-top: 18px;
+  margin-top: 12px;
   padding: 10px;
   border: 1px solid #303030;
   border-radius: 12px;
@@ -1199,7 +1203,7 @@ nav small {
   color: #898989;
 }
 .sidebar-label {
-  margin: 20px 12px 2px;
+  margin: 14px 12px 2px;
   color: #777;
   font-size: 10px;
   font-weight: 850;
@@ -1207,7 +1211,17 @@ nav small {
   text-transform: uppercase;
 }
 nav {
-  margin-top: 7px;
+  margin-top: 5px;
+}
+nav.agent-navigation button {
+  min-height: 36px;
+  padding-block: 7px;
+}
+nav.agent-navigation button small {
+  display: none;
+}
+nav.agent-navigation button b {
+  top: 8px;
 }
 nav button {
   color: #d4d4d4;
@@ -1225,8 +1239,8 @@ nav button b {
 }
 .sidebar-chats {
   min-height: 0;
-  margin-top: 18px;
-  padding: 16px 8px 0;
+  margin-top: 12px;
+  padding: 12px 8px 0;
   border-top: 1px solid #292929;
   display: flex;
   flex: 1 1 auto;
@@ -1235,10 +1249,11 @@ nav button b {
   overflow: hidden;
 }
 .sidebar-chats .session-list {
-  flex: 1 1 auto;
+  flex: none;
+  overflow: visible;
 }
 .sidebar-footer {
-  margin-top: 14px;
+  margin-top: 8px;
   display: grid;
   flex: 0 0 auto;
   gap: 10px;

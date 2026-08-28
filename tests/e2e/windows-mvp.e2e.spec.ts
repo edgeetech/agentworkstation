@@ -119,7 +119,6 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await expect(page.getByText('Mock response: Prepare another career conversation', { exact: true })).toBeVisible();
     await expect(page.getByText('Autopilot', { exact: true })).toBeVisible();
     const newSessionOptions = conversationSidebar.getByRole('button', { name: 'Chat options for Prepare another career conversation' });
-    await newSessionOptions.focus();
     await newSessionOptions.click();
     await conversationSidebar.getByRole('menuitem', { name: 'Rename' }).click();
     const renameInput = conversationSidebar.getByLabel('Rename Prepare another career conversation');
@@ -130,7 +129,6 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await expect(page.getByText('Autopilot', { exact: true })).toBeVisible();
     await expect(page.getByText('What changed that should appear in my profile?', { exact: true })).toBeVisible();
     const secondSessionOptions = conversationSidebar.getByRole('button', { name: 'Chat options for Second conversation' });
-    await secondSessionOptions.focus();
     await secondSessionOptions.click();
     await conversationSidebar.getByRole('menuitem', { name: 'Delete' }).click();
     const deleteDialog = conversationSidebar.getByRole('group', { name: 'Delete Second conversation?' });
