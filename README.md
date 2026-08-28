@@ -2,7 +2,7 @@
 
 # 🧭 Agent Workstation
 
-### A local-first desktop workspace for evidence-backed AI agents — starting with Career Agent.
+### A local-first hub where specialized AI agents work with real repositories, evidence, and human oversight.
 
 [![Version](https://img.shields.io/badge/version-0.1.0-3b82f6?style=for-the-badge)](./package.json)
 [![CI](https://img.shields.io/github/actions/workflow/status/edgeetech/agentworkstation/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/edgeetech/agentworkstation/actions/workflows/ci.yml)
@@ -10,12 +10,16 @@
 [![Node](https://img.shields.io/badge/Node-20%2B-22c55e?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
 [![Local first](https://img.shields.io/badge/local--first-workspaces-0d9488?style=for-the-badge)](#-safety-and-privacy)
 
-**Workspaces → Persistent sessions → Evidence-backed answers → Human-approved actions**
+**Many workspaces → Specialized agents → Persistent sessions → Evidence-backed actions**
 
-Agent Workstation connects specialist agents to real local work without turning
-your repositories over to an opaque chat window. You decide which intelligence
-paths are allowed; the app selects an available model per prompt, shows what it
-used, cites workspace evidence, and requires approval before any file is changed.
+Agent Workstation is the shared desktop home for specialized agents. Each agent
+can bring its own purpose, instructions, memory, workflows, quick actions, and
+tool policy while reusing one secure hub for workspaces, sessions, intelligence
+routing, evidence, privacy, and human-approved actions.
+
+You decide which repositories and intelligence paths are allowed. The hub selects
+an available model per prompt, shows what it used, cites workspace evidence, and
+requires approval before any file is changed.
 
 </div>
 
@@ -23,20 +27,34 @@ used, cites workspace evidence, and requires approval before any file is changed
 
 ## ⚡ Why Agent Workstation?
 
-AI can write a convincing answer without understanding your actual work. Career
-history is especially vulnerable: project evidence is spread across repositories,
-profiles go stale, and a generic assistant cannot safely inspect or update either.
+General-purpose chat is useful, but real work benefits from agents that understand
+a domain, follow a defined workflow, use only appropriate tools, and retain the
+right context. Building every specialist as a separate application would duplicate
+workspace access, model connections, session history, evidence handling, and
+safety controls.
 
-Agent Workstation makes that workflow concrete:
+Agent Workstation provides that common foundation:
 
-- register the profile, CV, and project repositories you want the agent to use;
-- keep separate, persistent sessions tied to the right workspace;
-- let the application choose between allowed local and connected intelligence;
+- register the repositories you want specialized agents to use;
+- select an agent for the job and keep its domain behavior declarative;
+- keep separate, persistent agent sessions tied to the right workspace;
+- let the hub choose between allowed local and connected intelligence;
 - inspect the files, Git history, and memory behind an answer;
 - review an exact diff before approving or rejecting a proposed change.
 
-Release 0.1 delivers this as a Windows-first Electron application with **Career
-Agent** as the complete specialist-agent vertical slice.
+Release 0.1 proves this hub model as a Windows-first Electron application.
+**Career Agent** is the first complete specialist: it connects profile and project
+repositories, audits career evidence, and proposes human-reviewed improvements.
+
+```text
+Agent Workstation hub
+├── Workspaces and persistent sessions
+├── Intelligence routing and availability
+├── Files, evidence, actions, and privacy
+├── Policy gates and human approval
+└── Specialized agent definitions
+    └── Career Agent (included in Release 0.1)
+```
 
 ---
 
@@ -92,10 +110,10 @@ synthetic repositories. No private workspace content is included.
 
 | | |
 |---|---|
-| 🧭 **Agent-first desktop shell** | Workspace and session navigation on the left, the focused Career Agent workflow in the center, and Files / Evidence / Actions / Privacy on the right. |
-| 💬 **Persistent Career Agent chat** | Create, switch, rename, and delete workspace-bound conversations. History, mode, model route, and context usage survive restarts. |
-| 🗂️ **Many registered workspaces** | Register profile, CV, and project repositories. Career Agent can reason across them while each active session keeps one authoritative workspace context. |
-| 🔎 **Evidence-first inspection** | Browse safe workspace files and inspect structured provenance from files, Git status, Git log, Git diff, and Career Agent memory. |
+| 🧭 **Specialized-agent hub** | Choose an agent, workspace, and persistent session on the left; work in the focused conversation at the center; inspect Files / Evidence / Actions / Privacy on the right. |
+| 💬 **Persistent agent sessions** | Create, switch, rename, and delete workspace-bound conversations. Agent identity, history, mode, model route, and context usage survive restarts. |
+| 🗂️ **Many registered workspaces** | Register the repositories agents may use. The shipped Career Agent can reason across profile and project workspaces while each active session keeps one authoritative workspace context. |
+| 🔎 **Evidence-first inspection** | Browse safe workspace files and inspect structured provenance from files, Git status, Git log, Git diff, and agent memory. |
 | 🧠 **Automatic intelligence routing** | Allow on-device Ollama, Ollama Cloud, detected provider CLIs, or a combination. The router evaluates the prompt and availability instead of asking the user to pick a model for every message. |
 | 🟢 **Visible model availability** | See which local models and provider connections are available, limited, incompatible, or unavailable. The resolved model remains visible on each answer. |
 | 🔁 **Usage-limit fallback** | HTTP 429 responses mark an intelligence candidate as limited, apply a cooldown, and allow routing to fall back to another permitted candidate. |
@@ -144,8 +162,10 @@ silently becomes cloud-enabled.
 
 ## 🧑‍💼 Career Agent workflows
 
-Career Agent is declarative: its instructions, memory, workflows, quick actions,
-and tool policy live under [`src/agents/career/`](./src/agents/career/).
+Career Agent is the first specialist delivered through the hub. Its instructions,
+memory, workflows, quick actions, and tool policy are declarative and live under
+[`src/agents/career/`](./src/agents/career/); shared workspace, session,
+intelligence, evidence, approval, and privacy capabilities remain hub concerns.
 
 ### Ask
 
@@ -226,9 +246,9 @@ npm run electron:dev
 
 Inside the app:
 
-1. Open **Career Agent**.
+1. Select **Career Agent**, the specialist included in Release 0.1.
 2. Register at least one profile, CV, or project workspace.
-3. Open **Intelligence access** and allow the paths Career Agent may use.
+3. Open **Intelligence access** and allow the paths agents may use.
 4. Refresh availability and save the policy.
 5. Start a workspace-bound session or run a Career Audit.
 
@@ -319,9 +339,14 @@ and [`WHATS_LEFT.md`](./WHATS_LEFT.md).
 
 ## 🎯 Release 0.1 scope
 
-This repository currently delivers one complete specialist agent: **Career
-Agent**. The shell and declarative agent contract can represent additional
-agents, but no additional specialist experience is claimed in the MVP.
+Release 0.1 delivers the working **Agent Workstation hub** and one complete
+specialist agent: **Career Agent**. The hub owns reusable workspace navigation,
+persistent sessions, intelligence routing, evidence, safe actions, and privacy;
+Career Agent contributes its domain-specific instructions, memory, workflows,
+quick actions, and tool policy.
+
+The agent contract is intentionally specialist-neutral, but no additional agent
+experience is claimed as shipped in the MVP.
 
 Release 0.1 does not include a terminal, browser, MCP management UI, plugin
 marketplace, worktree engine, billing system, or SaaS routing service. Those are
