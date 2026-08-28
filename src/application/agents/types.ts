@@ -7,6 +7,13 @@ export type AgentContentFile = {
   content: string;
 };
 
+export type AgentQuickAction = {
+  id: string;
+  title: string;
+  prompt: string;
+  workflow?: string;
+};
+
 export type AgentDefinitionMaterials = {
   id: string;
   name: string;
@@ -14,6 +21,7 @@ export type AgentDefinitionMaterials = {
   instructions: AgentContentFile[];
   workflows: AgentContentFile[];
   memory: AgentContentFile[];
+  quickActions: AgentQuickAction[];
   toolPolicies: Record<string, AgentToolPolicy>;
 };
 

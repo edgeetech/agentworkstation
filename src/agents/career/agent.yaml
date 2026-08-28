@@ -11,6 +11,22 @@ workflows:
   - workflows/career-audit.md
   - workflows/project-evidence.md
   - workflows/propose-profile-update.md
+quickActions:
+  - id: audit-profile
+    title: Audit my profile
+    prompt: Audit my registered career profile against recent project evidence and identify the most important gaps.
+    workflow: career-audit
+  - id: review-project-work
+    title: Review recent project work
+    prompt: Review recent work in my registered project workspaces and identify evidence worth adding to my professional profile.
+    workflow: project-evidence
+  - id: find-cv-evidence
+    title: Find missing CV evidence
+    prompt: Compare my registered CV or profile sources with project evidence and identify credible missing achievements.
+    workflow: career-audit
+  - id: review-career-memory
+    title: Review career memory
+    prompt: Review the Career Agent memory and point out anything outdated, unsupported, or inconsistent with my registered workspaces.
 toolPolicies:
   filesystem.read: allow
   git.log: allow

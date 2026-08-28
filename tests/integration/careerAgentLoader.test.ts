@@ -23,6 +23,10 @@ describe('Career Agent loader integration', () => {
     expect(agent.toolPolicies['git.log']).toBe('allow');
     expect(agent.toolPolicies['filesystem.read']).toBe('allow');
     expect(agent.toolPolicies['filesystem.proposeWrite']).toBe('require_approval');
+    expect(agent.quickActions).toContainEqual(expect.objectContaining({
+      id: 'audit-profile',
+      workflow: 'career-audit',
+    }));
     expect(agent.systemPrompt).toContain('Evidence-first');
     expect(agent.systemPrompt).not.toContain('## Career memory');
     expect(agent.workflows.some((file) => file.relativePath === 'workflows/project-evidence.md')).toBe(true);

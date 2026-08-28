@@ -86,6 +86,11 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
         id text primary key,
         name text not null,
         mode text not null default 'autopilot' check (mode in ('standard', 'autopilot')),
+        workspaceId text,
+        agentId text not null default 'career',
+        intelligencePreference text not null default 'auto',
+        permissionMode text not null default 'interactive',
+        isolationMode text not null default 'read_only',
         createdAt text not null,
         updatedAt text not null,
         selected integer not null default 0 check (selected in (0, 1))
@@ -226,17 +231,41 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   async saveChatSession(session: ChatSession): Promise<void> {
     this.db.prepare(`
-      insert into chat_sessions (id, name, mode, createdAt, updatedAt)
-      values (?, ?, ?, ?, ?)
+      insert into chat_sessions (
+        id, name, mode, workspaceId, agentId, intelligencePreference,
+        permissionMode, isolationMode, createdAt, updatedAt
+      )
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(id) do update set
         name = excluded.name,
         mode = excluded.mode,
+        workspaceId = excluded.workspaceId,
+        agentId = excluded.agentId,
+        intelligencePreference = excluded.intelligencePreference,
+        permissionMode = excluded.permissionMode,
+        isolationMode = excluded.isolationMode,
         updatedAt = excluded.updatedAt
-    `).run(session.id, session.name, session.mode, session.createdAt, session.updatedAt);
+    `).run(
+      session.id,
+      session.name,
+      session.mode,
+      session.workspaceId ?? null,
+      session.agentId,
+      session.intelligencePreference,
+      session.permissionMode,
+      session.isolationMode,
+      session.createdAt,
+      session.updatedAt,
+    );
   }
 
   async listChatSessions(): Promise<ChatSession[]> {
-    return this.db.prepare('select id, name, mode, createdAt, updatedAt from chat_sessions order by updatedAt desc, id desc')
+    return this.db.prepare(`
+      select id, name, mode, workspaceId, agentId, intelligencePreference,
+        permissionMode, isolationMode, createdAt, updatedAt
+      from chat_sessions
+      order by updatedAt desc, id desc
+    `)
       .all() as ChatSession[];
   }
 
@@ -259,7 +288,12 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
   }
 
   async getSelectedChatSession(): Promise<ChatSession | null> {
-    const row = this.db.prepare('select id, name, mode, createdAt, updatedAt from chat_sessions where selected = 1')
+    const row = this.db.prepare(`
+      select id, name, mode, workspaceId, agentId, intelligencePreference,
+        permissionMode, isolationMode, createdAt, updatedAt
+      from chat_sessions
+      where selected = 1
+    `)
       .get() as ChatSession | undefined;
     return row ?? null;
   }
@@ -318,9 +352,16 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   private ensureChatSessionColumns(): void {
     const columns = this.db.prepare('pragma table_info(chat_sessions)').all() as Array<{ name: string }>;
-    if (!columns.some((column) => column.name === 'mode')) {
-      this.db.exec("alter table chat_sessions add column mode text not null default 'autopilot'");
-    }
+    const existing = new Set(columns.map((column) => column.name));
+    const statements = [
+      !existing.has('mode') ? "alter table chat_sessions add column mode text not null default 'autopilot'" : null,
+      !existing.has('workspaceId') ? 'alter table chat_sessions add column workspaceId text' : null,
+      !existing.has('agentId') ? "alter table chat_sessions add column agentId text not null default 'career'" : null,
+      !existing.has('intelligencePreference') ? "alter table chat_sessions add column intelligencePreference text not null default 'auto'" : null,
+      !existing.has('permissionMode') ? "alter table chat_sessions add column permissionMode text not null default 'interactive'" : null,
+      !existing.has('isolationMode') ? "alter table chat_sessions add column isolationMode text not null default 'read_only'" : null,
+    ].filter((statement): statement is string => Boolean(statement));
+    for (const statement of statements) this.db.exec(statement);
   }
 
   private ensureChatMessageColumns(): void {

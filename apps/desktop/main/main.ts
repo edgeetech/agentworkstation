@@ -448,10 +448,16 @@ async function ensureChatSession(): Promise<ChatSession> {
     return sessions[0];
   }
   const now = new Date().toISOString();
+  const selectedWorkspace = await db.getSelectedWorkspace();
   const created: ChatSession = {
     id: `session-${Date.now()}`,
     name: 'Career Agent Session',
     mode: 'autopilot',
+    workspaceId: selectedWorkspace?.id ?? null,
+    agentId: 'career',
+    intelligencePreference: 'auto',
+    permissionMode: 'interactive',
+    isolationMode: 'read_only',
     createdAt: now,
     updatedAt: now,
   };
@@ -933,6 +939,18 @@ function registerIpcHandlers(): void {
     await saveEndpointConfig(config);
   });
 
+  ipcMain.handle(IPC_CHANNELS.listAgents, async () => {
+    const agent = new CareerAgentLoader(
+      new FileSystemAgentDefinitionSource(getCareerAgentDirectory()),
+    ).load();
+    return [{
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      quickActions: agent.quickActions,
+    }];
+  });
+
   ipcMain.handle(IPC_CHANNELS.listChatSessions, async () => {
     const db = getPersistence();
     const selected = await ensureChatSession();
@@ -944,18 +962,27 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.createChatSession, async (_event, payload: unknown) => {
-    const { name } = parseCreateChatSessionInput(payload);
+    const input = parseCreateChatSessionInput(payload);
+    if (input.workspaceId && !(await getPersistence().getWorkspace(input.workspaceId))) {
+      throw new Error(`Unknown workspace: ${input.workspaceId}`);
+    }
     const now = new Date().toISOString();
     const created = {
       id: `session-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      name,
+      name: input.name,
       mode: 'autopilot' as const,
+      workspaceId: input.workspaceId ?? null,
+      agentId: input.agentId,
+      intelligencePreference: input.intelligencePreference,
+      permissionMode: input.permissionMode,
+      isolationMode: input.isolationMode,
       createdAt: now,
       updatedAt: now,
     };
     const db = getPersistence();
     await db.saveChatSession(created);
     await db.selectChatSession(created.id);
+    if (created.workspaceId) await db.selectWorkspace(created.workspaceId);
     return { ...created, selected: true };
   });
 
@@ -992,7 +1019,13 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.selectChatSession, async (_event, payload: unknown) => {
     const { id } = parseWorkspaceIdInput(payload);
-    await getPersistence().selectChatSession(id);
+    const db = getPersistence();
+    const sessionValue = (await db.listChatSessions()).find((candidate) => candidate.id === id);
+    if (!sessionValue) throw new Error(`Unknown chat session: ${id}`);
+    await db.selectChatSession(id);
+    if (sessionValue.workspaceId && await db.getWorkspace(sessionValue.workspaceId)) {
+      await db.selectWorkspace(sessionValue.workspaceId);
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.getChatHistory, async () => getChatHistory());

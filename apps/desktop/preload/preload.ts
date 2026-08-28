@@ -13,6 +13,7 @@ const IPC_CHANNELS = {
   discoverLocalModels: 'agentWorkstation:discoverLocalModels',
   saveEndpointConfig: 'agentWorkstation:saveEndpointConfig',
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
+  listAgents: 'agentWorkstation:listAgents',
   listChatSessions: 'agentWorkstation:listChatSessions',
   createChatSession: 'agentWorkstation:createChatSession',
   renameChatSession: 'agentWorkstation:renameChatSession',
@@ -47,8 +48,18 @@ const api: AgentWorkstationApi = {
     ipcRenderer.invoke(IPC_CHANNELS.discoverLocalModels, { baseUrl }),
   saveEndpointConfig: async (config) => ipcRenderer.invoke(IPC_CHANNELS.saveEndpointConfig, config),
   testEndpointConnection: async (config) => ipcRenderer.invoke(IPC_CHANNELS.testEndpointConnection, config),
+  listAgents: async () => ipcRenderer.invoke(IPC_CHANNELS.listAgents),
   listChatSessions: async () => ipcRenderer.invoke(IPC_CHANNELS.listChatSessions),
-  createChatSession: async (name) => ipcRenderer.invoke(IPC_CHANNELS.createChatSession, { name }),
+  createChatSession: async (input) => ipcRenderer.invoke(IPC_CHANNELS.createChatSession,
+    typeof input === 'string'
+      ? {
+        name: input,
+        agentId: 'career',
+        intelligencePreference: 'auto',
+        permissionMode: 'interactive',
+        isolationMode: 'read_only',
+      }
+      : input),
   renameChatSession: async (id, name) => ipcRenderer.invoke(IPC_CHANNELS.renameChatSession, { id, name }),
   setChatSessionMode: async (id, mode) => ipcRenderer.invoke(IPC_CHANNELS.setChatSessionMode, { id, mode }),
   deleteChatSession: async (id) => ipcRenderer.invoke(IPC_CHANNELS.deleteChatSession, { id }),

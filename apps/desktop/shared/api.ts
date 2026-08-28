@@ -19,6 +19,7 @@ export type DemoAudit = {
 
 export type PendingAction = {
   id: string;
+  sessionId: string;
   status: 'PROPOSED' | 'APPROVED' | 'EXECUTED' | 'REJECTED' | 'STALE';
   workspaceId: string;
   targetPath: string;
@@ -111,9 +112,37 @@ export type ChatSessionRecord = {
   id: string;
   name: string;
   mode: ChatMode;
+  workspaceId?: string | null;
+  agentId: string;
+  intelligencePreference: 'auto';
+  permissionMode: 'interactive';
+  isolationMode: 'read_only';
   createdAt: string;
   updatedAt: string;
   selected: boolean;
+};
+
+export type AgentQuickAction = {
+  id: string;
+  title: string;
+  prompt: string;
+  workflow?: string;
+};
+
+export type AgentSummary = {
+  id: string;
+  name: string;
+  description: string;
+  quickActions: AgentQuickAction[];
+};
+
+export type CreateChatSessionInput = {
+  name: string;
+  workspaceId?: string;
+  agentId: 'career';
+  intelligencePreference: 'auto';
+  permissionMode: 'interactive';
+  isolationMode: 'read_only';
 };
 
 export type AgentWorkstationApi = {
@@ -128,8 +157,9 @@ export type AgentWorkstationApi = {
   discoverLocalModels: (baseUrl: string) => Promise<LocalModel[]>;
   saveEndpointConfig: (config: EndpointConfig) => Promise<void>;
   testEndpointConnection: (config: EndpointConfig) => Promise<{ ok: true; message: string }>;
+  listAgents: () => Promise<AgentSummary[]>;
   listChatSessions: () => Promise<ChatSessionRecord[]>;
-  createChatSession: (name: string) => Promise<ChatSessionRecord>;
+  createChatSession: (input: CreateChatSessionInput | string) => Promise<ChatSessionRecord>;
   renameChatSession: (id: string, name: string) => Promise<ChatSessionRecord>;
   setChatSessionMode: (id: string, mode: ChatMode) => Promise<ChatSessionRecord>;
   deleteChatSession: (id: string) => Promise<void>;

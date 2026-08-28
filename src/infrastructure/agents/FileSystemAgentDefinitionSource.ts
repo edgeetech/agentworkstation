@@ -11,6 +11,12 @@ const agentConfigSchema = z.object({
   description: z.string().min(1),
   instructions: z.array(z.string().min(1)),
   workflows: z.array(z.string().min(1)).default([]),
+  quickActions: z.array(z.object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    prompt: z.string().min(1),
+    workflow: z.string().min(1).optional(),
+  })).default([]),
   memory: z.object({ directory: z.string().min(1) }).optional(),
   toolPolicies: z.record(z.enum(['allow', 'require_approval', 'deny'])),
 });
@@ -36,6 +42,7 @@ export class FileSystemAgentDefinitionSource implements AgentDefinitionSource {
       instructions,
       workflows,
       memory,
+      quickActions: config.quickActions,
       toolPolicies: config.toolPolicies,
     };
   }

@@ -6,10 +6,19 @@ export type AgentSession = {
 
 export type ChatMode = 'standard' | 'autopilot';
 
+export type SessionIntelligencePreference = 'auto';
+export type SessionPermissionMode = 'interactive';
+export type SessionIsolationMode = 'read_only';
+
 export type ChatSession = {
   id: string;
   name: string;
   mode: ChatMode;
+  workspaceId?: string | null;
+  agentId: string;
+  intelligencePreference: SessionIntelligencePreference;
+  permissionMode: SessionPermissionMode;
+  isolationMode: SessionIsolationMode;
   createdAt: string;
   updatedAt: string;
 };

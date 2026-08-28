@@ -83,7 +83,18 @@ describe('sqlite persistence', () => {
     const db = new SqlitePersistence(file);
     const now = new Date().toISOString();
 
-    await db.saveChatSession({ id: 'session-1', name: 'Career Agent Session', mode: 'autopilot', createdAt: now, updatedAt: now });
+    await db.saveChatSession({
+      id: 'session-1',
+      name: 'Career Agent Session',
+      mode: 'autopilot',
+      workspaceId: 'profile',
+      agentId: 'career',
+      intelligencePreference: 'auto',
+      permissionMode: 'interactive',
+      isolationMode: 'read_only',
+      createdAt: now,
+      updatedAt: now,
+    });
     await db.selectChatSession('session-1');
     await db.appendChatMessage({
       sessionId: 'session-1',
@@ -106,6 +117,8 @@ describe('sqlite persistence', () => {
 
     await expect(db.getSelectedChatSession()).resolves.toMatchObject({
       id: 'session-1', name: 'Career Agent Session', mode: 'autopilot',
+      workspaceId: 'profile', agentId: 'career', intelligencePreference: 'auto',
+      permissionMode: 'interactive', isolationMode: 'read_only',
     });
     await expect(db.listChatSessions()).resolves.toHaveLength(1);
     await expect(db.listChatMessages('session-1')).resolves.toEqual([
@@ -151,7 +164,9 @@ describe('sqlite persistence', () => {
 
     const db = new SqlitePersistence(file);
     await expect(db.getSelectedChatSession()).resolves.toMatchObject({
-      id: 'legacy-chat', mode: 'autopilot',
+      id: 'legacy-chat', mode: 'autopilot', workspaceId: null,
+      agentId: 'career', intelligencePreference: 'auto',
+      permissionMode: 'interactive', isolationMode: 'read_only',
     });
     await expect(db.listChatMessages('legacy-chat')).resolves.toEqual([
       expect.objectContaining({ content: 'Historical prompt', mode: null }),

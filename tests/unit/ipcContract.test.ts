@@ -16,6 +16,7 @@ describe('ipc contract', () => {
     expect(IPC_CHANNELS.getDemoAudit).toBe('agentWorkstation:getDemoAudit');
     expect(IPC_CHANNELS.approvePendingAction).toBe('agentWorkstation:approvePendingAction');
     expect(IPC_CHANNELS.testEndpointConnection).toBe('agentWorkstation:testEndpointConnection');
+    expect(IPC_CHANNELS.listAgents).toBe('agentWorkstation:listAgents');
     expect(IPC_CHANNELS.renameChatSession).toBe('agentWorkstation:renameChatSession');
     expect(IPC_CHANNELS.setChatSessionMode).toBe('agentWorkstation:setChatSessionMode');
     expect(IPC_CHANNELS.deleteChatSession).toBe('agentWorkstation:deleteChatSession');
@@ -54,7 +55,14 @@ describe('ipc contract', () => {
       allowedPaths: { localModels: false, ollamaCloudModels: true, cloudProviders: false },
     })).toMatchObject({ allowedPaths: { ollamaCloudModels: true }, ollamaModelIds: ['gpt-oss:120b-cloud'] });
     expect(parseChatMessageInput({ message: 'hello' })).toEqual({ message: 'hello' });
-    expect(parseCreateChatSessionInput({ name: 'Session A' })).toEqual({ name: 'Session A' });
+    expect(parseCreateChatSessionInput({ name: 'Session A', workspaceId: 'profile' })).toEqual({
+      name: 'Session A',
+      workspaceId: 'profile',
+      agentId: 'career',
+      intelligencePreference: 'auto',
+      permissionMode: 'interactive',
+      isolationMode: 'read_only',
+    });
     expect(parseRenameChatSessionInput({ id: 'chat-1', name: 'Renamed chat' }))
       .toEqual({ id: 'chat-1', name: 'Renamed chat' });
     expect(parseSetChatSessionModeInput({ id: 'chat-1', mode: 'autopilot' }))

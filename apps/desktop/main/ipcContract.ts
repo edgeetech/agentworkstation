@@ -12,6 +12,7 @@ export const IPC_CHANNELS = {
   discoverLocalModels: 'agentWorkstation:discoverLocalModels',
   saveEndpointConfig: 'agentWorkstation:saveEndpointConfig',
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
+  listAgents: 'agentWorkstation:listAgents',
   listChatSessions: 'agentWorkstation:listChatSessions',
   createChatSession: 'agentWorkstation:createChatSession',
   renameChatSession: 'agentWorkstation:renameChatSession',
@@ -68,7 +69,12 @@ const chatMessageSchema = z.object({
 });
 
 const createChatSessionSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().trim().min(1).max(120),
+  workspaceId: z.string().min(1).optional(),
+  agentId: z.literal('career').default('career'),
+  intelligencePreference: z.literal('auto').default('auto'),
+  permissionMode: z.literal('interactive').default('interactive'),
+  isolationMode: z.literal('read_only').default('read_only'),
 });
 
 const renameChatSessionSchema = z.object({
@@ -134,7 +140,14 @@ export function parseChatMessageInput(value: unknown): { message: string } {
   return chatMessageSchema.parse(value);
 }
 
-export function parseCreateChatSessionInput(value: unknown): { name: string } {
+export function parseCreateChatSessionInput(value: unknown): {
+  name: string;
+  workspaceId?: string;
+  agentId: 'career';
+  intelligencePreference: 'auto';
+  permissionMode: 'interactive';
+  isolationMode: 'read_only';
+} {
   return createChatSessionSchema.parse(value);
 }
 
