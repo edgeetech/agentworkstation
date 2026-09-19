@@ -24,7 +24,10 @@ function makeContext(repo: string): ToolExecutionContext {
     workspaceGateway: {
       getWorkspaceRoot: () => repo,
       listDirectory: async () => [],
+      listDirectoryEntries: async () => [],
       readFile: async () => ({ content: '', source: '' }),
+      readFileIfExists: async () => null,
+      writeFileAtomic: async () => undefined,
     },
   };
 }

@@ -1,6 +1,6 @@
 schemaVersion: 1
 id: career
-name: Career Agent
+name: Career
 description: Keeps professional profile information accurate and current.
 instructions:
   - AGENT.md
@@ -26,9 +26,39 @@ quickActions:
     workflow: career-audit
   - id: review-career-memory
     title: Review career memory
-    prompt: Review the Career Agent memory and point out anything outdated, unsupported, or inconsistent with my registered workspaces.
+    prompt: Review the Career memory and point out anything outdated, unsupported, or inconsistent with my registered workspaces.
+onboarding:
+  - id: choose-career-sources
+    prompt: CV ve kariyer profilin için hangi kaynakları kullanayım? GitHub veya LinkedIn adresi verebilir, CV dosyasını belirtebilir ya da birden fazla kaynak yazabilirsin.
+    memoryKey: career.sources
+    intent: initial
+    critical: true
+    required: true
+    extractionHint: Extract a list of source objects. Each object has type (github, linkedin, cv_file, or description) and identifier. Preserve only public URLs, handles, and local file references.
+  - id: choose-additional-career-sources
+    prompt: Başka bir kaynak veya bilgi eklemek ister misin? LinkedIn adresi, başka bir profil ya da CV dosyası ekleyebilirsin. Şimdilik yeterliyse hayır yazman yeterli.
+    memoryKey: career.additionalSources
+    intent: initial
+    critical: true
+    required: false
+    optional: true
+    extractionHint: Extract any additional career source objects. Each object has type (github, linkedin, cv_file, or description) and identifier. Preserve only public URLs, handles, and local file references.
+  - id: choose-career-publish-target
+    prompt: İnceleme sonucunu nereye yayımlayayım? Burada tutabilir, bir dosya veya site/proje hedefi belirtebilirsin.
+    memoryKey: career.publishTarget
+    intent: publish
+    critical: true
+    extractionHint: Extract the requested publication destination as a structured object with type and identifier. Do not infer credentials.
+  - id: choose-career-social-account
+    prompt: Bu sonucu hangi LinkedIn hesabında paylaşmak istersin? Yalnızca profil adresini veya herkese açık hesap kimliğini yaz.
+    memoryKey: career.socialAccount
+    intent: linkedin
+    critical: true
+    extractionHint: Extract only the public LinkedIn profile URL or public account identifier. Never extract authentication data.
 toolPolicies:
+  web.read: allow
   filesystem.read: allow
+  filesystem.readSharedPath: allow
   git.log: allow
   git.status: allow
   git.diff: allow

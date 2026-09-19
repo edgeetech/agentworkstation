@@ -15,14 +15,17 @@ export type ChatContextUsage = {
   truncatedSections: ContextBuildResult['truncated'];
 };
 
-export function summarizeChatContextUsage(result: ContextBuildResult): ChatContextUsage {
-  const usedBytes = result.usage.totalContentBytes;
+export function summarizeChatContextUsage(
+  result: ContextBuildResult,
+  options: { hasUserContext?: boolean } = {},
+): ChatContextUsage {
+  const usedBytes = options.hasUserContext === false ? 0 : result.usage.totalContentBytes;
   const limitBytes = chatContextBudget.maxTotalContentBytes;
   const percentage = Math.min(100, Math.max(0, Math.round((usedBytes / limitBytes) * 100)));
   return {
     usedBytes,
     limitBytes,
     percentage,
-    truncatedSections: [...result.truncated],
+    truncatedSections: options.hasUserContext === false ? [] : [...result.truncated],
   };
 }

@@ -34,6 +34,22 @@ describe('adaptive intelligence routing', () => {
     expect(router.getLastDecision()).toMatchObject({ providerId: 'copilot', location: 'external', fallback: true });
   });
 
+  it('returns response and its routing decision as one atomic extraction result', async () => {
+    const external = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'extracted' }));
+    const router = new AdaptiveRoutingIntelligenceAdapter(
+      'adaptive', null, candidate('codex', 'external', external),
+    );
+
+    await expect(router.executeWithRouting(
+      request,
+      { modelId: 'ignored', executionMode: 'provider_allowed', taskKind: 'onboarding_extraction' },
+      new AbortController().signal,
+    )).resolves.toEqual({
+      response: { type: 'text', content: 'extracted' },
+      route: expect.objectContaining({ providerId: 'codex', location: 'external', modelId: 'codex-model' }),
+    });
+  });
+
   it('routes audit and proposal reasoning externally while keeping chat local', async () => {
     const local = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'local' }));
     const external = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'cloud' }));
@@ -91,7 +107,7 @@ describe('adaptive intelligence routing', () => {
     expect(router.getLastDecision()).toMatchObject({ providerId: 'codex', fallback: true });
   });
 
-  it('falls back from a quota-limited cloud model to an on-device model', async () => {
+  it('falls back from a quota-limited cloud model to the next allowed provider', async () => {
     const attempts: Array<{ status: string; modelId: string }> = [];
     const cloud = vi.fn(async (): Promise<ModelResponse> => ({ type: 'error', error: 'HTTP 429: session usage limit reached' }));
     const local = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'local fallback' }));
@@ -105,11 +121,39 @@ describe('adaptive intelligence routing', () => {
     );
     const complexRequest = { messages: [{ role: 'user' as const, content: 'Review and analyze this architecture migration.' }] };
     await expect(router.execute(complexRequest, { modelId: 'ignored', executionMode: 'provider_allowed', taskKind: 'chat' }, new AbortController().signal))
-      .resolves.toEqual({ type: 'text', content: 'local fallback' });
-    expect(provider).not.toHaveBeenCalled();
+      .resolves.toEqual({ type: 'text', content: 'provider fallback' });
+    expect(local).not.toHaveBeenCalled();
     expect(attempts).toEqual([
       { status: 'limited', modelId: 'ollama-cloud-model' },
-      { status: 'available', modelId: 'ollama-model' },
+      { status: 'available', modelId: 'codex-model' },
     ]);
+  });
+
+  it('honors the complete allowed provider priority before local fallback', async () => {
+    const attempts: string[] = [];
+    const failing = (id: string): IntelligencePort['execute'] => vi.fn(async () => {
+      attempts.push(id);
+      throw new Error(`${id} unavailable`);
+    });
+    const claude = vi.fn(async (): Promise<ModelResponse> => {
+      attempts.push('claude');
+      return { type: 'text', content: 'claude answer' };
+    });
+    const local = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'local' }));
+    const router = new AdaptiveRoutingIntelligenceAdapter(
+      'adaptive', candidate('ollama', 'local', local), [
+        candidate('codex', 'external', failing('codex')),
+        candidate('copilot', 'external', failing('copilot')),
+        candidate('claude', 'external', claude),
+      ],
+    );
+    const complexRequest = { messages: [{ role: 'user' as const, content: 'Review and analyze this architecture migration.' }] };
+
+    await expect(router.execute(complexRequest, {
+      modelId: 'ignored', executionMode: 'provider_allowed', taskKind: 'chat',
+    }, new AbortController().signal)).resolves.toEqual({ type: 'text', content: 'claude answer' });
+    expect(attempts).toEqual(['codex', 'copilot', 'claude']);
+    expect(local).not.toHaveBeenCalled();
+    expect(router.getLastDecision()).toMatchObject({ providerId: 'claude', fallback: true });
   });
 });

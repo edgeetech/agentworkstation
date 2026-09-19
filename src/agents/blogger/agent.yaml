@@ -1,0 +1,76 @@
+schemaVersion: 1
+id: blogger
+name: Blogger
+description: Prepares evidence-based bilingual articles, original visual assets, and reviewable publication packages.
+instructions:
+  - AGENT.md
+  - RULES.md
+memory:
+  directory: memory
+workflows:
+  - workflows/learn-voice.md
+  - workflows/draft-bilingual-post.md
+  - workflows/prepare-visual.md
+  - workflows/prepare-publication.md
+  - workflows/publish-site.md
+  - workflows/share-linkedin.md
+quickActions:
+  - id: learn-voice
+    title: Learn my writing voice
+    prompt: Analyze only the public URLs or local published articles I select and propose an evidence-backed voice profile.
+    workflow: learn-voice
+  - id: draft-bilingual-post
+    title: Draft a bilingual post
+    prompt: Draft natural Turkish and English versions of a post using the approved brief and voice profile.
+    workflow: draft-bilingual-post
+  - id: prepare-visual
+    title: Create an original visual
+    prompt: Propose an original, copyright-safe SVG visual informed only by abstract traits from the selected prior visuals, with alt text and provenance.
+    workflow: prepare-visual
+  - id: prepare-publication
+    title: Prepare publication
+    prompt: Prepare a reviewable publication package for the configured deployment target without publishing it.
+    workflow: prepare-publication
+  - id: publish-site
+    title: Prepare site publishing
+    prompt: Verify explicit human approval and prepare the approved site publication action for the configured target without executing it.
+    workflow: publish-site
+  - id: share-linkedin
+    title: Prepare LinkedIn share
+    prompt: After verified site publication, a configured connection, and separate approval, prepare LinkedIn share content without posting it.
+    workflow: share-linkedin
+onboarding:
+  - id: choose-blog-topic
+    prompt: İlk yazımız hangi konuda olsun? Konuyu kendi cümlelerinle anlat; hedef okuyucuyu veya özellikle vurgulamamı istediğin fikri de ekleyebilirsin.
+    memoryKey: blogger.topicBrief
+    intent: initial
+    critical: false
+    required: true
+    extractionHint: Extract a concise topic brief with topic, intended audience, and emphasis when present. Do not invent missing details.
+  - id: choose-writing-sources
+    prompt: Yazım tarzını ve mevcut içeriklerini hangi kaynaklardan öğreneyim? Yazı bağlantıları, profil adresi veya dosya konumu yazabilirsin.
+    memoryKey: blogger.voiceSources
+    intent: initial
+    critical: true
+    required: true
+    extractionHint: Extract a list of public article/profile URLs or local file references that can be used to learn the user's writing voice.
+  - id: choose-blog-publish-target
+    prompt: Yazıyı yayımlamamı istediğinde hangi site veya proje hedefini kullanayım?
+    memoryKey: blogger.publishTarget
+    intent: publish
+    critical: true
+    extractionHint: Extract a site or repository publication target with its public identifier or local workspace reference. Never infer credentials.
+  - id: choose-blog-social-account
+    prompt: Yazı yayımlandıktan sonra hangi LinkedIn hesabında paylaşayım? Yalnızca profil adresini veya herkese açık hesap kimliğini yaz.
+    memoryKey: blogger.socialAccount
+    intent: linkedin
+    critical: true
+    extractionHint: Extract only the public LinkedIn profile URL or public account identifier. Never extract authentication data.
+toolPolicies:
+  web.read: allow
+  filesystem.read: allow
+  filesystem.readSharedPath: allow
+  git.log: allow
+  git.status: allow
+  git.diff: allow
+  filesystem.proposeWrite: require_approval

@@ -10,6 +10,7 @@ export function NewSessionComposer({
   agents,
   workspaces,
   defaultWorkspaceId,
+  defaultAgentId,
   cloudPermitted,
   busy,
   onCancel,
@@ -18,13 +19,14 @@ export function NewSessionComposer({
   agents: AgentSummary[];
   workspaces: WorkspaceRecord[];
   defaultWorkspaceId?: string;
+  defaultAgentId?: string;
   cloudPermitted: boolean;
   busy: boolean;
   onCancel: () => void;
   onCreate: (input: CreateChatSessionInput, prompt: string) => void;
 }): JSX.Element {
   const [workspaceId, setWorkspaceId] = useState(defaultWorkspaceId ?? workspaces[0]?.id ?? '');
-  const [agentId, setAgentId] = useState<'career'>('career');
+  const agentId = defaultAgentId ?? agents[0]?.id ?? 'career';
   const [prompt, setPrompt] = useState('');
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === agentId) ?? agents[0],
@@ -64,16 +66,15 @@ export function NewSessionComposer({
             {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.id}</option>)}
           </select>
         </label>
-        <label>
-          <span>Agent</span>
-          <select aria-label="Session agent" value={agentId} onChange={(event) => setAgentId(event.target.value as 'career')}>
-            {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-          </select>
-        </label>
+        <div className="session-setting agent-context-setting">
+          <span>Talking with</span>
+          <strong>{selectedAgent?.name ?? 'Agent'}</strong>
+          <small>Choose another agent from the left sidebar.</small>
+        </div>
         <div className="session-setting">
           <span>Intelligence preference</span>
           <strong>Auto</strong>
-          <small>Career Agent resolves the model per prompt.</small>
+          <small>{selectedAgent?.name ?? 'The agent'} resolves the model per prompt.</small>
         </div>
         <div className="session-setting">
           <span>Execution policy</span>
@@ -106,7 +107,7 @@ export function NewSessionComposer({
               submit();
             }
           }}
-          placeholder="What should Career Agent work on?"
+          placeholder={`What should ${selectedAgent?.name ?? 'the agent'} work on?`}
         />
       </label>
       <div className="new-session-actions">

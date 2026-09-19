@@ -1,4 +1,5 @@
 import type { PendingAction } from '../../../shared/api';
+import { useI18n } from '../../i18n';
 
 export function PendingActionsPanel({
   actions,
@@ -13,8 +14,9 @@ export function PendingActionsPanel({
   onReject: (id: string) => void;
   onOpenReview: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   if (actions.length === 0) {
-    return <div className="inspector-empty"><strong>No pending actions</strong><p>Model requests cannot write directly. Proposed changes will wait here for approval.</p></div>;
+    return <div className="inspector-empty"><strong>{t('inspector.noActions')}</strong><p>{t('inspector.noActionsHelp')}</p></div>;
   }
   return (
     <div className="inspector-actions-list">
@@ -25,9 +27,9 @@ export function PendingActionsPanel({
           <small>{action.workspaceId}</small>
           <pre>{action.diff}</pre>
           <div>
-            <button type="button" onClick={onOpenReview}>Details</button>
-            <button type="button" onClick={() => onReject(action.id)} disabled={busy}>Reject</button>
-            <button className="primary" type="button" onClick={() => onApprove(action.id)} disabled={busy}>Approve</button>
+            <button type="button" onClick={onOpenReview}>{t('common.details')}</button>
+            <button type="button" onClick={() => onReject(action.id)} disabled={busy}>{t('common.reject')}</button>
+            <button className="primary" type="button" onClick={() => onApprove(action.id)} disabled={busy}>{t('common.approve')}</button>
           </div>
         </article>
       ))}

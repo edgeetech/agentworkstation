@@ -17,6 +17,7 @@
     "test": "vitest run --environment node",
     "test:watch": "vitest --environment node",
     "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "check:architecture": "vitest run tests/architecture",
     "test:e2e": "npm run electron:prepare && playwright test",
     "e2e": "npm run electron:prepare && playwright test"
@@ -25,6 +26,7 @@
     "better-sqlite3": "^11.9.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "yaml": "^2.8.1",
     "zod": "^3.24.2"
   },
@@ -38,14 +40,17 @@
     "@typescript-eslint/eslint-plugin": "^8.68.0",
     "@typescript-eslint/parser": "^8.68.0",
     "@vitejs/plugin-react": "^4.4.0",
+    "@vitest/browser": "^5.0.0",
+    "@vitest/expect": "^5.0.0",
     "concurrently": "^9.0.1",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
     "eslint": "^9.25.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^26.1.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
-    "vitest": "^3.1.2"
+    "vitest": "^5.0.0"
   },
   "build": {
     "appId": "com.edgeetech.agentworkstation",
@@ -62,8 +67,8 @@
     ],
     "extraResources": [
       {
-        "from": "src/agents/career",
-        "to": "agents/career"
+        "from": "src/agents",
+        "to": "agents"
       }
     ],
     "win": {

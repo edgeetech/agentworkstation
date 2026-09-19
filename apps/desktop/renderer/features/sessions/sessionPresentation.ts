@@ -11,7 +11,7 @@ export function groupSessionsByWorkspace(
   workspaces: WorkspaceRecord[],
   sessions: ChatSessionRecord[],
 ): SessionGroup[] {
-  const groups = workspaces.map((workspace) => ({
+  const groups: SessionGroup[] = workspaces.map((workspace) => ({
     id: workspace.id,
     label: workspace.id,
     workspace,
@@ -23,4 +23,13 @@ export function groupSessionsByWorkspace(
     groups.push({ id: 'unassigned', label: 'Unassigned', workspace: null, sessions: unassigned });
   }
   return groups;
+}
+
+export function latestSessionForAgent(
+  sessions: ChatSessionRecord[],
+  agentId: string,
+): ChatSessionRecord | undefined {
+  return sessions
+    .filter((session) => session.agentId === agentId)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
 }

@@ -19,7 +19,8 @@ describe('Career Agent loader integration', () => {
     const agent = loader.load();
 
     expect(agent.id).toBe('career');
-    expect(agent.name).toBe('Career Agent');
+    expect(agent.name).toBe('Career');
+    expect(agent.toolPolicies['web.read']).toBe('allow');
     expect(agent.toolPolicies['git.log']).toBe('allow');
     expect(agent.toolPolicies['filesystem.read']).toBe('allow');
     expect(agent.toolPolicies['filesystem.proposeWrite']).toBe('require_approval');

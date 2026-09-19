@@ -1,4 +1,5 @@
 import type { SourceReference } from '../../../shared/api';
+import { useI18n } from '../../i18n';
 
 export function EvidencePanel({
   sources,
@@ -7,8 +8,9 @@ export function EvidencePanel({
   sources: SourceReference[];
   onOpenFile: (source: SourceReference) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   if (sources.length === 0) {
-    return <div className="inspector-empty"><strong>No evidence yet</strong><p>Sources used by this session will appear here.</p></div>;
+    return <div className="inspector-empty"><strong>{t('inspector.noEvidence')}</strong><p>{t('inspector.noEvidenceHelp')}</p></div>;
   }
   return (
     <ul className="evidence-list">
@@ -19,8 +21,8 @@ export function EvidencePanel({
           <li key={`${source.type}-${source.workspaceId ?? ''}-${source.relativePath ?? ''}-${source.commitSha ?? ''}-${index}`}>
             <span className="evidence-kind">{source.type.replace('_', ' ')}</span>
             <strong>{label}</strong>
-            <small>{source.workspaceId ?? 'Career Agent memory'}</small>
-            {canOpen ? <button type="button" onClick={() => onOpenFile(source)}>Open file</button> : null}
+            <small>{source.workspaceId ?? t('inspector.savedMemory')}</small>
+            {canOpen ? <button type="button" onClick={() => onOpenFile(source)}>{t('inspector.openFile')}</button> : null}
           </li>
         );
       })}

@@ -14,6 +14,8 @@ export type DelegatedProviderDefinition = {
   buildArgs(modelId: string): string[];
   parseOutput(stdout: string): string;
   statusArgs?: string[];
+  promptTransport?: 'stdin' | 'argument';
+  discoverDefaultModel?(statusOutput: string): string | undefined;
 };
 
 export type CliExecutionResult = { stdout: string; stderr: string; exitCode: number };
@@ -31,10 +33,13 @@ export class NodeCliProcessRunner implements CliProcessRunner {
         reject(new Error('Delegated provider request was cancelled or timed out'));
         return;
       }
-      const child = spawn(command, args, {
+      const commandShim = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command);
+      const executable = commandShim ? process.env.ComSpec ?? 'cmd.exe' : command;
+      const executableArgs = commandShim ? ['/d', '/s', '/c', command, ...args] : args;
+      const child = spawn(executable, executableArgs, {
         cwd: this.cwd,
         windowsHide: true,
-        shell: process.platform === 'win32',
+        shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       let stdout = '';
@@ -75,11 +80,14 @@ const safeModel = (modelId: string): string => {
   return modelId;
 };
 
+const providerCommand = (name: string, windowsSuffix: '.cmd' | '.exe'): string =>
+  process.platform === 'win32' ? `${name}${windowsSuffix}` : name;
+
 export const delegatedProviders: DelegatedProviderDefinition[] = [
   {
     id: 'codex',
     label: 'OpenAI Codex',
-    command: 'codex',
+    command: providerCommand('codex', '.cmd'),
     defaultModel: 'default',
     statusArgs: ['login', 'status'],
     buildArgs: (modelId) => [
@@ -91,7 +99,7 @@ export const delegatedProviders: DelegatedProviderDefinition[] = [
   {
     id: 'copilot',
     label: 'GitHub Copilot',
-    command: 'copilot',
+    command: providerCommand('copilot', '.exe'),
     defaultModel: 'auto',
     buildArgs: (modelId) => [
       '--silent', '--no-custom-instructions', '--no-ask-user', '--disable-builtin-mcps',
@@ -103,7 +111,7 @@ export const delegatedProviders: DelegatedProviderDefinition[] = [
   {
     id: 'claude',
     label: 'Anthropic Claude',
-    command: 'claude',
+    command: providerCommand('claude', '.exe'),
     defaultModel: 'default',
     statusArgs: ['auth', 'status'],
     buildArgs: (modelId) => [
@@ -116,6 +124,20 @@ export const delegatedProviders: DelegatedProviderDefinition[] = [
       if (typeof parsed.result !== 'string') throw new Error('Claude returned an invalid result envelope');
       return parsed.result.trim();
     },
+  },
+  {
+    id: 'devin',
+    label: 'Cognition Devin',
+    command: providerCommand('devin', '.exe'),
+    defaultModel: 'default',
+    statusArgs: ['auth', 'status'],
+    promptTransport: 'argument',
+    discoverDefaultModel: (statusOutput) => statusOutput.match(/^\s*Default model:\s*(\S+)/mi)?.[1],
+    buildArgs: (modelId) => [
+      '--permission-mode', 'auto', '--print',
+      ...(modelId === 'default' ? [] : ['--model', safeModel(modelId)]),
+    ],
+    parseOutput: (stdout) => stdout.trim(),
   },
 ];
 
@@ -176,10 +198,14 @@ export class DelegatedCliIntelligenceAdapter implements IntelligencePort {
     if (context.executionMode === 'local_only') {
       throw new Error('Delegated provider blocked by local_only policy');
     }
+    const prompt = buildProviderPrompt(request);
     const result = await this.runner.run(
       this.provider.command,
-      this.provider.buildArgs(context.modelId),
-      buildProviderPrompt(request),
+      [
+        ...this.provider.buildArgs(context.modelId),
+        ...(this.provider.promptTransport === 'argument' ? ['--', prompt] : []),
+      ],
+      this.provider.promptTransport === 'argument' ? '' : prompt,
       signal,
     );
     if (result.exitCode !== 0) {

@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
-import type { ChatSessionRecord, WorkspaceRecord } from '../../../shared/api';
-import { groupSessionsByWorkspace } from './sessionPresentation';
+import type { AgentSummary, ChatSessionRecord, WorkspaceRecord } from '../../../shared/api';
+import { SpecialistAvatar } from '../agents/SpecialistAvatar';
+import { useI18n } from '../../i18n';
+import { latestSessionForAgent } from './sessionPresentation';
 
-export type AgentView = 'agents' | 'home' | 'chat' | 'audit' | 'changes' | 'sources' | 'status' | 'settings';
+export type AgentView = 'agents' | 'home' | 'chat' | 'audit' | 'changes' | 'publication' | 'sources' | 'status' | 'settings';
 
 export type AgentNavigationItem = {
   id: AgentView;
@@ -13,13 +15,16 @@ export type AgentNavigationItem = {
 export function SessionsSidebar({
   view,
   navigation,
+  agents,
+  activeAgent,
   workspaces,
   sessions,
   pendingActionCount,
   busy,
   intelligenceSummary,
   cloudPermitted,
-  onOpenAgents,
+  onOpenAgent,
+  onRenameAgent,
   onNavigate,
   onNewSession,
   onOpenSession,
@@ -28,24 +33,37 @@ export function SessionsSidebar({
 }: {
   view: AgentView;
   navigation: AgentNavigationItem[];
+  agents: AgentSummary[];
+  activeAgent?: AgentSummary;
   workspaces: WorkspaceRecord[];
   sessions: ChatSessionRecord[];
   pendingActionCount: number;
   busy: boolean;
   intelligenceSummary: string;
   cloudPermitted: boolean;
-  onOpenAgents: () => void;
+  onOpenAgent: (agentId: string) => void;
+  onRenameAgent: (agentId: string, name: string) => void;
   onNavigate: (view: AgentView) => void;
   onNewSession: () => void;
   onOpenSession: (id: string) => void;
   onRenameSession: (id: string, name: string) => void;
   onDeleteSession: (id: string) => void;
 }): JSX.Element {
+  const { locale, setLocale, t } = useI18n();
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [agentRenameId, setAgentRenameId] = useState<string | null>(null);
+  const [agentRenameValue, setAgentRenameValue] = useState('');
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const groups = useMemo(() => groupSessionsByWorkspace(workspaces, sessions), [sessions, workspaces]);
+  const orderedAgents = useMemo(() => [...agents].sort((left, right) => {
+    const priority = (id: string): number => id === 'career' ? 0 : id === 'blogger' ? 1 : 2;
+    return priority(left.id) - priority(right.id) || left.name.localeCompare(right.name);
+  }), [agents]);
+  const activeSessions = useMemo(() => sessions
+    .filter((session) => session.agentId === activeAgent?.id)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)), [activeAgent?.id, sessions]);
+  const workspaceNames = useMemo(() => new Map(workspaces.map((workspace) => [workspace.id, workspace.id])), [workspaces]);
   const submitRename = (session: ChatSessionRecord): void => {
     const value = renameValue.trim();
     if (!value) return;
@@ -53,20 +71,87 @@ export function SessionsSidebar({
     setRenameId(null);
     setRenameValue('');
   };
+  const submitAgentRename = (agent: AgentSummary): void => {
+    const value = agentRenameValue.trim();
+    if (!value) return;
+    onRenameAgent(agent.id, value);
+    setAgentRenameId(null);
+    setAgentRenameValue('');
+  };
 
   return (
-    <aside className="primary-sidebar" aria-label="Agent workspace navigation">
+    <aside className="primary-sidebar" aria-label={t('sidebar.aria')}>
       <div className="brand">
         <span>AW</span>
-        <div><strong>Agent Workstation</strong><small>Agent-first desktop</small></div>
+        <div><strong>Agent Workstation</strong><small>{t('sidebar.tagline')}</small></div>
       </div>
-      <button className={`agent-picker ${view === 'agents' ? 'active' : ''}`} type="button" onClick={onOpenAgents}>
-        <span className="agent-avatar">CA</span>
-        <span><small>Active agent</small><strong>Career Agent</strong></span>
-        <b>⌄</b>
-      </button>
-      <span className="sidebar-label">Agent workspace</span>
-      <nav className="agent-navigation" aria-label="Career Agent areas">
+      <section className="agent-roster" aria-labelledby="agent-roster-title">
+        <div className="agent-roster-heading">
+          <span id="agent-roster-title">{t('sidebar.specialists')}</span>
+          <small>{t('sidebar.available', { count: orderedAgents.length })}</small>
+        </div>
+        <ul>
+          {orderedAgents.map((agent) => {
+            const latest = latestSessionForAgent(sessions, agent.id);
+            const active = agent.id === activeAgent?.id;
+            const readiness = intelligenceSummary === 'Setup required'
+              ? t('sidebar.setup')
+              : intelligenceSummary.startsWith('Simulated') ? t('sidebar.demo') : t('sidebar.ready');
+            return (
+              <li className={`agent-roster-item agent-tone-${agent.id}`} key={agent.id}>
+                {agentRenameId === agent.id ? (
+                  <form
+                    className="agent-rename-form"
+                    onSubmit={(event) => { event.preventDefault(); submitAgentRename(agent); }}
+                  >
+                    <SpecialistAvatar agentId={agent.id} name={agent.name} />
+                    <input
+                      aria-label={t('sidebar.rename', { name: agent.name })}
+                      autoFocus
+                      maxLength={48}
+                      value={agentRenameValue}
+                      onChange={(event) => setAgentRenameValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') { setAgentRenameId(null); setAgentRenameValue(''); }
+                      }}
+                    />
+                    <button type="submit" aria-label={t('sidebar.saveName', { name: agent.name })} disabled={!agentRenameValue.trim()}>✓</button>
+                    <button type="button" aria-label={t('sidebar.cancelRename', { name: agent.name })} onClick={() => {
+                      setAgentRenameId(null); setAgentRenameValue('');
+                    }}>×</button>
+                  </form>
+                ) : (
+                  <>
+                    <button
+                      className={`agent-switch ${active ? 'active' : ''}`}
+                      type="button"
+                      aria-current={active ? 'page' : undefined}
+                      aria-label={t('sidebar.open', { name: agent.name })}
+                      title={agent.description}
+                      onClick={() => onOpenAgent(agent.id)}
+                    >
+                      <SpecialistAvatar agentId={agent.id} name={agent.name} />
+                      <span className="agent-switch-copy">
+                        <span className="agent-switch-title"><strong>{agent.name}</strong><i>{readiness}</i></span>
+                        <small>{latest?.name ?? t('sidebar.firstConversation')}</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="agent-rename-trigger"
+                      aria-label={t('sidebar.rename', { name: agent.name })}
+                      title={t('sidebar.rename', { name: agent.name })}
+                      onClick={() => { setAgentRenameId(agent.id); setAgentRenameValue(agent.name); }}
+                    >•••</button>
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      <span className="sidebar-label">{t('sidebar.workspace', { name: activeAgent?.name ?? 'Specialist' })}</span>
+      <nav className="agent-navigation" aria-label={t('sidebar.areas', { name: activeAgent?.name ?? 'Specialist' })}>
         {navigation.map((item) => (
           <button className={view === item.id ? 'active' : ''} type="button" key={item.id} onClick={() => onNavigate(item.id)}>
             <strong>{item.label}</strong><small>{item.hint}</small>
@@ -74,40 +159,28 @@ export function SessionsSidebar({
           </button>
         ))}
       </nav>
-      <section className="sidebar-chats" aria-label="Career Agent conversations">
+      <section className="sidebar-chats" aria-label={t('sidebar.conversationHistory', { name: activeAgent?.name ?? 'Specialist' })}>
         <div className="sidebar-chats-heading">
-          <span>Workspaces / sessions</span>
-          <button type="button" aria-label="New chat" onClick={onNewSession} disabled={busy}>＋</button>
+          <span>{t('sidebar.conversations')}</span>
+          <button type="button" aria-label={t('sidebar.newConversation', { name: activeAgent?.name ?? 'specialist' })} onClick={onNewSession} disabled={busy}>＋</button>
         </div>
-        <div className="workspace-session-groups">
-          {groups.length === 0 ? <small className="sidebar-empty">Add a workspace to start a session.</small> : groups.map((group) => (
-            <section className="workspace-session-group" key={group.id}>
-              <button
-                type="button"
-                className="workspace-group-heading"
-                onClick={() => group.workspace && onNavigate('sources')}
-                aria-label={`Workspace ${group.label}`}
-              >
-                <span aria-hidden="true">⌑</span>
-                <strong>{group.label}</strong>
-                <small>{group.sessions.length}</small>
-              </button>
-              {group.sessions.length === 0 ? <span className="workspace-no-session">No sessions</span> : (
-                <ul className="session-list" aria-label={`${group.label} sessions`}>
-                  {group.sessions.map((session) => (
+        <div className="agent-session-history">
+          {activeSessions.length === 0 ? <small className="sidebar-empty">{t('sidebar.noConversations')}</small> : (
+                <ul className="session-list" aria-label={t('sidebar.conversationList', { name: activeAgent?.name ?? 'Specialist' })}>
+                  {activeSessions.map((session) => (
                     <li className={session.selected ? 'active' : ''} key={session.id}>
                       {deleteId === session.id ? (
-                        <div className="session-delete-confirm" role="group" aria-live="assertive" aria-label={`Delete ${session.name}?`}>
-                          <span>Delete this chat?</span>
+                        <div className="session-delete-confirm" role="group" aria-live="assertive" aria-label={t('sidebar.deleteQuestion', { name: session.name })}>
+                          <span>{t('sidebar.deleteChat')}</span>
                           <div>
-                            <button type="button" autoFocus onClick={() => setDeleteId(null)}>Cancel</button>
-                            <button type="button" className="danger" onClick={() => { onDeleteSession(session.id); setDeleteId(null); }} disabled={busy}>Delete</button>
+                            <button type="button" autoFocus onClick={() => setDeleteId(null)}>{t('common.cancel')}</button>
+                            <button type="button" className="danger" onClick={() => { onDeleteSession(session.id); setDeleteId(null); }} disabled={busy}>{t('common.delete')}</button>
                           </div>
                         </div>
                       ) : renameId === session.id ? (
                         <form onSubmit={(event) => { event.preventDefault(); submitRename(session); }}>
                           <input
-                            aria-label={`Rename ${session.name}`}
+                            aria-label={t('sidebar.rename', { name: session.name })}
                             autoFocus
                             value={renameValue}
                             onChange={(event) => setRenameValue(event.target.value)}
@@ -115,7 +188,7 @@ export function SessionsSidebar({
                               if (event.key === 'Escape') { setRenameId(null); setRenameValue(''); }
                             }}
                           />
-                          <button type="submit" aria-label={`Save ${session.name} name`}>✓</button>
+                          <button type="submit" aria-label={t('sidebar.saveName', { name: session.name })}>✓</button>
                         </form>
                       ) : (
                         <>
@@ -126,12 +199,12 @@ export function SessionsSidebar({
                             onClick={() => onOpenSession(session.id)}
                           >
                             <span className="session-status-dot" aria-hidden="true" />
-                            <span><strong>{session.name}</strong><small>Auto · {session.mode === 'autopilot' ? 'Autopilot' : 'Standard'}</small></span>
+                            <span><strong>{session.name}</strong><small>{session.workspaceId ? workspaceNames.get(session.workspaceId) ?? session.workspaceId : t('sidebar.noWorkspace')} · {session.mode === 'autopilot' ? t('sidebar.autopilot') : t('sidebar.standard')}</small></span>
                           </button>
                           <button
                             type="button"
                             className="session-actions-trigger"
-                            aria-label={`Chat options for ${session.name}`}
+                            aria-label={t('sidebar.chatOptions', { name: session.name })}
                             aria-haspopup="menu"
                             aria-expanded={menuId === session.id}
                             onClick={() => setMenuId((current) => current === session.id ? null : session.id)}
@@ -140,10 +213,10 @@ export function SessionsSidebar({
                             <div className="session-actions-menu" role="menu">
                               <button type="button" role="menuitem" onClick={() => {
                                 setMenuId(null); setRenameId(session.id); setRenameValue(session.name);
-                              }}>Rename</button>
+                              }}>{t('common.rename')}</button>
                               <button type="button" role="menuitem" className="danger" onClick={() => {
                                 setMenuId(null); setDeleteId(session.id);
-                              }}>Delete</button>
+                              }}>{t('common.delete')}</button>
                             </div>
                           ) : null}
                         </>
@@ -151,21 +224,23 @@ export function SessionsSidebar({
                     </li>
                   ))}
                 </ul>
-              )}
-            </section>
-          ))}
+          )}
         </div>
       </section>
       <div className="sidebar-footer">
         <button className="settings-link" type="button" onClick={() => onNavigate('settings')}>
-          <span>Intelligence access</span><small>{intelligenceSummary}</small>
+          <span>{t('sidebar.intelligence')}</span><small>{intelligenceSummary}</small>
         </button>
         <div className="privacy policy-summary">
-          <strong>{cloudPermitted ? '● Cloud permitted' : '● Local Only'}</strong>
-          <small>{cloudPermitted
-            ? 'Allowed cloud intelligence may be selected automatically.'
-            : 'Cloud intelligence is disabled by policy.'}</small>
+          <strong>● {cloudPermitted ? t('sidebar.cloudPermitted') : t('sidebar.localOnly')}</strong>
         </div>
+        <label className="language-picker">
+          <span>{t('language.label')}</span>
+          <select value={locale} onChange={(event) => setLocale(event.target.value as 'en' | 'tr')}>
+            <option value="en">{t('language.english')}</option>
+            <option value="tr">{t('language.turkish')}</option>
+          </select>
+        </label>
       </div>
     </aside>
   );

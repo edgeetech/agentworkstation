@@ -1,13 +1,12 @@
 # Agent-First UX Implementation Status
 
-Last updated: 2026-08-28
+Last updated: 2026-09-10
 
 ## Current status
 
-The agent-window UX plan's Definition of Done is implemented on `main`.
-The existing Career Agent vertical slice remains the product focus; the shell
-now supports many workspace-bound persistent sessions without introducing a
-second active-session authority.
+The agent-window UX plan's original Definition of Done is implemented on `main`.
+The current worktree extends it into a real multi-agent shell with Career Agent
+and Blogger Agent, without introducing a second active-session authority.
 
 ## Completed
 
@@ -30,6 +29,13 @@ second active-session authority.
   safe Files IPC, workspace grouping, the full Career Agent desktop path, model
   visibility, context usage, policy visibility, evidence navigation, and human
   approval.
+- Blogger-specific Publishing navigation with a persisted site target, explicit
+  production branch, approved visual directories, and explicit LinkedIn client
+  ID/API-version setup with honest connection state.
+- Immutable bilingual publication bundles bind the primary article, translation,
+  and visual assets to SHA-256 hashes before approval. Git delivery commits only
+  the reviewed files, preserves unrelated staging, and verifies the public URL
+  separately so deployment delay is retryable without a second push.
 
 ## Preserved regression constraints
 
@@ -46,15 +52,16 @@ second active-session authority.
 These are not required by the current plan's Definition of Done or depend on
 backend capabilities that do not exist yet:
 
-- Resizable/collapsible side rails. The current shell uses tested fixed desktop
-  widths and an enforced minimum window size.
+- Drag-resizable side rails. Both rails are now collapsible and the shell adapts
+  to compact desktop widths; pointer resizing remains a later enhancement.
 - A detailed per-request network ledger. Privacy explicitly reports that this
   history is unavailable instead of inventing it.
 - Telemetry controls or status. Telemetry is explicitly reported as not
   implemented.
-- Additional agent definitions and their specialized views. The shell and
-  declarative quick-action contract are ready for them; only Career Agent is
-  currently implemented.
+- A LinkedIn Developer application and member consent are deployment setup, not
+  bundled credentials. Native Authorization Code with PKCE, encrypted OS-backed
+  token storage, OIDC member binding, exact-copy approval, and the versioned
+  member Posts API adapter are implemented; no account or client ID is shipped.
 - Editable permission/isolation policies in the composer. Current Release 0.1
   safely exposes the real fixed policies: Interactive and Read only.
 - Session pinning, grouping customization, archive, multi-pane sessions, MCP UI,
@@ -67,12 +74,14 @@ not completion of deferred Release 0.2+ product architecture.
 
 ## Final verification
 
-- ESLint: passed.
+- ESLint: passed with 0 warnings (including renderer TSX and React Hooks).
+- Renderer and Electron TypeScript checks: passed.
 - Architecture boundaries: 6/6 tests passed.
-- Unit, integration, security, evaluation, and architecture suite: 99/99 tests
-  passed across 28 files.
+- Unit, integration, security, evaluation, and architecture suite: 144/144 tests
+  passed across 34 files.
 - Electron renderer production build and Electron main/preload TypeScript build:
   passed.
 - Playwright desktop regression suite: 2 passed; the opt-in real Ollama test was
   skipped because its environment flag was not enabled.
-- Production dependency audit: 0 vulnerabilities.
+- Windows NSIS package built and includes both Career and Blogger agent resources.
+- Full dependency audit: 0 vulnerabilities.

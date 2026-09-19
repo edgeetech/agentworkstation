@@ -20,7 +20,9 @@ const agent: AgentDefinition = {
   instructions: [],
   workflows: [],
   memory: [],
-  toolPolicies: {},
+      quickActions: [],
+      onboarding: [],
+      toolPolicies: {},
   systemPrompt: 'Evidence-first instructions',
   memoryContext: {
     content: '### memory/profile.md\n\nCurrent profile',

@@ -19,6 +19,26 @@ describe('delegated CLI intelligence adapter', () => {
     expect(getDelegatedProvider('claude').buildArgs('default')).toEqual(expect.arrayContaining([
       '--tools=', '--safe-mode', '--no-session-persistence',
     ]));
+    expect(getDelegatedProvider('devin').buildArgs('default')).toEqual(expect.arrayContaining([
+      '--permission-mode', 'auto', '--print',
+    ]));
+    expect(getDelegatedProvider('devin').discoverDefaultModel?.('Default model: claude-sonnet-4-6-thinking'))
+      .toBe('claude-sonnet-4-6-thinking');
+  });
+
+  it('passes Devin prompts as a non-interactive argument', async () => {
+    const run = vi.fn(async (_command: string, _args: string[], _stdin: string, _signal: AbortSignal) => ({
+      stdout: '{"type":"text","content":"provider answer"}', stderr: '', exitCode: 0,
+    }));
+    const adapter = new DelegatedCliIntelligenceAdapter(getDelegatedProvider('devin'), { run });
+    await adapter.execute(
+      { messages: [{ role: 'user', content: 'hello' }] },
+      { modelId: 'default', executionMode: 'provider_allowed' },
+      new AbortController().signal,
+    );
+    expect(run.mock.calls[0][1]).toEqual(expect.arrayContaining(['--permission-mode', 'auto', '--print', '--']));
+    expect(run.mock.calls[0][1].at(-1)).toContain('Do not use your own tools');
+    expect(run.mock.calls[0][2]).toBe('');
   });
 
   it('unwraps Claude JSON output through its provider definition', () => {
@@ -45,7 +65,7 @@ describe('delegated CLI intelligence adapter', () => {
   });
 
   it('passes only the normalized prompt through the provider runner', async () => {
-    const run = vi.fn(async () => ({
+    const run = vi.fn(async (_command: string, _args: string[], _stdin: string, _signal: AbortSignal) => ({
       stdout: '{"type":"text","content":"provider answer"}', stderr: '', exitCode: 0,
     }));
     const adapter = new DelegatedCliIntelligenceAdapter(getDelegatedProvider('copilot'), { run });

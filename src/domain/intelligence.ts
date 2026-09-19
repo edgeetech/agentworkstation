@@ -1,6 +1,6 @@
 export type ExecutionMode = 'local_only' | 'provider_allowed';
 export type RoutingPolicy = 'local_only' | 'local_first' | 'adaptive';
-export type TaskKind = 'chat' | 'audit' | 'proposal' | 'connection_test';
+export type TaskKind = 'chat' | 'audit' | 'proposal' | 'connection_test' | 'onboarding_extraction';
 
 export type RoutingDecision = {
   policy: RoutingPolicy;
@@ -19,10 +19,11 @@ export type ModelExecutionContext = {
 };
 
 export type SourceReference = {
-  type: 'file' | 'git_commit' | 'git_diff' | 'git_status' | 'memory';
+  type: 'file' | 'git_commit' | 'git_diff' | 'git_status' | 'memory' | 'web';
   workspaceId?: string;
   relativePath?: string;
   commitSha?: string;
+  url?: string;
   label?: string;
 };
 
@@ -30,6 +31,7 @@ export type ToolMetadata = {
   readOnly: boolean;
   sideEffect: 'none' | 'propose' | 'external';
   sensitive: boolean;
+  requiresWorkspace?: boolean;
 };
 
 export type ModelCapabilities = {

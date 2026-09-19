@@ -2,6 +2,7 @@ import type { PersistencePort } from '@application/ports';
 import type { WorkspaceRegistration, WorkspaceRegistryPort } from '@application/workspaces';
 import type { PendingAction } from '@domain/actions';
 import type { ChatMessage, ChatSession } from '@domain/sessions';
+import type { AgentMemoryEntry, AgentMemoryStore, OnboardingIntent } from '@domain/onboarding';
 
 type DbRunResult = { lastInsertRowid?: number | bigint };
 
@@ -15,7 +16,32 @@ type DbLike = {
   exec: (sql: string) => void;
   prepare: (sql: string) => DbStatement;
   transaction: <TArgs extends unknown[], TResult>(fn: (...args: TArgs) => TResult) => (...args: TArgs) => TResult;
+  close: () => void;
 };
+
+type AgentMemoryRow = {
+  agentId: string;
+  fieldKey: string;
+  valueJson: string;
+  provenanceJson: string;
+  confidence: number;
+  confirmationStatus: AgentMemoryEntry['confirmationStatus'];
+  confirmedAt: string | null;
+  updatedAt: string;
+};
+
+function toAgentMemoryEntry(row: AgentMemoryRow): AgentMemoryEntry {
+  return {
+    agentId: row.agentId,
+    fieldKey: row.fieldKey,
+    value: JSON.parse(row.valueJson) as unknown,
+    provenance: JSON.parse(row.provenanceJson) as AgentMemoryEntry['provenance'],
+    confidence: row.confidence,
+    confirmationStatus: row.confirmationStatus,
+    ...(row.confirmedAt ? { confirmedAt: row.confirmedAt } : {}),
+    updatedAt: row.updatedAt,
+  };
+}
 
 function createDatabase(filePath: string): DbLike {
   try {
@@ -23,12 +49,14 @@ function createDatabase(filePath: string): DbLike {
       exec: (sql: string) => void;
       prepare: (sql: string) => DbStatement;
       transaction: <TArgs extends unknown[], TResult>(fn: (...args: TArgs) => TResult) => (...args: TArgs) => TResult;
+      close: () => void;
     };
     return BetterSqlite3(filePath);
   } catch {
     const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (path: string) => {
       exec: (sql: string) => void;
       prepare: (sql: string) => DbStatement;
+      close: () => void;
     } };
     const sqlite = new DatabaseSync(filePath);
     return {
@@ -45,11 +73,12 @@ function createDatabase(filePath: string): DbLike {
           throw error;
         }
       },
+      close: () => sqlite.close(),
     };
   }
 }
 
-export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort {
+export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort, AgentMemoryStore {
   private readonly db: DbLike;
 
   constructor(filePath: string) {
@@ -109,6 +138,27 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
         mode text check (mode is null or mode in ('standard', 'autopilot')),
         createdAt text not null,
         foreign key(sessionId) references chat_sessions(id) on delete cascade
+      )
+    `);
+    this.db.exec(`
+      create table if not exists agent_memory (
+        agentId text not null,
+        fieldKey text not null,
+        valueJson text not null check (json_valid(valueJson)),
+        rawAnswer text not null,
+        provenanceJson text not null check (json_valid(provenanceJson)),
+        confidence real not null check (confidence >= 0 and confidence <= 1),
+        confirmationStatus text not null check (confirmationStatus in ('pending', 'confirmed', 'rejected')),
+        confirmedAt text,
+        updatedAt text not null,
+        primary key (agentId, fieldKey)
+      )
+    `);
+    this.db.exec('create index if not exists agent_memory_by_agent on agent_memory(agentId, updatedAt)');
+    this.db.exec(`
+      create table if not exists agent_onboarding_state (
+        agentId text primary key,
+        activeIntent text check (activeIntent in ('publish', 'linkedin'))
       )
     `);
     this.db.exec('create unique index if not exists one_chat_message_sequence_per_session on chat_messages(sessionId, sequence)');
@@ -227,6 +277,73 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
   async getSetting(key: string): Promise<string | null> {
     const row = this.db.prepare('select value from app_settings where key = ?').get(key) as { value: string } | undefined;
     return row?.value ?? null;
+  }
+
+  async saveMemoryEntry(entry: AgentMemoryEntry): Promise<void> {
+    this.db.prepare(`
+      insert into agent_memory (
+        agentId, fieldKey, valueJson, rawAnswer, provenanceJson,
+        confidence, confirmationStatus, confirmedAt, updatedAt
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      on conflict(agentId, fieldKey) do update set
+        valueJson = excluded.valueJson,
+        rawAnswer = excluded.rawAnswer,
+        provenanceJson = excluded.provenanceJson,
+        confidence = excluded.confidence,
+        confirmationStatus = excluded.confirmationStatus,
+        confirmedAt = excluded.confirmedAt,
+        updatedAt = excluded.updatedAt
+    `).run(
+      entry.agentId,
+      entry.fieldKey,
+      JSON.stringify(entry.value),
+      '',
+      JSON.stringify(entry.provenance),
+      entry.confidence,
+      entry.confirmationStatus,
+      entry.confirmedAt ?? null,
+      entry.updatedAt,
+    );
+  }
+
+  async getMemoryEntry(agentId: string, fieldKey: string): Promise<AgentMemoryEntry | null> {
+    const row = this.db.prepare(`
+      select agentId, fieldKey, valueJson, provenanceJson,
+        confidence, confirmationStatus, confirmedAt, updatedAt
+      from agent_memory where agentId = ? and fieldKey = ?
+    `).get(agentId, fieldKey) as AgentMemoryRow | undefined;
+    return row ? toAgentMemoryEntry(row) : null;
+  }
+
+  async getAgentMemory(agentId: string): Promise<AgentMemoryEntry[]> {
+    const rows = this.db.prepare(`
+      select agentId, fieldKey, valueJson, provenanceJson,
+        confidence, confirmationStatus, confirmedAt, updatedAt
+      from agent_memory where agentId = ? order by updatedAt asc, fieldKey asc
+    `).all(agentId) as AgentMemoryRow[];
+    return rows.map(toAgentMemoryEntry);
+  }
+
+  async getActiveOnboardingIntent(agentId: string): Promise<OnboardingIntent | null> {
+    const row = this.db.prepare('select activeIntent from agent_onboarding_state where agentId = ?')
+      .get(agentId) as { activeIntent: OnboardingIntent | null } | undefined;
+    return row?.activeIntent ?? null;
+  }
+
+  async setActiveOnboardingIntent(agentId: string, intent: OnboardingIntent | null): Promise<void> {
+    if (intent === 'initial') throw new Error('Initial onboarding does not require an explicit active state');
+    if (intent === null) {
+      this.db.prepare('delete from agent_onboarding_state where agentId = ?').run(agentId);
+      return;
+    }
+    this.db.prepare(`
+      insert into agent_onboarding_state (agentId, activeIntent) values (?, ?)
+      on conflict(agentId) do update set activeIntent = excluded.activeIntent
+    `).run(agentId, intent);
+  }
+
+  close(): void {
+    this.db.close();
   }
 
   async saveChatSession(session: ChatSession): Promise<void> {

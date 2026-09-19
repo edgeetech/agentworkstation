@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatSessionRecord, WorkspaceRecord } from '../../apps/desktop/shared/api';
-import { groupSessionsByWorkspace } from '../../apps/desktop/renderer/features/sessions/sessionPresentation';
+import { groupSessionsByWorkspace, latestSessionForAgent } from '../../apps/desktop/renderer/features/sessions/sessionPresentation';
 
 const workspace = (id: string): WorkspaceRecord => ({
   id,
@@ -42,5 +42,16 @@ describe('groupSessionsByWorkspace', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0]?.sessions).toEqual([]);
+  });
+});
+
+describe('latestSessionForAgent', () => {
+  it('returns only the most recently updated conversation for the requested agent', () => {
+    const oldCareer = session('old career', 'profile');
+    const newCareer = { ...session('new career', 'profile'), updatedAt: '2026-09-01T00:00:00.000Z' };
+    const blogger = { ...session('blogger', 'website'), agentId: 'blogger', updatedAt: '2026-09-02T00:00:00.000Z' };
+
+    expect(latestSessionForAgent([blogger, newCareer, oldCareer], 'career')?.id).toBe('new career');
+    expect(latestSessionForAgent([blogger], 'career')).toBeUndefined();
   });
 });

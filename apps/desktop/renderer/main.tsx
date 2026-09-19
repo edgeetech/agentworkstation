@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import type {
   ChatExchange,
@@ -6,12 +6,12 @@ import type {
   ChatMode,
   ChatSessionRecord,
   AgentSummary,
-  CreateChatSessionInput,
   DemoAudit,
   EndpointConfig,
   PendingAction,
   LocalModel,
   ProviderConnection,
+  OnboardingStep,
   WorkspaceRecord,
 } from "../shared/api";
 import {
@@ -19,8 +19,19 @@ import {
   type AgentNavigationItem,
   type AgentView,
 } from "./features/sessions/SessionsSidebar";
-import { NewSessionComposer } from "./features/sessions/NewSessionComposer";
 import { SessionInspector } from "./features/inspector/SessionInspector";
+import { MessageContent } from "./features/chat/MessageContent";
+import { PublicationSetupPanel } from "./features/publication/PublicationSetupPanel";
+import { SpecialistAvatar } from "./features/agents/SpecialistAvatar";
+import { MemoryConfirmation } from "./features/onboarding/MemoryConfirmation";
+import {
+  moveProvider,
+  providerModelLabel,
+  routeDisplayLabel,
+  selectedProviderIds,
+  toggleProvider,
+} from "./features/intelligence/providerSelection";
+import { I18nProvider, useI18n, type Translator } from "./i18n";
 import "./styles.css";
 
 type View = AgentView;
@@ -32,12 +43,20 @@ type Busy =
   | "proposal"
   | "approval"
   | null;
-const careerNav: AgentNavigationItem[] = [
-  { id: "home", label: "Overview", hint: "Readiness and next step" },
-  { id: "chat", label: "Career chat", hint: "Explore your evidence" },
-  { id: "audit", label: "Career audit", hint: "Find profile gaps" },
-  { id: "changes", label: "Review changes", hint: "Approve safe edits" },
-  { id: "sources", label: "Workspaces", hint: "Choose local evidence" },
+const careerNav = (t: Translator): AgentNavigationItem[] => [
+  { id: "chat", label: t('nav.careerChat'), hint: t('nav.careerChatHint') },
+  { id: "audit", label: t('nav.careerAudit'), hint: t('nav.careerAuditHint') },
+  { id: "changes", label: t('nav.reviewChanges'), hint: t('nav.reviewChangesHint') },
+  { id: "sources", label: t('nav.workspaces'), hint: t('nav.careerWorkspacesHint') },
+];
+const generalAgentNav = (agentName: string, t: Translator): AgentNavigationItem[] => [
+  { id: "chat", label: t('nav.specialistChat', { name: agentName }), hint: t('nav.specialistChatHint') },
+  { id: "sources", label: t('nav.workspaces'), hint: t('nav.specialistWorkspacesHint') },
+];
+const bloggerNav = (t: Translator): AgentNavigationItem[] => [
+  { id: "chat", label: t('nav.bloggerChat'), hint: t('nav.bloggerChatHint') },
+  { id: "publication", label: t('nav.publishing'), hint: t('nav.publishingHint') },
+  { id: "sources", label: t('nav.workspaces'), hint: t('nav.bloggerWorkspacesHint') },
 ];
 const messageOf = (value: unknown): string =>
   value instanceof Error ? value.message : String(value);
@@ -52,12 +71,14 @@ const chatErrorMessage = (value: unknown): string => {
 };
 const sourceLabel = (
   source: DemoAudit["result"]["sourceReferences"][number],
+  t: Translator,
 ): string =>
   source.label ??
+  source.url ??
   source.relativePath ??
   source.commitSha ??
   source.workspaceId ??
-  "Local evidence";
+  t('app.localEvidence');
 
 const chooseAutomaticLocalModel = (models: LocalModel[]): LocalModel | undefined => {
   const ready = models.filter((model) => model.toolCalling && model.location === "local");
@@ -88,32 +109,55 @@ const providerReady = (provider: ProviderConnection): boolean =>
 const providerAvailable = (provider: ProviderConnection): boolean =>
   providerReady(provider) && provider.availability !== "limited" && provider.availability !== "unavailable";
 
-const availabilityLabel = (value: LocalModel["availability"] | ProviderConnection["availability"]): string => {
-  if (value === "limited") return "Usage limited";
-  if (value === "unavailable") return "Unavailable";
-  if (value === "available") return "Available";
-  return "Discovered";
+const routeLabel = (route: NonNullable<ChatExchange["route"]>, t: Translator): string =>
+  routeDisplayLabel(route, t('chat.providerSelectedModel'), t('chat.simulatedModel'));
+
+const availabilityLabel = (value: LocalModel["availability"] | ProviderConnection["availability"], t: Translator): string => {
+  if (value === "limited") return t('app.usageLimited');
+  if (value === "unavailable") return t('app.unavailable');
+  if (value === "available") return t('app.available');
+  return t('app.discovered');
 };
 
-const modelSize = (bytes: number): string => bytes > 0 ? `${(bytes / (1024 ** 3)).toFixed(1)} GB` : "Cloud managed";
+const modelSize = (bytes: number, t: Translator): string => bytes > 0 ? `${(bytes / (1024 ** 3)).toFixed(1)} GB` : t('app.cloudManaged');
 
 const contextSize = (bytes: number): string => `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+const onboardingPromptKeys = {
+  'choose-career-sources': 'chat.onboardingCareerSources',
+  'choose-additional-career-sources': 'chat.onboardingCareerAdditional',
+  'choose-career-publish-target': 'chat.onboardingCareerPublish',
+  'choose-career-social-account': 'chat.onboardingCareerLinkedIn',
+  'choose-blog-topic': 'chat.onboardingBloggerTopic',
+  'choose-writing-sources': 'chat.onboardingBloggerSources',
+  'choose-blog-publish-target': 'chat.onboardingBloggerPublish',
+  'choose-blog-social-account': 'chat.onboardingBloggerLinkedIn',
+} as const;
 
-const PromptModeIcon = ({ mode }: { mode: ChatMode }): JSX.Element => (
+const PromptModeIcon = ({ mode }: { mode: ChatMode }): React.JSX.Element => (
+  // The mode changes execution behavior; translating its label never changes the stored mode value.
+  <PromptModeIconView mode={mode} />
+);
+
+const PromptModeIconView = ({ mode }: { mode: ChatMode }): React.JSX.Element => {
+  const { t } = useI18n();
+  const label = mode === "autopilot" ? t('sidebar.autopilot') : t('sidebar.standard');
+  return (
   <span
     className={`prompt-mode-icon ${mode}`}
-    aria-label={`${mode === "autopilot" ? "Autopilot" : "Standard"} mode`}
-    title={`${mode === "autopilot" ? "Autopilot" : "Standard"} mode`}
+    aria-label={t('app.mode', { mode: label })}
+    title={t('app.mode', { mode: label })}
   >
     <span aria-hidden="true">{mode === "autopilot" ? "⚙" : "?"}</span>
   </span>
-);
+  );
+};
 
 const ContextUsageIndicator = ({ usage }: { usage: ChatContextUsage | null }): JSX.Element => {
+  const { t } = useI18n();
   const percentage = usage?.percentage ?? 0;
   const label = usage
     ? `${percentage}% context used, ${contextSize(usage.usedBytes)} of ${contextSize(usage.limitBytes)}`
-    : "Context usage unavailable until Agent Workstation restarts";
+    : t('app.contextUnavailableRestart');
   return (
     <span
       className={`context-usage ${usage ? "" : "unavailable"}`}
@@ -124,17 +168,22 @@ const ContextUsageIndicator = ({ usage }: { usage: ChatContextUsage | null }): J
     >
       <span className="context-pie" aria-hidden="true"><span>{usage ? `${percentage}%` : "–"}</span></span>
       <span className="context-tooltip" role="tooltip">
-        <strong>{usage ? `${percentage}% context used` : "Context usage unavailable"}</strong>
-        <span>{usage ? `${contextSize(usage.usedBytes)} of ${contextSize(usage.limitBytes)} prompt budget` : "Restart Agent Workstation to activate this indicator."}</span>
-        {usage?.truncatedSections.length ? <em>Older context has been trimmed to fit.</em> : null}
+        <strong>{usage ? t('app.contextUsed', { percentage }) : t('app.contextUnavailable')}</strong>
+        <span>{usage ? t('app.contextBudget', { used: contextSize(usage.usedBytes), limit: contextSize(usage.limitBytes) }) : t('app.restartIndicator')}</span>
+        {usage?.truncatedSections.length ? <em>{t('app.contextTrimmed')}</em> : null}
       </span>
     </span>
   );
 };
 
 function App(): JSX.Element {
+  const { t } = useI18n();
+  const onboardingPrompt = (id: string, fallback: string): string => {
+    const key = onboardingPromptKeys[id as keyof typeof onboardingPromptKeys];
+    return key ? t(key) : fallback;
+  };
   const api = window.agentWorkstation;
-  const [view, setView] = useState<View>("home");
+  const [view, setView] = useState<View>("chat");
   const [audit, setAudit] = useState<DemoAudit | null>(null);
   const [auditSessionId, setAuditSessionId] = useState<string | null>(null);
   const [actions, setActions] = useState<PendingAction[]>([]);
@@ -157,10 +206,27 @@ function App(): JSX.Element {
   const [contextUsage, setContextUsage] = useState<ChatContextUsage | null>(null);
   const [sessions, setSessions] = useState<ChatSessionRecord[]>([]);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
-  const [newSessionOpen, setNewSessionOpen] = useState(false);
-  const [chatInput, setChatInput] = useState("");
-  const [pendingChatInput, setPendingChatInput] = useState<{ prompt: string; mode: ChatMode } | null>(null);
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(null);
+  const [preferredAgentId, setPreferredAgentId] = useState<string | undefined>();
+  const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
+  const modeMenu = useRef<HTMLDetailsElement>(null);
+  const addMenu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const dismissMenus = (event: PointerEvent): void => {
+      if (!modeMenu.current?.contains(event.target as Node)) modeMenu.current?.removeAttribute('open');
+      if (!addMenu.current?.contains(event.target as Node)) addMenu.current?.removeAttribute('open');
+    };
+    document.addEventListener('pointerdown', dismissMenus);
+    return () => document.removeEventListener('pointerdown', dismissMenus);
+  }, []);
+  const [pendingChatInput, setPendingChatInput] = useState<{
+    sessionId: string;
+    requestId: string;
+    prompt: string;
+    mode: ChatMode;
+  } | null>(null);
   const [chatFailure, setChatFailure] = useState<{
+    sessionId: string;
     prompt: string;
     message: string;
     mode: ChatMode;
@@ -179,6 +245,8 @@ function App(): JSX.Element {
   const [modelDiscoveryBusy, setModelDiscoveryBusy] = useState(false);
   const [modelDiscoveryError, setModelDiscoveryError] = useState<string | null>(null);
   const [demoSessionEnabled, setDemoSessionEnabled] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 900);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const automaticLocalModel = chooseAutomaticLocalModel(localModels);
   const automaticCloudModel = chooseAutomaticCloudModel(localModels);
   const localPathAllowed = endpoint.mode !== "mock" && (endpoint.allowedPaths?.localModels ?? endpoint.mode === "local");
@@ -186,12 +254,14 @@ function App(): JSX.Element {
     ?? (endpoint.mode === "delegated" || endpoint.routingPolicy !== "local_only"));
   const ollamaCloudPathAllowed = endpoint.mode !== "mock" && (endpoint.allowedPaths?.ollamaCloudModels ?? false);
   const localEndpointReady = endpoint.configured === true && localPathAllowed && automaticLocalModel !== undefined;
-  const delegatedConnection = providerConnections.find((provider) => provider.id === endpoint.providerId);
-  const automaticProvider = (delegatedConnection && providerReady(delegatedConnection)
-    ? delegatedConnection
-    : providerConnections.find(providerReady));
+  const allowedProviderIds = selectedProviderIds(endpoint);
+  const allowedProviderConnections = allowedProviderIds
+    .map((id) => providerConnections.find((provider) => provider.id === id))
+    .filter((provider): provider is ProviderConnection => provider !== undefined);
+  const automaticProvider = allowedProviderConnections.find(providerReady);
+  const recommendedProvider = providerConnections.find(providerReady);
   const cloudEndpointReady = endpoint.configured === true && cloudPathAllowed
-    && providerConnections.some(providerAvailable);
+    && allowedProviderConnections.some(providerAvailable);
   const ollamaCloudEndpointReady = endpoint.configured === true && ollamaCloudPathAllowed && automaticCloudModel !== undefined;
   const realEndpointReady = localEndpointReady || ollamaCloudEndpointReady || cloudEndpointReady;
   const demoConfigured =
@@ -201,6 +271,30 @@ function App(): JSX.Element {
   const ready = endpointReady && workspaceReady;
   const realReady = realEndpointReady && workspaceReady;
   const selectedChatSession = sessions.find((session) => session.selected);
+  const visiblePendingChat = pendingChatInput?.sessionId === selectedChatSession?.id ? pendingChatInput : null;
+  const visibleChatFailure = chatFailure?.sessionId === selectedChatSession?.id ? chatFailure : null;
+  const chatDraftKey = selectedChatSession?.id ?? "no-session";
+  const chatInput = chatDrafts[chatDraftKey] ?? "";
+  const setChatInput = (value: string): void => {
+    setChatDrafts((current) => {
+      if (value) return { ...current, [chatDraftKey]: value };
+      if (!Object.prototype.hasOwnProperty.call(current, chatDraftKey)) return current;
+      const next = { ...current };
+      delete next[chatDraftKey];
+      return next;
+    });
+  };
+  const sessionAgent = agents.find((agent) => agent.id === selectedChatSession?.agentId);
+  const preferredAgent = agents.find((agent) => agent.id === preferredAgentId);
+  const selectedAgent = (view === "chat" ? sessionAgent : preferredAgent ?? sessionAgent)
+    ?? agents.find((agent) => agent.id === "career")
+    ?? agents[0];
+  const selectedAgentName = selectedAgent?.name ?? "Agent";
+  const agentNavigation = selectedAgent?.id === "career"
+    ? careerNav(t)
+    : selectedAgent?.id === "blogger"
+      ? bloggerNav(t)
+      : generalAgentNav(selectedAgentName, t);
   const selectedSessionWorkspace = workspaces.find((workspace) => workspace.id === selectedChatSession?.workspaceId);
   const activeSessionActions = selectedChatSession
     ? actions.filter((action) => action.sessionId === selectedChatSession.id)
@@ -246,23 +340,26 @@ function App(): JSX.Element {
   };
   const loadActions = async (): Promise<void> =>
     setActions(await api.listPendingActions());
-  const loadChatContextUsage = async (): Promise<void> => {
+  const loadChatContextUsage = useCallback(async (): Promise<void> => {
     if (typeof api.getChatContextUsage !== "function") {
       setContextUsage(null);
       return;
     }
     setContextUsage(await api.getChatContextUsage());
-  };
+  }, [api]);
   const loadChat = async (): Promise<void> => {
-    const [nextSessions, nextHistory] = await Promise.all([
-      api.listChatSessions(),
+    const nextSessions = await api.listChatSessions();
+    const activeSession = nextSessions.find((session) => session.selected);
+    const [nextHistory, nextOnboarding] = await Promise.all([
       api.getChatHistory(),
+      activeSession ? api.getAgentOnboarding(activeSession.agentId) : Promise.resolve(null),
     ]);
     setSessions(nextSessions);
     setHistory(nextHistory);
+    setOnboardingStep(nextOnboarding);
     await loadChatContextUsage();
   };
-  const loadLocalModels = async (baseUrl = endpoint.baseUrl): Promise<void> => {
+  const loadLocalModels = useCallback(async (baseUrl: string): Promise<void> => {
     setModelDiscoveryBusy(true);
     setModelDiscoveryError(null);
     try {
@@ -287,27 +384,36 @@ function App(): JSX.Element {
     } finally {
       setModelDiscoveryBusy(false);
     }
-  };
-  const loadProviderConnections = async (): Promise<void> => {
+  }, [api]);
+  const loadProviderConnections = useCallback(async (): Promise<void> => {
     const providers = await api.listProviderConnections();
     setProviderConnections(providers);
-    const readyProviders = providers.filter(providerReady);
-    const preferred = readyProviders[0];
-    if (!preferred) return;
-    const providerIds = readyProviders.map((provider) => provider.id);
     setEndpoint((old) => {
-      const unchangedIds = JSON.stringify(old.providerIds ?? []) === JSON.stringify(providerIds);
-      if (!(old.allowedPaths?.cloudProviders ?? old.mode === "delegated")) return old;
-      if (old.providerId && unchangedIds) return old;
+      const providerIds = selectedProviderIds(old);
+      const preferred = providers.find((provider) => provider.id === providerIds[0]);
+      if (!preferred || (old.providerId === preferred.id && old.providerModelId === preferred.defaultModel)) return old;
       return {
         ...old,
-        providerId: old.providerId ?? preferred.id,
-        providerModelId: old.providerModelId ?? preferred.defaultModel,
+        providerId: preferred.id,
+        providerModelId: preferred.defaultModel,
         providerIds,
-        configured: false,
       };
     });
-  };
+  }, [api]);
+  useEffect(() => {
+    const sidebarQuery = window.matchMedia("(min-width: 900px)");
+    const inspectorQuery = window.matchMedia("(min-width: 1200px)");
+    const syncSidebar = (event: MediaQueryListEvent): void => setSidebarOpen(event.matches);
+    const syncInspector = (event: MediaQueryListEvent): void => {
+      if (!event.matches) setInspectorOpen(false);
+    };
+    sidebarQuery.addEventListener("change", syncSidebar);
+    inspectorQuery.addEventListener("change", syncInspector);
+    return () => {
+      sidebarQuery.removeEventListener("change", syncSidebar);
+      inspectorQuery.removeEventListener("change", syncInspector);
+    };
+  }, []);
   useEffect(() => {
     void Promise.all([
       api.getEndpointConfig(),
@@ -324,6 +430,8 @@ function App(): JSX.Element {
         setSessions(nextSessions);
         setHistory(nextHistory);
         setAgents(nextAgents);
+        const activeSession = nextSessions.find((session) => session.selected);
+        if (activeSession) void api.getAgentOnboarding(activeSession.agentId).then(setOnboardingStep);
         setProposalWorkspace(chooseProposalWorkspace(records));
         void loadChatContextUsage().catch(() => setContextUsage(null));
         if ((config.allowedPaths?.localModels ?? config.mode === "local") || config.allowedPaths?.ollamaCloudModels) {
@@ -333,7 +441,7 @@ function App(): JSX.Element {
       .catch((value: unknown) => setError(messageOf(value)));
     void loadProviderConnections()
       .catch(() => setProviderConnections([]));
-  }, [api]);
+  }, [api, loadChatContextUsage, loadLocalModels, loadProviderConnections]);
   useEffect(() => {
     if (view !== "chat") return undefined;
     const frame = window.requestAnimationFrame(() => {
@@ -348,40 +456,43 @@ function App(): JSX.Element {
     setNotice(null);
   };
 
-  const createNewChat = (): void => {
-    setNewSessionOpen(true);
-    setError(null);
-    setNotice(null);
+  const createNewChat = (agentId?: string): void => {
+    const targetAgentId = agentId ?? selectedAgent?.id;
+    if (!targetAgentId) return;
+    const targetAgent = agents.find((agent) => agent.id === targetAgentId);
+    void task("chat", async () => {
+      await api.createChatSession({
+        name: `${targetAgent?.name ?? "Agent"} conversation`,
+        agentId: targetAgentId,
+        intelligencePreference: "auto",
+        permissionMode: "interactive",
+        isolationMode: "read_only",
+      });
+      setPreferredAgentId(targetAgentId);
+      await loadChat();
+      setView("chat");
+    });
   };
 
-  const createSession = (input: CreateChatSessionInput, prompt: string): void => {
-    const mode: ChatMode = "autopilot";
-    setNewSessionOpen(false);
-    setChatFailure(null);
-    setPendingChatInput({ prompt, mode });
-    setView("chat");
-    void task("chat", async () => {
-      try {
-        await api.createChatSession(input);
-        await loadWorkspaces();
-        const result = await api.sendChatMessage(prompt);
-        setHistory([result]);
-        await loadChat();
-      } catch (value) {
-        setChatFailure({ prompt, message: chatErrorMessage(value), mode });
-      } finally {
-        setPendingChatInput(null);
-      }
-    });
+  const openAgent = (agentId: string): void => {
+    setPreferredAgentId(agentId);
+    const latest = sessions
+      .filter((session) => session.agentId === agentId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+    if (latest) {
+      openSession(latest.id);
+      return;
+    }
+    createNewChat(agentId);
   };
 
   const openSession = (sessionId: string): void => {
     void task("chat", async () => {
       await api.selectChatSession(sessionId);
+      const session = sessions.find((candidate) => candidate.id === sessionId);
+      setPreferredAgentId(session?.agentId);
       setAudit(null);
       setAuditSessionId(null);
-      setChatFailure(null);
-      setPendingChatInput(null);
       await Promise.all([loadChat(), loadWorkspaces(), loadActions()]);
       setView("chat");
     });
@@ -396,20 +507,38 @@ function App(): JSX.Element {
     });
   };
 
+  const saveAgentName = (agentId: string, nextName: string): void => {
+    const name = nextName.trim();
+    if (!name) return;
+    void task("chat", async () => {
+      await api.renameAgentDisplayName(agentId, name);
+      setAgents(await api.listAgents());
+      setNotice(t('app.nameChanged', { name }));
+    });
+  };
+
   const deleteChat = (sessionId: string): void => {
     void task("chat", async () => {
       await api.deleteChatSession(sessionId);
+      setChatDrafts((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, sessionId)) return current;
+        const next = { ...current };
+        delete next[sessionId];
+        return next;
+      });
       await loadChat();
       setAudit(null);
       setAuditSessionId(null);
-      setChatFailure(null);
+      setChatFailure((current) => current?.sessionId === sessionId ? null : current);
+      setPendingChatInput((current) => current?.sessionId === sessionId ? null : current);
     });
   };
 
   const changeChatMode = (mode: ChatMode): void => {
+    modeMenu.current?.removeAttribute("open");
     if (!selectedChatSession || selectedChatSession.mode === mode) return;
     if (typeof api.setChatSessionMode !== "function") {
-      setError("Restart Agent Workstation to activate the updated chat mode controls.");
+      setError(t('app.restartModes'));
       return;
     }
     void task("chat", async () => {
@@ -418,28 +547,74 @@ function App(): JSX.Element {
     });
   };
 
-  const toggleChatMode = (): void => {
-    changeChatMode(selectedChatSession?.mode === "autopilot" ? "standard" : "autopilot");
+  const addFolderFromChat = (): void => {
+    addMenu.current?.removeAttribute("open");
+    void task("workspace", async () => {
+      const directory = await api.pickWorkspaceDirectory();
+      if (!directory) return;
+      const existing = workspaces.find((workspace) => workspace.rootPath.toLowerCase() === directory.toLowerCase());
+      if (existing) {
+        setNotice(t('chat.folderAlreadyAdded'));
+        return;
+      }
+      const name = directory.split(/[\\/]/).filter(Boolean).pop() ?? 'folder';
+      const base = name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '') || 'folder';
+      let id = base;
+      for (let suffix = 2; workspaces.some((workspace) => workspace.id === id); suffix++) id = `${base}-${suffix}`;
+      await api.registerWorkspace({ id, rootPath: directory, kind: 'project' });
+      await loadWorkspaces();
+      await loadChat();
+      setNotice(t('chat.folderAdded', { name }));
+    });
   };
 
-  const sendChat = (): void => {
-    const prompt = chatInput.trim();
-    if (!prompt || !ready || busy === "chat") return;
-    const mode = selectedChatSession?.mode ?? "autopilot";
+  const openMemoryFile = (): void => {
+    addMenu.current?.removeAttribute("open");
+    if (!selectedAgent) return;
+    void api.openAgentMemoryFile(selectedAgent.id).catch((value: unknown) => setError(messageOf(value)));
+  };
+
+  const sendChat = (promptOverride?: string, modeOverride?: ChatMode): void => {
+    const prompt = (promptOverride ?? chatInput).trim();
+    if (!prompt || busy === "chat" || !selectedChatSession) return;
+    if (endpoint.mode === "mock" && !demoSessionEnabled) {
+      go("settings");
+      setNotice(t('demo.inactiveHelp'));
+      return;
+    }
+    const mode = modeOverride ?? selectedChatSession?.mode ?? "autopilot";
+    const sessionId = selectedChatSession.id;
+    const requestId = crypto.randomUUID();
     setChatInput("");
-    setChatFailure(null);
-    setPendingChatInput({ prompt, mode });
+    setChatFailure((current) => current?.sessionId === sessionId ? null : current);
+    setPendingChatInput({ sessionId, requestId, prompt, mode });
     void task("chat", async () => {
       try {
-        const result = await api.sendChatMessage(prompt);
-        setHistory((old) => [...old, result]);
+        await api.sendChatMessage(prompt, requestId, sessionId);
         await loadChat();
       } catch (value) {
-        setChatFailure({ prompt, message: chatErrorMessage(value), mode });
+        const message = chatErrorMessage(value);
+        if (/abort|cancel/i.test(message)) {
+          setChatInput(prompt);
+          setNotice(t('app.messageCancelled'));
+        } else {
+          setChatFailure({ sessionId, prompt, message, mode });
+        }
       } finally {
-        setPendingChatInput(null);
+        setPendingChatInput((current) => current?.requestId === requestId ? null : current);
       }
     });
+  };
+
+  const cancelChat = (): void => {
+    if (!visiblePendingChat) return;
+    void api.cancelChatMessage(visiblePendingChat.requestId)
+      .then((cancelled) => {
+        if (!cancelled) {
+          setNotice(t('app.cannotCancel'));
+        }
+      })
+      .catch((value: unknown) => setError(messageOf(value)));
   };
 
   const approveAction = (actionId: string): void => {
@@ -447,7 +622,7 @@ function App(): JSX.Element {
     void task("approval", async () => {
       await api.approvePendingAction(actionId);
       await loadActions();
-      setNotice(action ? `Applied ${action.targetPath}.` : "Approved change applied.");
+      setNotice(action ? t('app.applied', { path: action.targetPath }) : t('app.approvedChange'));
     });
   };
 
@@ -455,7 +630,7 @@ function App(): JSX.Element {
     void task("approval", async () => {
       await api.rejectPendingAction(actionId, "Rejected from desktop review");
       await loadActions();
-      setNotice("Proposal rejected.");
+      setNotice(t('app.proposalRejected'));
     });
   };
 
@@ -463,29 +638,30 @@ function App(): JSX.Element {
     <div className="page-stack">
       <section className="hero">
         <div>
-          <p className="eyebrow">Career Agent</p>
+          <p className="eyebrow">{selectedAgentName}</p>
           <h1>
-            Turn real project work into an evidence-backed professional profile.
+            {selectedAgent?.id === "blogger"
+              ? t('home.bloggerDescription')
+              : t('home.careerDescription')}
           </h1>
           <p className="hero-copy">
-            Grant access to your evidence and preferred intelligence sources once.
-            Career Agent chooses the right model for each request automatically.
+            {t('home.heroCopy', { name: selectedAgentName })}
           </p>
         </div>
         <div className={`readiness ${realReady ? "ready" : ""}`}>
           <span>
             {realReady
-              ? "Ready"
+              ? t('home.ready')
               : demoSessionEnabled
-                ? "Simulated demo"
-                : "Setup needed"}
+                ? t('home.simulated')
+                : t('home.setupNeeded')}
           </span>
           <strong>
             {realReady
-              ? "Allowed intelligence is available"
+              ? t('home.intelligenceReady')
               : demoSessionEnabled
-                ? "No AI model is being used"
-                : `${Number(workspaceReady) + Number(realEndpointReady)} of 2 steps complete`}
+                ? t('home.noAi')
+                : t('home.stepsComplete', { count: Number(workspaceReady) + Number(realEndpointReady) })}
           </strong>
         </div>
       </section>
@@ -493,11 +669,11 @@ function App(): JSX.Element {
         <section className="panel">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">First run</p>
-              <h2>Finish setup</h2>
+              <p className="eyebrow">{t('home.firstRun')}</p>
+              <h2>{t('home.finishSetup')}</h2>
             </div>
             <p>
-              Your files stay local. The agent reads only folders you register.
+              {t('home.localFiles')}
             </p>
           </div>
           <div className="step-grid">
@@ -507,8 +683,8 @@ function App(): JSX.Element {
               onClick={() => go("sources")}
             >
               <span>{workspaceReady ? "✓" : "1"}</span>
-              <strong>Add workspaces</strong>
-              <small>Register your profile and recent projects.</small>
+              <strong>{t('home.addWorkspaces')}</strong>
+              <small>{t('home.addWorkspacesHelp')}</small>
             </button>
             <button
               className={`step-card ${realEndpointReady ? "complete" : ""}`}
@@ -516,52 +692,108 @@ function App(): JSX.Element {
               onClick={() => go("settings")}
             >
               <span>{realEndpointReady ? "✓" : "2"}</span>
-              <strong>Choose intelligence access</strong>
-              <small>Allow local models, connected cloud providers, or both.</small>
+              <strong>{t('home.chooseIntelligence')}</strong>
+              <small>{t('home.chooseIntelligenceHelp')}</small>
             </button>
           </div>
         </section>
       ) : null}
-      <section className="workflow-grid">
+      {selectedAgent?.id === "blogger" ? (
+        <section className="workflow-grid">
+          {selectedAgent.quickActions.slice(0, 3).map((action, index) => (
+            <article key={action.id}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <h2>{action.title}</h2>
+              <p>{action.prompt}</p>
+              <button type="button" disabled={!ready} onClick={() => createNewChat(selectedAgent.id)}>
+                {t('home.startBlogger')}
+              </button>
+            </article>
+          ))}
+        </section>
+      ) : <section className="workflow-grid">
         <article>
           <span>01</span>
-          <h2>Ask</h2>
-          <p>Discuss your positioning with the Career Agent.</p>
+          <h2>{t('home.ask')}</h2>
+          <p>{t('home.askHelp')}</p>
           <button type="button" disabled={!ready} onClick={() => go("chat")}>
-            Open career chat
+            {t('home.openCareer')}
           </button>
         </article>
         <article>
           <span>02</span>
-          <h2>Audit</h2>
-          <p>Compare repository activity with profile sources.</p>
+          <h2>{t('home.audit')}</h2>
+          <p>{t('home.auditHelp')}</p>
           <button type="button" disabled={!ready} onClick={() => go("audit")}>
-            Run career audit
+            {t('audit.run')}
           </button>
         </article>
         <article>
           <span>03</span>
-          <h2>Improve</h2>
-          <p>Create an edit and inspect the exact diff.</p>
+          <h2>{t('home.improve')}</h2>
+          <p>{t('home.improveHelp')}</p>
           <button type="button" disabled={!ready} onClick={() => go("changes")}>
-            Review changes
+            {t('changes.title')}
           </button>
         </article>
-      </section>
+      </section>}
     </div>
   );
 
   const Chat = (): JSX.Element => (
     <div className="chatgpt-chat">
-      {!ready ? <Setup onGo={go} /> : null}
       <div className="conversation" ref={conversation} aria-live="polite">
         <div className="conversation-content">
-          {history.length === 0 && !pendingChatInput && !chatFailure ? (
-            <div className="chat-welcome">
-              <span className="agent-avatar large">CA</span>
-              <h1>How can I help with your career evidence?</h1>
-              <p>Ask about your profile, registered projects, or a change you are considering.</p>
-            </div>
+          {onboardingStep && onboardingStep.kind !== "complete" ? (
+            <section className="onboarding-card" aria-label={`${selectedAgentName} setup question`}>
+              <p className="eyebrow">{selectedAgentName}</p>
+              {onboardingStep.kind === "question" ? (
+                <>
+                  <h1>{onboardingPrompt(onboardingStep.question.id, onboardingStep.question.prompt)}</h1>
+                  <p>{t('chat.naturalAnswer', { name: selectedAgentName })}</p>
+                  {onboardingStep.question.intent === "initial" ? (
+                    <div className="onboarding-suggestions" aria-label={t('chat.examples')}>
+                      {(onboardingStep.question.optional
+                        ? [{ label: t('chat.noMoreSources'), prompt: t('chat.noMoreSources') }]
+                        : selectedAgent?.id === "career"
+                        ? [
+                          { label: t('chat.github'), prompt: t('chat.github') },
+                          { label: t('chat.linkedin'), prompt: t('chat.linkedin') },
+                          { label: t('chat.cv'), prompt: t('chat.cv') },
+                          { label: t('chat.describeSelf'), prompt: t('chat.describeSelf') },
+                        ]
+                        : [
+                          { label: t('chat.publishedArticles'), prompt: t('chat.publishedArticles') },
+                          { label: t('chat.writingFolder'), prompt: t('chat.writingFolder') },
+                          { label: t('chat.describeStyle'), prompt: t('chat.describeStyle') },
+                        ]
+                      ).map((suggestion) => (
+                        <button type="button" key={suggestion.prompt} onClick={() => setChatInput(suggestion.prompt)}>{suggestion.label}</button>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <h1>{t('chat.confirmTitle')}</h1>
+                  <MemoryConfirmation
+                    fieldKey={onboardingStep.memory.fieldKey}
+                    value={onboardingStep.memory.value}
+                  />
+                  <div className="onboarding-suggestions">
+                    <button className="primary" type="button" onClick={() => sendChat("evet")}>{t('chat.confirmYes')}</button>
+                    <button type="button" onClick={() => sendChat("hayır")}>{t('chat.confirmNo')}</button>
+                  </div>
+                </>
+              )}
+            </section>
+          ) : null}
+          {history.length === 0 && !visiblePendingChat && !visibleChatFailure ? (
+            onboardingStep?.kind === "complete" ? <div className="chat-welcome">
+              <SpecialistAvatar agentId={selectedAgent?.id ?? "unknown"} name={selectedAgentName} large />
+              <h1>{t('chat.helpTitle', { name: selectedAgentName })}</h1>
+              <p>{selectedAgent?.description ?? t('chat.chooseContext')}</p>
+            </div> : null
           ) : history.map((exchange, i) => (
             <div className="exchange" key={`${exchange.userMessage}-${i}`}>
               <div className="user-turn">
@@ -569,90 +801,124 @@ function App(): JSX.Element {
                 <PromptModeIcon mode={exchange.mode} />
               </div>
               <div className="message assistant">
-                <span>Career Agent</span>
-                <p>{exchange.assistantMessage}</p>
+                <span>{selectedAgentName}</span>
+                <MessageContent content={exchange.assistantMessage} />
                 {exchange.sourceReferences.length ? (
                   <div className="chips">
                     {exchange.sourceReferences.map((source, index) => (
-                      <span key={`${source.type}-${index}`}>{sourceLabel(source)}</span>
+                      <span key={`${source.type}-${index}`}>{sourceLabel(source, t)}</span>
                     ))}
                   </div>
                 ) : null}
                 {exchange.route ? (
                   <div
                     className="model-status"
-                    aria-label={`Model used: ${exchange.route.location === "simulated" ? "Simulated demo" : exchange.route.modelId}`}
+                    aria-label={t('chat.modelUsed', { model: routeLabel(exchange.route, t) })}
                     title={exchange.route.reason}
                   >
                     <i aria-hidden="true" />
-                    <span>{exchange.route.location === "simulated" ? "Simulated demo" : exchange.route.modelId}</span>
-                    {exchange.route.fallback ? <em>fallback</em> : null}
+                    <span>{routeLabel(exchange.route, t)}</span>
+                    {exchange.route.fallback ? <em>{t('chat.fallback')}</em> : null}
                   </div>
                 ) : null}
               </div>
             </div>
           ))}
-          {chatFailure ? (
+          {visibleChatFailure ? (
             <div className="exchange failed-exchange">
               <div className="user-turn">
-                <div className="message user"><p>{chatFailure.prompt}</p></div>
-                <PromptModeIcon mode={chatFailure.mode} />
+                <div className="message user"><p>{visibleChatFailure.prompt}</p></div>
+                <PromptModeIcon mode={visibleChatFailure.mode} />
               </div>
               <div className="message assistant error-message" role="alert">
-                <span>Career Agent</span>
-                <strong>{/HTTP\s+429/i.test(chatFailure.message) ? "Usage limit reached" : "Message could not be completed"}</strong>
-                <p>{chatFailure.message}</p>
-                <small>Your message was not lost. Try again when an allowed provider is available.</small>
+                <span>{selectedAgentName}</span>
+                <strong>{/HTTP\s+429/i.test(visibleChatFailure.message) ? t('chat.usageLimit') : t('chat.failed')}</strong>
+                <p>{visibleChatFailure.message}</p>
+                <small>{t('chat.notLost')}</small>
+                <button
+                  type="button"
+                  className="secondary retry-message"
+                  onClick={() => sendChat(visibleChatFailure.prompt, visibleChatFailure.mode)}
+                >
+                  Try again
+                </button>
               </div>
             </div>
           ) : null}
-          {pendingChatInput ? (
+          {visiblePendingChat ? (
             <div className="exchange pending-exchange">
               <div className="user-turn">
-                <div className="message user"><p>{pendingChatInput.prompt}</p></div>
-                <PromptModeIcon mode={pendingChatInput.mode} />
+                <div className="message user"><p>{visiblePendingChat.prompt}</p></div>
+                <PromptModeIcon mode={visiblePendingChat.mode} />
               </div>
-              <div className="message assistant thinking-message" role="status" aria-label="Career Agent is thinking">
-                <span>Career Agent</span>
+              <div className="message assistant thinking-message" role="status" aria-label={t('chat.thinking', { name: selectedAgentName })}>
+                <span>{selectedAgentName}</span>
                 <div className="thinking-dots" aria-hidden="true"><i /><i /><i /></div>
-                <div className="model-status choosing-model"><i aria-hidden="true" /><span>Choosing model</span></div>
+                <div className="model-status choosing-model"><i aria-hidden="true" /><span>{t('chat.choosingModel')}</span></div>
+                <button type="button" className="secondary cancel-message" onClick={cancelChat}>Cancel</button>
               </div>
             </div>
           ) : null}
         </div>
       </div>
       <div className="composer-dock">
-        <div className="composer-toolbar">
-          <span className="composer-toolbar-copy">
-            <span className="current-chat-mode" aria-live="polite">
-              <PromptModeIcon mode={selectedChatSession?.mode ?? "autopilot"} />
-              <strong>{selectedChatSession?.mode === "standard" ? "Standard" : "Autopilot"}</strong>
-            </span>
-            <span>Shift + Tab switches mode</span>
-          </span>
-          <ContextUsageIndicator usage={contextUsage} />
-        </div>
         <form className="composer" onSubmit={(event) => { event.preventDefault(); sendChat(); }}>
           <textarea
-            aria-label="Message Career Agent"
+            aria-label={t('chat.message', { name: selectedAgentName })}
             value={chatInput}
             onChange={(event) => setChatInput(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Tab" && event.shiftKey) {
-                event.preventDefault();
-                toggleChatMode();
-                return;
-              }
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 sendChat();
               }
             }}
-            placeholder="Message Career Agent"
+            placeholder={t('chat.message', { name: selectedAgentName })}
           />
-          <button className="primary send-icon" aria-label="Send message" disabled={!ready || busy === "chat"}>↑</button>
+          <div className="composer-footer">
+            <div className="composer-controls">
+              <details className="composer-popover" ref={addMenu} onKeyDown={(event) => { if (event.key === 'Escape') addMenu.current?.removeAttribute('open'); }}>
+                <summary className="composer-add" aria-label={t('chat.addContext')} title={t('chat.addContext')}>＋</summary>
+                <div className="composer-popover-content add-popover">
+                  <button type="button" onClick={addFolderFromChat}>{t('chat.addWorkspace')}</button>
+                  <button type="button" onClick={openMemoryFile}>{t('chat.editMemory')}</button>
+                  <button type="button" onClick={() => { addMenu.current?.removeAttribute('open'); go('sources'); }}>{t('chat.manageSources')}</button>
+                </div>
+              </details>
+              <details className="composer-popover" ref={modeMenu} onKeyDown={(event) => { if (event.key === 'Escape') modeMenu.current?.removeAttribute('open'); }}>
+                <summary className="composer-mode" aria-label={t('chat.mode')}>
+                  <span className="mode-mark" aria-hidden="true">{selectedChatSession?.mode === 'autopilot' ? '✧' : '◇'}</span>
+                  {selectedChatSession?.mode === 'autopilot' ? t('sidebar.autopilot') : t('sidebar.standard')}
+                  <span className="mode-chevron" aria-hidden="true">
+                    <svg viewBox="0 0 20 20" fill="none" focusable="false">
+                      <path d="m5 7 5 5 5-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                </summary>
+                <div className="composer-popover-content mode-popover" role="group" aria-label={t('chat.mode')}>
+                  {(['standard', 'autopilot'] as ChatMode[]).map((mode) => (
+                    <button type="button" key={mode} className={selectedChatSession?.mode === mode ? 'selected' : ''}
+                      aria-pressed={selectedChatSession?.mode === mode}
+                      disabled={!selectedChatSession || busy === 'chat'} onClick={() => changeChatMode(mode)}>
+                      <span className="mode-choice-mark" aria-hidden="true">{mode === 'autopilot' ? '✧' : '◇'}</span>
+                      <span><strong>{mode === 'standard' ? t('sidebar.standard') : t('sidebar.autopilot')}</strong>
+                        <small>{t(mode === 'standard' ? 'chat.standardDescription' : 'chat.autopilotDescription')}</small></span>
+                      {selectedChatSession?.mode === mode ? <span className="mode-selected" aria-hidden="true">✓</span> : null}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            </div>
+            <div className="composer-controls">
+              <ContextUsageIndicator usage={contextUsage} />
+              <button className="primary send-icon" aria-label={t('chat.send')} disabled={!selectedChatSession || busy === "chat"}>
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
+                  <path d="M10 16V4m0 0L5 9m5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </form>
-        <small>Enter to send · Shift + Enter for a new line · Shift + Tab changes mode</small>
       </div>
     </div>
   );
@@ -685,7 +951,7 @@ function App(): JSX.Element {
           </button>
         }
       />
-      {!ready ? <Setup onGo={go} /> : null}
+      {!ready ? <Setup onGo={go} agentName={selectedAgentName} workspaceReady={workspaceReady} intelligenceReady={endpointReady} /> : null}
       {!audit ? (
         <section className="panel">
           <Empty
@@ -706,7 +972,7 @@ function App(): JSX.Element {
               </span>
             </div>
             <p>{audit.summary}</p>
-            <div className="agent-output">{audit.result.content}</div>
+            <div className="agent-output"><MessageContent content={audit.result.content} /></div>
           </section>
           <section className="panel">
             <div className="section-heading">
@@ -723,7 +989,7 @@ function App(): JSX.Element {
               {audit.result.sourceReferences.map((s, i) => (
                 <div className="source-row" key={`${s.type}-${i}`}>
                   <span>{s.type}</span>
-                  <strong>{sourceLabel(s)}</strong>
+                  <strong>{sourceLabel(s, t)}</strong>
                   <small>{s.workspaceId ?? "agent memory"}</small>
                 </div>
               ))}
@@ -742,7 +1008,7 @@ function App(): JSX.Element {
         description="The agent proposes edits, but only you can write them to disk."
         action={<span className="pill">{actions.length} pending</span>}
       />
-      {!ready ? <Setup onGo={go} /> : null}
+      {!ready ? <Setup onGo={go} agentName={selectedAgentName} workspaceReady={workspaceReady} intelligenceReady={endpointReady} /> : null}
       <section className="panel form">
         <div className="section-heading">
           <div>
@@ -869,7 +1135,7 @@ function App(): JSX.Element {
       <Heading
         eyebrow="Local evidence"
         title="Workspaces"
-        description="Register only the folders the Career Agent may inspect."
+        description="Register only the folders Career may inspect."
       />
       <section className="panel form">
         <div className="form-grid">
@@ -894,7 +1160,7 @@ function App(): JSX.Element {
               <option value="profile">Professional profile</option>
               <option value="cv">CV or résumé</option>
             </select>
-            <small>This role helps the Career Agent choose profile content or project activity as evidence.</small>
+            <small>This role helps agents distinguish profile content from project evidence.</small>
           </label>
         </div>
         <div className="actions">
@@ -914,7 +1180,7 @@ function App(): JSX.Element {
                 });
                 setWorkspaceId("");
                 await loadWorkspaces();
-                await loadChatSessions();
+                await loadChat();
                 setNotice("Workspace registered.");
               })
             }
@@ -946,7 +1212,7 @@ function App(): JSX.Element {
                     void task("workspace", async () => {
                       await api.selectWorkspace(w.id);
                       await loadWorkspaces();
-                      await loadChatSessions();
+                      await loadChat();
                     })
                   }
                 >
@@ -983,11 +1249,11 @@ function App(): JSX.Element {
         <span className={`status-dot ${model.availability ?? "unknown"}`} aria-hidden="true" />
         <div>
           <strong>{model.id}</strong>
-          <small>{model.location === "local" ? `${modelSize(model.size)} · Stored on this device` : "Runs through Ollama Cloud"}</small>
+          <small>{model.location === "local" ? t('status.storedLocal', { size: modelSize(model.size, t) }) : t('status.ollamaCloud')}</small>
           {model.lastError ? <small className="status-error">{model.lastError}</small> : null}
         </div>
         <span className={`status-badge ${model.availability ?? "unknown"}`}>
-          {model.toolCalling ? availabilityLabel(model.availability) : "Not agent compatible"}
+          {model.toolCalling ? availabilityLabel(model.availability, t) : t('status.notCompatible')}
         </span>
       </article>
     );
@@ -995,10 +1261,10 @@ function App(): JSX.Element {
       <div className="page-stack">
         <Heading
           eyebrow="Intelligence status"
-          title="Models Career Agent can reach"
-          description="Availability is informational. Career Agent still chooses and falls back automatically within the access you allow."
+          title={`Models ${selectedAgentName} can reach`}
+          description={`Availability is informational. ${selectedAgentName} still chooses and falls back automatically within the access you allow.`}
           action={<button type="button" disabled={busy === "endpoint" || modelDiscoveryBusy} onClick={() => void task("endpoint", async () => {
-            await Promise.all([loadLocalModels(), loadProviderConnections()]);
+            await Promise.all([loadLocalModels(endpoint.baseUrl), loadProviderConnections()]);
             setNotice("Intelligence availability refreshed.");
           })}>{busy === "endpoint" || modelDiscoveryBusy ? "Refreshing…" : "Refresh status"}</button>}
         />
@@ -1015,7 +1281,7 @@ function App(): JSX.Element {
           </div>
         </section>
         <section className="status-section panel">
-          <div className="section-heading"><div><p className="eyebrow">Provider CLIs</p><h2>Connected cloud providers</h2></div><p>Credentials stay with each installed provider.</p></div>
+          <div className="section-heading"><div><p className="eyebrow">{t('status.providerClis')}</p><h2>{t('status.providers')}</h2></div><p>{t('status.providersHelp')}</p></div>
           <div className="model-status-list">
             {providerConnections.map((provider) => (
               <article className="model-status-row" key={provider.id}>
@@ -1026,7 +1292,7 @@ function App(): JSX.Element {
                   {provider.lastError ? <small className="status-error">{provider.lastError}</small> : null}
                 </div>
                 <span className={`status-badge ${provider.availability ?? "unknown"}`}>
-                  {providerReady(provider) ? availabilityLabel(provider.availability) : provider.installed ? "Sign-in required" : "Not installed"}
+                  {providerReady(provider) ? availabilityLabel(provider.availability, t) : provider.installed ? t('status.signIn') : t('status.notInstalled')}
                 </span>
               </article>
             ))}
@@ -1038,32 +1304,67 @@ function App(): JSX.Element {
 
   const Settings = (): JSX.Element => {
     const noPathAllowed = !localPathAllowed && !ollamaCloudPathAllowed && !cloudPathAllowed;
-    const localUnavailable = localPathAllowed && !automaticLocalModel;
-    const ollamaCloudUnavailable = ollamaCloudPathAllowed && !automaticCloudModel;
-    const cloudUnavailable = cloudPathAllowed && !providerConnections.some(providerAvailable);
-    const settingsBlocked = noPathAllowed || (localUnavailable && ollamaCloudUnavailable && cloudUnavailable);
+    const selectedPathReady = (localPathAllowed && Boolean(automaticLocalModel))
+      || (ollamaCloudPathAllowed && Boolean(automaticCloudModel))
+      || (cloudPathAllowed && allowedProviderConnections.some(providerAvailable));
+    const settingsBlocked = !selectedPathReady;
+    const setProviderPolicy = (providerId: string, allowed: boolean): void => {
+      setEndpoint((old) => {
+        const providerIds = toggleProvider(selectedProviderIds(old), providerId, allowed);
+        const primary = providerConnections.find((provider) => provider.id === providerIds[0]);
+        const cloudProviders = providerIds.length > 0;
+        return {
+          ...old,
+          mode: "local",
+          providerIds,
+          providerId: primary?.id,
+          providerModelId: primary?.defaultModel,
+          routingPolicy: cloudProviders || ollamaCloudPathAllowed ? "adaptive" : "local_only",
+          allowedPaths: {
+            localModels: localPathAllowed,
+            ollamaCloudModels: ollamaCloudPathAllowed,
+            cloudProviders,
+          },
+          configured: false,
+        };
+      });
+      setDemoSessionEnabled(false);
+    };
+    const reorderProvider = (providerId: string, offset: -1 | 1): void => {
+      setEndpoint((old) => {
+        const providerIds = moveProvider(selectedProviderIds(old), providerId, offset);
+        const primary = providerConnections.find((provider) => provider.id === providerIds[0]);
+        return {
+          ...old,
+          providerIds,
+          providerId: primary?.id,
+          providerModelId: primary?.defaultModel,
+          configured: false,
+        };
+      });
+    };
     return (
       <div className="page-stack">
         <Heading
-          eyebrow="Intelligence access"
-          title="Choose what Career Agent may use"
-          description="Grant boundaries once. Career Agent evaluates each prompt and chooses the best allowed model automatically."
+          eyebrow={t('settings.eyebrow')}
+          title={t('settings.title', { name: selectedAgentName })}
+          description={t('settings.description', { name: selectedAgentName })}
         />
-        <section className="availability-summary" aria-label="Intelligence availability">
-          <span><strong>{localModels.filter((model) => model.location === "local" && model.toolCalling && model.availability !== "unavailable").length}</strong> on-device ready</span>
-          <span><strong>{localModels.filter((model) => model.location === "cloud" && model.toolCalling && model.availability !== "limited" && model.availability !== "unavailable").length}</strong> Ollama Cloud ready</span>
-          <span><strong>{providerConnections.filter(providerAvailable).length}</strong> providers ready</span>
-          <button type="button" onClick={() => go("status")}>View model status</button>
+        <section className="availability-summary" aria-label={t('settings.availability')}>
+          <span>{t('settings.onDeviceReady', { count: localModels.filter((model) => model.location === "local" && model.toolCalling && model.availability !== "unavailable").length })}</span>
+          <span>{t('settings.cloudReady', { count: localModels.filter((model) => model.location === "cloud" && model.toolCalling && model.availability !== "limited" && model.availability !== "unavailable").length })}</span>
+          <span><strong>{allowedProviderConnections.filter(providerAvailable).length}</strong> {t('settings.allowedProvidersReady')}</span>
+          <button type="button" onClick={() => go("status")}>{t('settings.viewStatus')}</button>
         </section>
         <section className="panel form settings">
           <div className="permission-list">
-            <label className={`permission-card ${localPathAllowed ? "allowed" : ""}`}>
-              <input
-                type="checkbox"
-                aria-label="Allow local models"
-                checked={localPathAllowed}
-                onChange={(event) => {
-                  const allowed = event.target.checked;
+            <button
+              type="button"
+              className={`permission-card ${localPathAllowed ? "allowed" : ""}`}
+              aria-label={t('settings.allowLocal')}
+              aria-pressed={localPathAllowed}
+              onClick={() => {
+                  const allowed = !localPathAllowed;
                   setEndpoint((old) => ({
                     ...old,
                     mode: "local",
@@ -1075,21 +1376,24 @@ function App(): JSX.Element {
                   }));
                   setDemoSessionEnabled(false);
                 }}
-              />
-              <span>
-                <strong>Local models</strong>
-                <small>Includes free Ollama models installed on this computer. Workspace context stays on-device.</small>
+            >
+              <span className="permission-copy">
+                  <strong>{t('settings.localModels')}</strong>
+                  <small>{t('settings.localHelp')}</small>
               </span>
-              <b>{automaticLocalModel ? "Available" : "No compatible model found"}</b>
-            </label>
-            <label className={`permission-card ${ollamaCloudPathAllowed ? "allowed" : ""}`}>
-              <input
-                type="checkbox"
-                aria-label="Allow Ollama Cloud models"
-                checked={ollamaCloudPathAllowed}
-                disabled={!ollamaCloudPathAllowed && !automaticCloudModel}
-                onChange={(event) => {
-                  const allowed = event.target.checked;
+              <span className="permission-state">
+                <b>{automaticLocalModel ? t('app.available') : t('settings.noModel')}</b>
+                <span className="toggle-switch" aria-hidden="true"><span /></span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`permission-card ${ollamaCloudPathAllowed ? "allowed" : ""}`}
+              aria-label={t('settings.allowCloud')}
+              aria-pressed={ollamaCloudPathAllowed}
+              disabled={!ollamaCloudPathAllowed && !automaticCloudModel}
+              onClick={() => {
+                  const allowed = !ollamaCloudPathAllowed;
                   setEndpoint((old) => ({
                     ...old,
                     mode: "local",
@@ -1100,83 +1404,140 @@ function App(): JSX.Element {
                   }));
                   setDemoSessionEnabled(false);
                 }}
-              />
-              <span>
-                <strong>Ollama Cloud models</strong>
-                <small>Large Ollama models run in Ollama Cloud. Usage limits apply and workspace context may leave this computer.</small>
+            >
+              <span className="permission-copy">
+                  <strong>{t('settings.cloudModels')}</strong>
+                  <small>{t('settings.cloudHelp')}</small>
               </span>
-              <b>{automaticCloudModel ? "Discovered" : "No compatible cloud model found"}</b>
-            </label>
-            <label className={`permission-card ${cloudPathAllowed ? "allowed" : ""}`}>
-              <input
-                type="checkbox"
-                aria-label="Allow connected cloud providers"
-                checked={cloudPathAllowed}
-                disabled={!cloudPathAllowed && !automaticProvider}
-                onChange={(event) => {
-                  const allowed = event.target.checked;
+              <span className="permission-state">
+                <b>{automaticCloudModel ? t('app.discovered') : t('settings.noCloud')}</b>
+                <span className="toggle-switch" aria-hidden="true"><span /></span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`permission-card ${cloudPathAllowed ? "allowed" : ""}`}
+              aria-label={t('settings.allowProviders')}
+              aria-pressed={cloudPathAllowed}
+              disabled={!cloudPathAllowed && !recommendedProvider}
+              onClick={() => {
+                  const allowed = !cloudPathAllowed;
+                  const providerIds = allowed
+                    ? (allowedProviderIds.length > 0 ? allowedProviderIds : recommendedProvider ? [recommendedProvider.id] : [])
+                    : [];
+                  const primary = providerConnections.find((provider) => provider.id === providerIds[0]);
                   setEndpoint((old) => ({
                     ...old,
                     mode: "local",
-                    providerId: allowed ? automaticProvider?.id : undefined,
-                    providerModelId: allowed ? automaticProvider?.defaultModel : undefined,
-                    providerIds: allowed ? providerConnections.filter(providerReady).map((provider) => provider.id) : [],
+                    providerId: primary?.id,
+                    providerModelId: primary?.defaultModel,
+                    providerIds,
                     routingPolicy: allowed || ollamaCloudPathAllowed ? "adaptive" : "local_only",
-                    allowedPaths: { localModels: localPathAllowed, ollamaCloudModels: ollamaCloudPathAllowed, cloudProviders: allowed },
+                    allowedPaths: {
+                      localModels: localPathAllowed,
+                      ollamaCloudModels: ollamaCloudPathAllowed,
+                      cloudProviders: allowed && providerIds.length > 0,
+                    },
                     configured: false,
                   }));
                   setDemoSessionEnabled(false);
                 }}
-              />
-              <span>
-                <strong>Connected cloud providers</strong>
-                <small>Use detected Codex, Copilot, or Claude CLI accounts only when the prompt benefits from them.</small>
+            >
+              <span className="permission-copy">
+                  <strong>{t('settings.providers')}</strong>
+                <small>{t('settings.providersHelp')}</small>
               </span>
-              <b>{automaticProvider ? `${providerConnections.filter(providerReady).length} connected` : "No authenticated provider detected"}</b>
-            </label>
+              <span className="permission-state">
+                <b>{automaticProvider
+                  ? t('settings.allowedCount', { count: allowedProviderIds.length })
+                  : recommendedProvider ? t('settings.chooseAllowedProviders') : t('settings.noProvider')}</b>
+                <span className="toggle-switch" aria-hidden="true"><span /></span>
+              </span>
+            </button>
           </div>
-          {noPathAllowed ? <div className="inline-warning" role="alert">Allow at least one intelligence path.</div> : null}
+            {noPathAllowed ? <div className="inline-warning" role="alert">{t('settings.allowOne')}</div> : null}
           {ollamaCloudPathAllowed || cloudPathAllowed ? (
             <div className="privacy-callout">
-              <strong>Cloud access is allowed.</strong>
-              <span>Bounded prompt, workspace, and agent context may leave this computer. Provider CLIs keep their own credentials.</span>
+                <strong>{t('settings.cloudAllowed')}</strong>
+                <span>{t('settings.cloudAllowedHelp')}</span>
             </div>
           ) : null}
           <details className="settings-details">
-            <summary>Local Ollama details</summary>
+              <summary>{t('settings.ollamaDetails')}</summary>
             <div className="details-content">
               <label>
-                <span>Endpoint URL</span>
+                    <span>{t('settings.endpoint')}</span>
                 <input value={endpoint.baseUrl} onChange={(event) => setEndpoint((old) => ({ ...old, baseUrl: event.target.value, configured: false }))} />
               </label>
               <div className="actions model-discovery">
-                <button type="button" disabled={modelDiscoveryBusy} onClick={() => void loadLocalModels()}>
-                  {modelDiscoveryBusy ? "Finding models…" : "Refresh installed models"}
+                <button type="button" disabled={modelDiscoveryBusy} onClick={() => void loadLocalModels(endpoint.baseUrl)}>
+                    {modelDiscoveryBusy ? t('settings.finding') : t('settings.refreshModels')}
                 </button>
                 {modelDiscoveryError ? <small>{modelDiscoveryError}</small> : null}
                 <small>
-                  {localModels.filter((model) => model.location === "local").length} on-device · {localModels.filter((model) => model.location === "cloud").length} Ollama Cloud · {localModels.filter((model) => model.toolCalling).length} compatible
+                  {t('settings.discoverySummary', {
+                    local: localModels.filter((model) => model.location === "local").length,
+                    cloud: localModels.filter((model) => model.location === "cloud").length,
+                    compatible: localModels.filter((model) => model.toolCalling).length,
+                  })}
                 </small>
               </div>
             </div>
           </details>
           <details className="settings-details">
-            <summary>Detected provider connections</summary>
-            <div className="details-content provider-list">
-              {providerConnections.map((provider) => (
-                <div className="source-row" key={provider.id}>
-                  <span>{providerReady(provider) ? availabilityLabel(provider.availability) : provider.installed ? "Sign-in required" : "Not installed"}</span>
-                  <strong>{provider.label}</strong>
-                  <small>{provider.detail}</small>
-                </div>
-              ))}
+            <summary>{t('settings.providerConnections')}</summary>
+            <div className="details-content provider-policy-list">
+              <p className="provider-policy-help">{t('settings.providerPolicyHelp')}</p>
+              {providerConnections.map((provider) => {
+                const priority = allowedProviderIds.indexOf(provider.id);
+                const allowed = priority >= 0;
+                const selectable = providerReady(provider);
+                return (
+                  <article className={`provider-policy-row ${allowed ? "allowed" : "blocked"}`} key={provider.id}>
+                    <button
+                        type="button"
+                        className="provider-allow"
+                        aria-pressed={allowed}
+                        disabled={!allowed && !selectable}
+                        onClick={() => setProviderPolicy(provider.id, !allowed)}
+                        aria-label={t('settings.allowProvider', { provider: provider.label })}
+                    >
+                      <span className="provider-priority" aria-hidden="true">{allowed ? priority + 1 : "—"}</span>
+                      <span className="toggle-switch compact" aria-hidden="true"><span /></span>
+                    </button>
+                    <div className="provider-policy-copy">
+                      <strong>{provider.label}</strong>
+                      <small>{provider.detail}</small>
+                      <small>{provider.version ? `${provider.version} · ` : ""}{t('settings.modelSelection', {
+                        model: provider.modelLabel
+                          ?? (providerModelLabel(provider) === 'provider-default'
+                            ? t('settings.providerSelectedModel')
+                            : providerModelLabel(provider)),
+                      })}</small>
+                    </div>
+                    <div className="provider-policy-state">
+                      <span className={`status-badge ${provider.availability ?? "unknown"}`}>
+                        {providerReady(provider) ? availabilityLabel(provider.availability, t) : provider.installed ? t('status.signIn') : t('status.notInstalled')}
+                      </span>
+                      <strong>{allowed ? t('settings.priority', { priority: priority + 1 }) : t('settings.notAllowed')}</strong>
+                      {allowed ? (
+                        <span className="provider-order-actions">
+                          <button type="button" disabled={priority === 0} onClick={() => reorderProvider(provider.id, -1)} aria-label={t('settings.moveProviderUp', { provider: provider.label })}>↑</button>
+                          <button type="button" disabled={priority === allowedProviderIds.length - 1} onClick={() => reorderProvider(provider.id, 1)} aria-label={t('settings.moveProviderDown', { provider: provider.label })}>↓</button>
+                        </span>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </details>
           <details className="settings-details">
-            <summary>Offline demo for testing</summary>
-            <div className="details-content">
-              <p>Simulated responses are not AI and never count as model readiness.</p>
+              <summary>{t('settings.offlineDemo')}</summary>
+            <div className="details-content demo-settings">
+                <p>{t('settings.demoHelp')}</p>
               <button
+                className="secondary"
                 type="button"
                 onClick={() => {
                   setEndpoint((old) => ({
@@ -1189,19 +1550,20 @@ function App(): JSX.Element {
                   setDemoSessionEnabled(false);
                 }}
               >
-                Configure simulated demo
+                {t('settings.configureDemo')}
               </button>
               {endpoint.mode === "mock" ? (
                 <button
+                  className="secondary"
                   type="button"
                   data-testid="enable-demo-session"
                   disabled={!demoConfigured || demoSessionEnabled}
                   onClick={() => {
                     setDemoSessionEnabled(true);
-                    setNotice("Simulated demo enabled for this session. No AI model will be used.");
+                    setNotice(t('settings.demoEnabledNotice'));
                   }}
                 >
-                  {demoSessionEnabled ? "Simulated demo enabled" : "Enable simulated demo for this session"}
+                  {demoSessionEnabled ? t('settings.demoEnabled') : t('settings.enableDemo')}
                 </button>
               ) : null}
             </div>
@@ -1210,20 +1572,36 @@ function App(): JSX.Element {
             <button type="button" disabled={busy === "endpoint" || settingsBlocked} onClick={() => void task("endpoint", async () => {
               const result = await api.testEndpointConnection(endpoint);
               setNotice(result.message);
-            })}>Check allowed paths</button>
+              })}>{t('settings.checkPaths')}</button>
             <button className="primary" data-testid="save-endpoint" type="button" disabled={busy === "endpoint" || (endpoint.mode !== "mock" && settingsBlocked)} onClick={() => void task("endpoint", async () => {
               await api.saveEndpointConfig(endpoint);
               setEndpoint((old) => ({ ...old, configured: true }));
               setDemoSessionEnabled(false);
               setNotice(endpoint.mode === "mock"
-                ? "Simulated demo configured but inactive."
-                : "Intelligence access saved. Career Agent will route prompts automatically.");
-            })}>{busy === "endpoint" ? "Working…" : "Save intelligence access"}</button>
+                  ? t('settings.demoInactive')
+                  : t('settings.saved'));
+              })}>{busy === "endpoint" ? t('settings.working') : t('settings.save')}</button>
           </div>
         </section>
       </div>
     );
   };
+
+  const Publication = (): JSX.Element => (
+    <div className="page-stack">
+      <Heading
+        eyebrow="Blogger delivery"
+        title="Publishing"
+        description="Configure a destination once, then review website and LinkedIn actions separately for every article."
+      />
+      <PublicationSetupPanel
+        api={api}
+        workspaces={workspaces}
+        onError={setError}
+        onNotice={setNotice}
+      />
+    </div>
+  );
 
   const Agents = (): JSX.Element => (
     <div className="page-stack">
@@ -1233,31 +1611,26 @@ function App(): JSX.Element {
         description="Each agent has its own conversations, tools, workspaces, and workflows."
       />
       <section className="agent-grid">
-        <article className="panel agent-card active-agent">
-          <div className="agent-icon">CA</div>
-          <div>
-            <span className="pill">Available now</span>
-            <h2>Career Agent</h2>
-            <p>
-              Turns local project evidence into career guidance, audits, and
-              reviewable profile changes.
-            </p>
-          </div>
-          <button className="primary" type="button" onClick={() => go("home")}>
-            Open Career Agent
-          </button>
-        </article>
-        <article className="panel agent-card future-agent">
-          <div className="agent-icon">+</div>
-          <div>
-            <span className="pill">Future</span>
-            <h2>More agents</h2>
-            <p>
-              New specialists will appear here without changing the Career Agent
-              workspace.
-            </p>
-          </div>
-        </article>
+        {agents.map((agent) => (
+          <article className={`panel agent-card agent-tone-${agent.id} ${agent.id === selectedAgent?.id ? "active-agent" : ""}`} key={agent.id}>
+            <SpecialistAvatar agentId={agent.id} name={agent.name} large />
+            <div>
+              <span className="pill">Available now</span>
+              <h2>{agent.name}</h2>
+              <p>{agent.description}</p>
+            </div>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => {
+                setPreferredAgentId(agent.id);
+                go("home");
+              }}
+            >
+              Open {agent.name}
+            </button>
+          </article>
+        ))}
       </section>
     </div>
   );
@@ -1268,15 +1641,18 @@ function App(): JSX.Element {
     chat: Chat,
     audit: Audit,
     changes: Changes,
+    publication: Publication,
     sources: Sources,
     status: Status,
     settings: Settings,
   };
   return (
-    <div className="shell">
+    <div className={`shell agent-tone-${selectedAgent?.id ?? "default"} ${sidebarOpen ? "" : "sidebar-collapsed"} ${inspectorOpen ? "" : "inspector-collapsed"}`}>
       <SessionsSidebar
         view={view}
-        navigation={careerNav}
+        navigation={agentNavigation}
+        agents={agents}
+        activeAgent={selectedAgent}
         workspaces={workspaces}
         sessions={sessions}
         pendingActionCount={actions.length}
@@ -1285,9 +1661,10 @@ function App(): JSX.Element {
           ? `${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed)} path${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed) === 1 ? "" : "s"} allowed`
           : demoSessionEnabled ? "Simulated demo · no AI" : "Setup required"}
         cloudPermitted={ollamaCloudPathAllowed || cloudPathAllowed}
-        onOpenAgents={() => go("agents")}
+        onOpenAgent={openAgent}
+        onRenameAgent={saveAgentName}
         onNavigate={go}
-        onNewSession={createNewChat}
+        onNewSession={() => createNewChat(selectedAgent?.id)}
         onOpenSession={openSession}
         onRenameSession={saveChatName}
         onDeleteSession={deleteChat}
@@ -1295,18 +1672,32 @@ function App(): JSX.Element {
       <main className={view === "chat" ? "chat-main" : ""}>
         <header>
           <div>
+            <button
+              type="button"
+              className="shell-toggle"
+              aria-label={sidebarOpen ? t('chat.hideNavigation') : t('chat.showNavigation')}
+              aria-expanded={sidebarOpen}
+              onClick={() => setSidebarOpen((open) => !open)}
+            >
+              ☰
+            </button>
             <i className={realEndpointReady ? "connected" : ""} />
             {view === "chat"
-              ? sessions.find((session) => session.selected)?.name ?? "New chat"
+              ? sessions.find((session) => session.selected)?.name ?? t('chat.newChat')
               : realEndpointReady
-                ? "Career Agent ready"
+                ? `${selectedAgentName} ready`
               : demoSessionEnabled
                 ? "Simulated demo · no AI model"
                 : "Intelligence setup required"}
           </div>
-          <button type="button" onClick={() => go("settings")}>
-            Configure
-          </button>
+          <div className="header-actions">
+            <button type="button" onClick={() => setInspectorOpen((open) => !open)} aria-expanded={inspectorOpen}>
+              {inspectorOpen ? t('chat.hideContext') : t('chat.showContext')}
+            </button>
+            <button className="settings-header-link" type="button" onClick={() => go("settings")}>
+              {t('common.settings')}
+            </button>
+          </div>
         </header>
         {demoConfigured && view !== "settings" ? (
           <div className="demo top">
@@ -1329,17 +1720,7 @@ function App(): JSX.Element {
           <Toast kind="success" text={notice} close={() => setNotice(null)} />
         ) : null}
         <div className="page">
-          {newSessionOpen ? (
-            <NewSessionComposer
-              agents={agents}
-              workspaces={workspaces}
-              defaultWorkspaceId={selectedChatSession?.workspaceId ?? workspaces.find((workspace) => workspace.selected)?.id}
-              cloudPermitted={ollamaCloudPathAllowed || cloudPathAllowed}
-              busy={busy === "chat"}
-              onCancel={() => setNewSessionOpen(false)}
-              onCreate={createSession}
-            />
-          ) : pages[view]()}
+          {pages[view]()}
         </div>
       </main>
       <SessionInspector
@@ -1384,19 +1765,29 @@ function Heading({
     </div>
   );
 }
-function Setup({ onGo }: { onGo: (view: View) => void }): JSX.Element {
+function Setup({
+  onGo,
+  agentName,
+  workspaceReady,
+  intelligenceReady,
+}: {
+  onGo: (view: View) => void;
+  agentName: string;
+  workspaceReady: boolean;
+  intelligenceReady: boolean;
+}): JSX.Element {
   return (
     <div className="setup">
       <div>
-        <strong>Finish setup to use this feature</strong>
-        <span>Add workspaces and choose which intelligence sources Career Agent may use.</span>
+        <strong>Finish setup to use {agentName}</strong>
+        <span>{Number(workspaceReady) + Number(intelligenceReady)} of 2 steps complete. Your files stay local unless you allow a connected provider.</span>
       </div>
       <div>
         <button type="button" onClick={() => onGo("sources")}>
-          Workspaces
+          {workspaceReady ? "✓ Workspaces ready" : "1 · Add workspaces"}
         </button>
         <button type="button" onClick={() => onGo("settings")}>
-          Intelligence access
+          {intelligenceReady ? "✓ Intelligence ready" : "2 · Intelligence access"}
         </button>
       </div>
     </div>
@@ -1433,6 +1824,6 @@ function Toast({
 }
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <I18nProvider><App /></I18nProvider>
   </React.StrictMode>,
 );

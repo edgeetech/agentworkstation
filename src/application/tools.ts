@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ModelToolDefinition, SourceReference, ToolMetadata } from '@domain/intelligence';
 import type { WorkspaceGateway } from '@application/ports';
+import type { AgentToolPolicy } from '@application/agents/types';
 
 export type ToolExecutionContext = {
   workspaceId: string;
@@ -42,8 +43,8 @@ export type ToolResult = { output: unknown; sourceReferences: SourceReference[] 
 function isSourceReference(value: unknown): value is SourceReference {
   if (value === null || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
-  if (!['file', 'git_commit', 'git_diff', 'git_status', 'memory'].includes(String(candidate.type))) return false;
-  return ['workspaceId', 'relativePath', 'commitSha', 'label']
+  if (!['file', 'git_commit', 'git_diff', 'git_status', 'memory', 'web'].includes(String(candidate.type))) return false;
+  return ['workspaceId', 'relativePath', 'commitSha', 'url', 'label']
     .every((key) => candidate[key] === undefined || typeof candidate[key] === 'string');
 }
 
@@ -79,9 +80,24 @@ export class ToolExecutor {
 }
 
 export class PolicyGate {
-  decide(toolMetadata: ToolMetadata): 'allow' | 'require_approval' | 'deny' {
+  decide(toolMetadata: ToolMetadata, _toolName?: string): 'allow' | 'require_approval' | 'deny' {
     if (toolMetadata.sideEffect === 'external') return 'deny';
     if (toolMetadata.sideEffect === 'propose') return 'require_approval';
     return 'allow';
+  }
+}
+
+export class AgentPolicyGate extends PolicyGate {
+  constructor(private readonly policies: Readonly<Record<string, AgentToolPolicy>>) {
+    super();
+  }
+
+  override decide(toolMetadata: ToolMetadata, toolName?: string): 'allow' | 'require_approval' | 'deny' {
+    if (toolMetadata.sideEffect === 'external') return 'deny';
+    if (!toolName) return 'deny';
+    const configured = this.policies[toolName];
+    if (!configured || configured === 'deny') return 'deny';
+    if (configured === 'require_approval') return 'require_approval';
+    return super.decide(toolMetadata, toolName);
   }
 }

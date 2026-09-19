@@ -1,7 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, session, shell } from 'electron';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { EditableAgentMemoryStore } from '../../../src/infrastructure/persistence/EditableAgentMemoryStore';
+import { createSharedPathReadTool } from '../../../src/infrastructure/filesystem/sharedPathReadTool';
 import { ApprovalService } from '../../../src/application/approvals';
-import { CareerAgentLoader } from '../../../src/application/agents/CareerAgentLoader';
 import { CareerAuditService } from '../../../src/application/careerAudit';
 import {
   chatContextBudget,
@@ -11,16 +13,28 @@ import {
 import { buildChatModeInstructions } from '../../../src/application/chatMode';
 import { ContextBuilder } from '../../../src/application/context';
 import { AgentRuntime } from '../../../src/application/intelligence';
+import type { AgentDefinition } from '../../../src/application/agents/types';
+import { AgentOnboardingService, renderOnboardingStep } from '../../../src/application/onboarding/AgentOnboardingService';
+import { AgentDisplayNameService } from '../../../src/application/agents/AgentDisplayNameService';
 import { AdaptiveRoutingIntelligenceAdapter, type RoutingAttempt } from '../../../src/application/intelligenceRouting';
-import { PolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
+import { AgentPolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
 import { buildWorkspaceAccessInstructions, type WorkspaceRegistration } from '../../../src/application/workspaces';
-import type { IntelligencePort, ModelMessage, RoutingDecision, RoutingPolicy } from '../../../src/domain/intelligence';
+import type {
+  IntelligencePort,
+  ModelExecutionContext,
+  ModelMessage,
+  ModelRequest,
+  RoutingDecision,
+  RoutingPolicy,
+  SourceReference,
+} from '../../../src/domain/intelligence';
 import type { ChatMode, ChatSession } from '../../../src/domain/sessions';
-import { FileSystemAgentDefinitionSource } from '../../../src/infrastructure/agents/FileSystemAgentDefinitionSource';
+import { FileSystemAgentCatalog } from '../../../src/infrastructure/agents/FileSystemAgentCatalog';
 import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../src/infrastructure/filesystem/filesystemTools';
 import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
 import { gitDiffTool, gitLogTool, gitStatusTool } from '../../../src/infrastructure/git/gitTools';
 import { OpenAICompatibleLocalAdapter } from '../../../src/infrastructure/intelligence/openaiCompatibleLocalAdapter';
+import { DeterministicMemoryExtractionAdapter } from '../../../src/infrastructure/intelligence/deterministicMemoryExtractionAdapter';
 import {
   DelegatedCliIntelligenceAdapter,
   NodeCliProcessRunner,
@@ -29,14 +43,38 @@ import {
 } from '../../../src/infrastructure/intelligence/delegatedCliAdapter';
 import { MockIntelligenceAdapter } from '../../../src/infrastructure/mock/mockIntelligence';
 import { DefaultNetworkGateway } from '../../../src/infrastructure/network/DefaultNetworkGateway';
+import { webReadTool } from '../../../src/infrastructure/network/webReadTool';
 import { SqlitePersistence } from '../../../src/infrastructure/persistence/sqlite';
+import { SqlitePublicationPersistence } from '../../../src/infrastructure/publication/SqlitePublicationPersistence';
+import { PublicationCoordinator } from '../../../src/application/publication/PublicationCoordinator';
+import { FileSystemPublicationBundleBuilder } from '../../../src/infrastructure/publication/FileSystemPublicationBundleBuilder';
+import { discoverPublicationCandidates } from '../../../src/infrastructure/publication/PublicationCandidateDiscovery';
+import { GitSitePublisher } from '../../../src/infrastructure/publication/GitSitePublisher';
+import { ExactHttpPublicationVerifier } from '../../../src/infrastructure/publication/HttpPublicationVerifier';
+import { LinkedInOAuthService } from '../../../src/application/linkedin/connection';
+import { ElectronSafeStorageCredentialVault } from '../../../src/infrastructure/linkedin/ElectronSafeStorageCredentialVault';
+import { NativeOAuthLoopback } from '../../../src/infrastructure/linkedin/NativeOAuthLoopback';
+import { AtomicLinkedInPostReceiptStore, LinkedInPostsApi } from '../../../src/infrastructure/linkedin/LinkedInPostsApi';
+import { NodePkce } from '../../../src/infrastructure/linkedin/NodePkce';
+import type { PublicationWorkflow } from '../../../src/domain/publication/workflow';
 import {
   IPC_CHANNELS,
+  cancelChatRequest,
   parseApprovePendingActionInput,
+  parseAgentOnboardingInput,
+  parseRenameAgentDisplayNameInput,
+  parseCancelChatMessageInput,
   parseChatMessageInput,
   parseCreateChatSessionInput,
   parseEndpointConfigInput,
+  parseExternalLinkInput,
   parseModelDiscoveryInput,
+  parseLinkedInPublisherConfigurationInput,
+  parseLinkedInApprovalRequestInput,
+  parsePublicationSiteTargetInput,
+  parsePublicationNoPayloadInput,
+  parseStartPublicationInput,
+  parseStartPublicationCandidateInput,
   parseProposeProfileUpdateInput,
   parseRegisterWorkspaceInput,
   parseWorkspacePathInput,
@@ -44,8 +82,11 @@ import {
   parseSetChatSessionModeInput,
   parseRejectPendingActionInput,
   parseWorkspaceIdInput,
+  registerChatRequest,
+  releaseChatRequest,
 } from './ipcContract';
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
+import type { AgentSummary, PublicationSetup } from '../shared/api';
 import { discoverOllamaModels, inspectOllamaModel, isOllamaCloudModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
 
 const userDataOverride = process.env.AW_USER_DATA_PATH?.trim();
@@ -56,8 +97,13 @@ const intelligenceHealth = new Map<string, {
   lastError?: string;
   checkedAt: string;
 }>();
+const chatRequestControllers = new Map<string, AbortController>();
 const endpointSettingKey = 'endpoint-config';
 let persistence: SqlitePersistence | null = null;
+let agentMemory: EditableAgentMemoryStore | null = null;
+let linkedInOAuth: LinkedInOAuthService | null = null;
+let linkedInPostsApi: LinkedInPostsApi | null = null;
+let publicationCoordinator: PublicationCoordinator | null = null;
 
 class DesktopMockIntelligenceAdapter implements IntelligencePort {
   async execute(
@@ -96,13 +142,251 @@ function getPersistence(): SqlitePersistence {
   return persistence;
 }
 
-function getCareerAgentDirectory(): string {
-  return app.isPackaged
-    ? join(process.resourcesPath, 'agents', 'career')
-    : join(process.cwd(), 'src', 'agents', 'career');
+function getAgentMemoryStore(): EditableAgentMemoryStore {
+  if (!agentMemory) agentMemory = new EditableAgentMemoryStore(join(app.getPath('userData'), 'agents'), getPersistence());
+  return agentMemory;
 }
 
-async function ensureWorkspaceSelection(): Promise<{
+function getAgentDisplayNameService(): AgentDisplayNameService {
+  return new AgentDisplayNameService(getPersistence());
+}
+
+async function toAgentSummary(agent: AgentDefinition): Promise<AgentSummary> {
+  return {
+    id: agent.id,
+    name: await getAgentDisplayNameService().resolve(agent.id, agent.name),
+    description: agent.description,
+    quickActions: agent.quickActions,
+    onboarding: agent.onboarding,
+  };
+}
+
+function getPublicationPersistence(): SqlitePublicationPersistence {
+  return new SqlitePublicationPersistence(getPersistence());
+}
+
+const publicationWorkspaceRoots = {
+  async getWorkspaceRoot(workspaceId: string): Promise<string> {
+    const workspace = await getPersistence().getWorkspace(workspaceId);
+    if (!workspace) throw new Error(`Publication workspace is not registered: ${workspaceId}`);
+    return workspace.rootPath;
+  },
+};
+
+function getLinkedInOAuth(): LinkedInOAuthService {
+  if (linkedInOAuth) return linkedInOAuth;
+  if (!app.isPackaged && process.env.AW_LINKEDIN_MOCK === '1') {
+    let mockCredential: string | null = null;
+    linkedInOAuth = new LinkedInOAuthService(
+      {
+        async set(_id, secret) { mockCredential = secret; },
+        async get() { return mockCredential; },
+        async delete() { mockCredential = null; },
+      },
+      {
+        async authorize(createAuthorizationUrl) {
+          const redirectUri = 'http://127.0.0.1:43123/callback';
+          const authorization = new URL(createAuthorizationUrl(redirectUri));
+          return { code: 'mock-code', state: authorization.searchParams.get('state') ?? '', redirectUri };
+        },
+      },
+      new NodePkce(),
+      {
+        async fetch(url) {
+          if (url.endsWith('/accessToken')) return new Response(JSON.stringify({
+            access_token: 'mock-main-process-token', expires_in: 3_600, scope: 'openid profile w_member_social',
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          return new Response(JSON.stringify({ sub: 'mock-member', name: 'Mock LinkedIn Member' }), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+          });
+        },
+      },
+    );
+    return linkedInOAuth;
+  }
+  const vault = new ElectronSafeStorageCredentialVault(
+    join(app.getPath('userData'), 'credentials'),
+    safeStorage,
+  );
+  linkedInOAuth = new LinkedInOAuthService(
+    vault,
+    new NativeOAuthLoopback({ openExternal: async (url) => { await shell.openExternal(url); } }),
+    new NodePkce(),
+    { fetch: (url, init) => fetch(url, init) },
+  );
+  return linkedInOAuth;
+}
+
+function getLinkedInPostsApi(): LinkedInPostsApi {
+  if (linkedInPostsApi) return linkedInPostsApi;
+  linkedInPostsApi = new LinkedInPostsApi(
+    () => getPublicationPersistence().getLinkedInPublisherConfiguration(),
+    getLinkedInOAuth(),
+    new AtomicLinkedInPostReceiptStore(join(app.getPath('userData'), 'linkedin-post-receipts.json')),
+  );
+  return linkedInPostsApi;
+}
+
+function getPublicationCoordinator(): PublicationCoordinator {
+  if (publicationCoordinator) return publicationCoordinator;
+  const linkedIn = getLinkedInPostsApi();
+  publicationCoordinator = new PublicationCoordinator(
+    getPublicationPersistence(),
+    new GitSitePublisher(publicationWorkspaceRoots),
+    new ExactHttpPublicationVerifier(),
+    linkedIn,
+    linkedIn,
+  );
+  return publicationCoordinator;
+}
+
+function publicationIdentity(action: string): { actorLabel: string; at: string } {
+  return { actorLabel: `Desktop user (${action})`, at: new Date().toISOString() };
+}
+
+function summarizePublicationWorkflow(workflow: PublicationWorkflow) {
+  return {
+    id: workflow.id,
+    contentId: workflow.contentId,
+    stage: workflow.stage,
+    bundle: workflow.bundle,
+    ...(workflow.sitePublication ? { publicationUrl: workflow.sitePublication.publicationUrl } : {}),
+    ...(workflow.linkedInShare?.shareUrl ? { linkedInShareUrl: workflow.linkedInShare.shareUrl } : {}),
+    ...((workflow.linkedInApproval ?? workflow.linkedInApprovalRequest) ? {
+      linkedInApproval: {
+        commentary: (workflow.linkedInApproval ?? workflow.linkedInApprovalRequest)!.commentary,
+        publicationUrl: (workflow.linkedInApproval ?? workflow.linkedInApprovalRequest)!.publicationUrl,
+        authorUrn: (workflow.linkedInApproval ?? workflow.linkedInApprovalRequest)!.authorUrn,
+        ...((workflow.linkedInApproval ?? workflow.linkedInApprovalRequest)!.memberDisplayName
+          ? { memberDisplayName: (workflow.linkedInApproval ?? workflow.linkedInApprovalRequest)!.memberDisplayName }
+          : {}),
+        ...(workflow.linkedInApproval ? {
+          approvedBy: workflow.linkedInApproval.approvedBy,
+          approvedAt: workflow.linkedInApproval.approvedAt,
+        } : {}),
+      },
+    } : {}),
+  };
+}
+
+async function getPublicationSetup(): Promise<PublicationSetup> {
+  const store = getPublicationPersistence();
+  const [siteTarget, linkedInConfiguration, workflow, history] = await Promise.all([
+    store.getSiteTarget(),
+    store.getLinkedInPublisherConfiguration(),
+    store.getActiveWorkflow(),
+    store.getWorkflowHistory(),
+  ]);
+  return {
+    siteTarget,
+    linkedInConfiguration,
+    linkedInState: await getLinkedInOAuth().status(linkedInConfiguration),
+    activeWorkflow: workflow ? summarizePublicationWorkflow(workflow) : null,
+    history: history.map(summarizePublicationWorkflow),
+  };
+}
+
+async function getPublicationCandidates() {
+  const target = await getPublicationPersistence().getSiteTarget();
+  if (!target) return [];
+  const db = getPersistence();
+  const workspaces = await db.listWorkspaces();
+  if (!workspaces.some((workspace) => workspace.id === target.workspaceId)) {
+    throw new Error('The configured publication workspace is no longer registered');
+  }
+  const gateway = new DefaultWorkspaceGateway(
+    Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace.rootPath])),
+  );
+  return discoverPublicationCandidates({
+    actions: await db.listPendingActions(),
+    sessions: await db.listChatSessions(),
+    target,
+    workspaceGateway: gateway,
+  });
+}
+
+async function startPublicationBundle(input: {
+  contentId: string;
+  primaryArticlePath: string;
+  translationPaths: string[];
+  visualAssetPaths?: string[];
+  otherAssetPaths?: string[];
+}, expectedArtifactHashes?: Readonly<Record<string, string>>): Promise<PublicationSetup> {
+  const store = getPublicationPersistence();
+  const target = await store.getSiteTarget();
+  if (!target) throw new Error('Save a website publishing target before creating a publication');
+  const bundle = await new FileSystemPublicationBundleBuilder(publicationWorkspaceRoots).build(target, input);
+  if (expectedArtifactHashes) {
+    for (const artifact of bundle.artifacts) {
+      if (expectedArtifactHashes[artifact.path] !== artifact.sha256) {
+        throw new Error('Approved Blogger files changed while the publication was being assembled. Refresh and review them again.');
+      }
+    }
+  }
+  await getPublicationCoordinator().start({
+    id: randomUUID(),
+    bundle,
+    target,
+    requestedBy: publicationIdentity('bundle review requested'),
+  });
+  return getPublicationSetup();
+}
+
+function getAgentsDirectory(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'agents')
+    : join(process.cwd(), 'src', 'agents');
+}
+
+function getAgentCatalog(): FileSystemAgentCatalog {
+  return new FileSystemAgentCatalog(getAgentsDirectory());
+}
+
+function createOnboardingService(endpoint: EndpointConfig): AgentOnboardingService {
+  const deterministic = new DeterministicMemoryExtractionAdapter();
+  const intelligence: IntelligencePort = endpoint.mode === 'mock'
+    ? {
+      execute: (request, context, signal) => deterministic.execute(request, context, signal),
+      executeWithRouting: async (request: ModelRequest, context: ModelExecutionContext, signal: AbortSignal) => ({
+        response: await deterministic.execute(request, context, signal),
+        route: simulatedRoute(),
+      }),
+    } as IntelligencePort
+    : endpoint.configured === true
+      ? createRoutingIntelligence(endpoint).intelligence
+      : deterministic;
+  return new AgentOnboardingService(
+    getAgentCatalog(),
+    getAgentMemoryStore(),
+    intelligence,
+    {
+      modelId: endpoint.modelId,
+      executionMode: effectiveRoutingPolicy(endpoint) === 'local_only' ? 'local_only' : 'provider_allowed',
+      taskKind: 'onboarding_extraction',
+    },
+    undefined,
+    endpoint.mode !== 'mock' && endpoint.configured === true ? deterministic : undefined,
+  );
+}
+
+async function persistInitialOnboardingPrompt(chatSession: ChatSession): Promise<void> {
+  const db = getPersistence();
+  if ((await db.listChatMessages(chatSession.id)).length > 0) return;
+  const step = await createOnboardingService(await getEndpointConfig()).getStep(chatSession.agentId, 'initial');
+  if (step.kind !== 'question') return;
+  await db.appendChatMessage({
+    sessionId: chatSession.id,
+    sequence: 1,
+    role: 'assistant',
+    content: renderOnboardingStep(step),
+    sourceReferencesJson: '[]',
+    routingJson: null,
+    mode: null,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+async function ensureWorkspaceSelection(preferredWorkspaceId?: string | null): Promise<{
   selectedWorkspaceId: string;
   registrations: WorkspaceRegistration[];
   gateway: DefaultWorkspaceGateway;
@@ -110,7 +394,9 @@ async function ensureWorkspaceSelection(): Promise<{
   const db = getPersistence();
   const workspaces = await db.listWorkspaces();
   if (workspaces.length === 0) throw new Error('No workspace configured');
-  const selected = await db.getSelectedWorkspace() ?? (await db.listWorkspaces())[0];
+  const selected = workspaces.find((workspace) => workspace.id === preferredWorkspaceId)
+    ?? await db.getSelectedWorkspace()
+    ?? workspaces[0];
   if (!selected) throw new Error('No workspace configured');
   const all = await db.listWorkspaces();
   const roots = Object.fromEntries(all.map((workspace) => [workspace.id, workspace.rootPath]));
@@ -144,8 +430,10 @@ function localModelsAllowed(endpoint: EndpointConfig): boolean {
 }
 
 function cloudProvidersAllowed(endpoint: EndpointConfig): boolean {
-  return endpoint.allowedPaths?.cloudProviders
+  const boundaryAllowed = endpoint.allowedPaths?.cloudProviders
     ?? (endpoint.mode === 'delegated' || (endpoint.routingPolicy !== undefined && endpoint.routingPolicy !== 'local_only'));
+  const providerIds = endpoint.providerIds?.length ? endpoint.providerIds : endpoint.providerId ? [endpoint.providerId] : [];
+  return boundaryAllowed && providerIds.length > 0;
 }
 
 function ollamaCloudModelsAllowed(endpoint: EndpointConfig): boolean {
@@ -196,17 +484,20 @@ async function getEndpointConfig(): Promise<EndpointConfig> {
       ollamaCloudModels: false,
       cloudProviders: parsed.mode === 'delegated' || (parsed.routingPolicy !== undefined && parsed.routingPolicy !== 'local_only'),
     };
-    if (allowedPaths.cloudProviders && !parsed.providerId) throw new Error('Invalid delegated provider');
+    const providerIds = [...new Set(parsed.providerIds ?? (parsed.providerId ? [parsed.providerId] : []))];
+    providerIds.forEach((providerId) => getDelegatedProvider(providerId));
+    const providerId = providerIds[0];
+    if (allowedPaths.cloudProviders && !providerId) throw new Error('Invalid delegated provider');
     if (parsed.mode !== 'mock' && !allowedPaths.localModels && !allowedPaths.ollamaCloudModels && !allowedPaths.cloudProviders) throw new Error('No intelligence path allowed');
     const routingPolicy = allowedPaths.ollamaCloudModels || allowedPaths.cloudProviders ? 'adaptive' : 'local_only';
     return {
       mode: parsed.mode,
       baseUrl: parsed.baseUrl,
       modelId: parsed.modelId,
-      ...(parsed.providerId ? { providerId: parsed.providerId } : {}),
+      ...(providerId ? { providerId } : {}),
       ...(parsed.providerModelId ? { providerModelId: parsed.providerModelId } : {}),
       ollamaModelIds: parsed.ollamaModelIds ?? [parsed.modelId],
-      providerIds: parsed.providerIds ?? (parsed.providerId ? [parsed.providerId] : []),
+      providerIds,
       routingPolicy,
       allowedPaths,
       configured: true,
@@ -221,7 +512,20 @@ async function getEndpointConfig(): Promise<EndpointConfig> {
 }
 
 async function saveEndpointConfig(config: EndpointConfig): Promise<void> {
-  await getPersistence().setSetting(endpointSettingKey, JSON.stringify(config));
+  const providerIds = [...new Set(config.providerIds ?? (config.providerId ? [config.providerId] : []))];
+  providerIds.forEach((providerId) => getDelegatedProvider(providerId));
+  const providerId = providerIds[0];
+  const normalized: EndpointConfig = {
+    ...config,
+    providerIds,
+    ...(providerId ? {
+      providerId,
+      providerModelId: config.providerId === providerId
+        ? config.providerModelId ?? getDelegatedProvider(providerId).defaultModel
+        : getDelegatedProvider(providerId).defaultModel,
+    } : { providerId: undefined, providerModelId: undefined }),
+  };
+  await getPersistence().setSetting(endpointSettingKey, JSON.stringify(normalized));
 }
 
 function effectiveRoutingPolicy(endpoint: EndpointConfig): RoutingPolicy {
@@ -267,7 +571,7 @@ function createRoutingIntelligence(endpoint: EndpointConfig): {
     }).filter(routeCandidateReady)
     : [];
   const router = new AdaptiveRoutingIntelligenceAdapter(
-    effectiveRoutingPolicy(endpoint), local, [...ollamaCloud, ...providers],
+    effectiveRoutingPolicy(endpoint), local, [...providers, ...ollamaCloud],
     { localMs: 90_000, externalMs: 120_000 }, recordRoutingAttempt,
   );
   return { intelligence: router, router };
@@ -347,21 +651,28 @@ async function testEndpointConnection(config: EndpointConfig): Promise<{ ok: tru
     }, 'provider_allowed', 60_000);
   } else if (useOllamaCloud) failures.push('Ollama Cloud: no compatible cloud model discovered');
 
-  if (useProviders && config.providerId) {
-    const provider = getDelegatedProvider(config.providerId);
-    await attempt({
-      id: provider.id, label: provider.label, location: 'external',
-      modelId: config.providerModelId ?? provider.defaultModel,
-      intelligence: new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp'))),
-    }, 'provider_allowed', 60_000);
+  const providerIds = config.providerIds?.length
+    ? [...new Set(config.providerIds)]
+    : config.providerId ? [config.providerId] : [];
+  if (useProviders && providerIds.length > 0) {
+    for (const providerId of providerIds) {
+      const provider = getDelegatedProvider(providerId);
+      await attempt({
+        id: provider.id, label: provider.label, location: 'external',
+        modelId: providerId === config.providerId
+          ? config.providerModelId ?? provider.defaultModel
+          : provider.defaultModel,
+        intelligence: new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp'))),
+      }, 'provider_allowed', 60_000);
+    }
   } else if (useProviders) failures.push('Connected providers: no authenticated provider discovered');
 
   if (successes.length === 0) throw new Error(`No allowed intelligence source is currently available. ${failures.join(' | ')}`);
   return {
     ok: true,
     message: failures.length > 0
-      ? `Available: ${successes.join(', ')}. Career Agent will bypass unavailable sources automatically. ${failures.join(' | ')}`
-      : `Available: ${successes.join(', ')}. Career Agent will route requests automatically.`,
+      ? `Available: ${successes.join(', ')}. Career will bypass unavailable sources automatically. ${failures.join(' | ')}`
+      : `Available: ${successes.join(', ')}. Career will route requests automatically.`,
   };
 }
 
@@ -378,10 +689,10 @@ async function assertEndpointWorkflowCompatible(endpoint: EndpointConfig): Promi
     );
     if (!capability.toolCalling) {
       if (externalIntelligenceAllowed(endpoint)) return;
-      throw new Error(`${modelId} cannot run Career Agent because it does not support tool calling. Install a tool-capable Ollama model.`);
+      throw new Error(`${modelId} cannot run Career because it does not support tool calling. Install a tool-capable Ollama model.`);
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes('cannot run Career Agent')) throw error;
+    if (error instanceof Error && error.message.includes('cannot run Career')) throw error;
     // Preserve support for non-Ollama OpenAI-compatible local endpoints.
   }
 }
@@ -398,29 +709,36 @@ async function listProviderConnections(): Promise<Array<{
     try {
       const version = await runner.run(provider.command, ['--version'], '', controller.signal);
       if (version.exitCode !== 0) throw new Error(version.stderr);
+      const versionLabel = (version.stdout.trim() || version.stderr.trim()).split(/\r?\n/u)[0]?.slice(0, 120);
       if (!provider.statusArgs) {
         return {
           id: provider.id, label: provider.label, kind: 'delegated_cli' as const,
           installed: true, authenticated: null,
           detail: 'Installed; authentication is verified on first request.',
           defaultModel: provider.defaultModel,
+          modelLabel: 'Provider account default',
+          ...(versionLabel ? { version: versionLabel } : {}),
         };
       }
       const status = await runner.run(provider.command, provider.statusArgs, '', controller.signal);
+      const statusOutput = `${status.stdout}\n${status.stderr}`;
+      const discoveredModel = provider.discoverDefaultModel?.(statusOutput);
       return {
         id: provider.id, label: provider.label, kind: 'delegated_cli' as const,
         installed: true, authenticated: status.exitCode === 0,
         detail: status.exitCode === 0
           ? 'Signed in through the provider CLI; use Test connection to verify inference.'
           : 'CLI installed; sign-in required.',
-        defaultModel: provider.defaultModel,
+        defaultModel: discoveredModel ?? provider.defaultModel,
+        modelLabel: discoveredModel ?? 'Provider account default',
+        ...(versionLabel ? { version: versionLabel } : {}),
       };
     } catch {
       return {
         id: provider.id, label: provider.label, kind: 'delegated_cli' as const,
         installed: false, authenticated: false,
         detail: `Install ${provider.command} and sign in to connect.`,
-        defaultModel: provider.defaultModel,
+        defaultModel: provider.defaultModel, modelLabel: 'Provider account default',
       };
     } finally {
       clearTimeout(timer);
@@ -451,7 +769,7 @@ async function ensureChatSession(): Promise<ChatSession> {
   const selectedWorkspace = await db.getSelectedWorkspace();
   const created: ChatSession = {
     id: `session-${Date.now()}`,
-    name: 'Career Agent Session',
+    name: 'Career conversation',
     mode: 'autopilot',
     workspaceId: selectedWorkspace?.id ?? null,
     agentId: 'career',
@@ -463,6 +781,7 @@ async function ensureChatSession(): Promise<ChatSession> {
   };
   await db.saveChatSession(created);
   await db.selectChatSession(created.id);
+  await persistInitialOnboardingPrompt(created);
   return created;
 }
 
@@ -484,22 +803,37 @@ async function getChatConversation(sessionIdValue: string): Promise<ModelMessage
     .map((message) => ({ role: message.role, content: message.content })) as ModelMessage[];
 }
 
-function buildCareerChatContext(
+async function buildAgentChatContext(
   chatSession: ChatSession,
   conversation: ModelMessage[],
   registrations: WorkspaceRegistration[],
   selectedWorkspaceId?: string,
   tools?: ReturnType<ToolRegistry['getModelTools']>,
 ) {
-  const loader = new CareerAgentLoader(new FileSystemAgentDefinitionSource(getCareerAgentDirectory()));
-  const agent = loader.load();
+  const agent = getAgentCatalog().get(chatSession.agentId);
+  const confirmedMemory = (await getAgentMemoryStore().getAgentMemory(chatSession.agentId))
+    .filter((entry) => entry.confirmationStatus === 'confirmed');
+  const dynamicMemory = confirmedMemory.length > 0
+    ? `\n\n## Confirmed conversational memory\n\n${confirmedMemory
+      .map((entry) => `- ${entry.fieldKey}: ${JSON.stringify(entry.value)}`)
+      .join('\n')}`
+    : '';
+  const memoryContent = `${agent.memoryContext.content}${dynamicMemory}`;
   return new ContextBuilder().buildRequest(
     {
       systemPrompt: `${agent.systemPrompt}\n\n===\n\n${buildWorkspaceAccessInstructions(
         registrations,
         selectedWorkspaceId,
       )}\n\n===\n\n${buildChatModeInstructions(chatSession.mode)}`,
-      memoryContext: agent.memoryContext,
+      memoryContext: {
+        ...agent.memoryContext,
+        content: memoryContent,
+        byteLength: Buffer.byteLength(memoryContent, 'utf8'),
+        sourceReferences: [
+          ...agent.memoryContext.sourceReferences,
+          ...confirmedMemory.map((entry) => ({ type: 'memory' as const, label: entry.fieldKey })),
+        ],
+      },
       conversation,
       ...(tools ? { tools } : {}),
     },
@@ -510,17 +844,18 @@ function buildCareerChatContext(
 async function getChatContextUsage(): Promise<ChatContextUsage> {
   const db = getPersistence();
   const chatSession = await ensureChatSession();
-  const [conversation, registrations, selectedWorkspace] = await Promise.all([
+  const [persistedMessages, conversation, registrations, selectedWorkspace] = await Promise.all([
+    db.listChatMessages(chatSession.id),
     getChatConversation(chatSession.id),
     db.listWorkspaces(),
     db.getSelectedWorkspace(),
   ]);
-  return summarizeChatContextUsage(buildCareerChatContext(
+  return summarizeChatContextUsage(await buildAgentChatContext(
     chatSession,
     conversation,
     registrations,
     selectedWorkspace?.id,
-  ));
+  ), { hasUserContext: persistedMessages.some((message) => message.role === 'user') });
 }
 
 async function appendChatPair(
@@ -529,7 +864,7 @@ async function appendChatPair(
   mode: ChatMode,
   assistantMessage: string,
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>,
-  route: RoutingDecision,
+  route?: RoutingDecision,
 ): Promise<void> {
   const now = new Date().toISOString();
   const existing = await getPersistence().listChatMessages(sessionIdValue);
@@ -551,7 +886,7 @@ async function appendChatPair(
     role: 'assistant',
     content: assistantMessage,
     sourceReferencesJson: JSON.stringify(sourceReferences),
-    routingJson: JSON.stringify(route),
+    routingJson: route ? JSON.stringify(route) : null,
     mode: null,
     createdAt: now,
   });
@@ -589,36 +924,68 @@ async function getChatHistory(): Promise<Array<{
   return exchanges;
 }
 
-async function runChatMessage(message: string): Promise<{
-  userMessage: string;
-  assistantMessage: string;
-  sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
-  route?: RoutingDecision;
-  mode: ChatMode;
+async function prepareChatMessage(message: string, sessionId: string, signal: AbortSignal): Promise<{
+  sessionId: string;
+  exchange: {
+    userMessage: string;
+    assistantMessage: string;
+    sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
+    route?: RoutingDecision;
+    mode: ChatMode;
+  };
 }> {
+  signal.throwIfAborted();
+  const chatSession = (await getPersistence().listChatSessions())
+    .find((sessionValue) => sessionValue.id === sessionId);
+  if (!chatSession) throw new Error(`Unknown chat session: ${sessionId}`);
   const endpoint = await getEndpointConfig();
+  const onboarding = await createOnboardingService(endpoint).handleMessage(chatSession.agentId, message, signal);
+  if (onboarding) {
+    return {
+      sessionId: chatSession.id,
+      exchange: {
+        userMessage: message,
+        assistantMessage: onboarding.message,
+        sourceReferences: [],
+        ...(onboarding.route ? { route: onboarding.route } : {}),
+        mode: chatSession.mode,
+      },
+    };
+  }
   await assertEndpointWorkflowCompatible(endpoint);
-  const workspaceContext = await ensureWorkspaceSelection();
-  const approvalContext = await approvals();
-  const chatSession = await ensureChatSession();
-
-  const toolRegistry = new ToolRegistry();
-  toolRegistry.register(filesystemReadTool);
-  toolRegistry.register(gitStatusTool);
-  toolRegistry.register(gitLogTool);
-  toolRegistry.register(gitDiffTool);
-  toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, chatSession.id));
-
-  const toolExecutor = new ToolExecutor(toolRegistry);
-  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
-
+  const db = getPersistence();
+  const registrations = await db.listWorkspaces();
+  const selectedWorkspace = registrations.find((workspace) => workspace.id === chatSession.workspaceId)
+    ?? await db.getSelectedWorkspace()
+    ?? registrations[0];
+  const workspaceGateway = selectedWorkspace
+    ? new DefaultWorkspaceGateway(Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])))
+    : undefined;
   const persistedConversation = await getChatConversation(chatSession.id);
   const nextConversation = [...persistedConversation, { role: 'user' as const, content: message }];
-  const built = buildCareerChatContext(
+
+  const toolRegistry = new ToolRegistry();
+  toolRegistry.register(webReadTool);
+  toolRegistry.register(createSharedPathReadTool(nextConversation
+    .filter((turn) => turn.role === 'user').map((turn) => turn.content)));
+  if (workspaceGateway && selectedWorkspace) {
+    const approvalService = new ApprovalService(db, workspaceGateway);
+    toolRegistry.register(filesystemReadTool);
+    toolRegistry.register(gitStatusTool);
+    toolRegistry.register(gitLogTool);
+    toolRegistry.register(gitDiffTool);
+    toolRegistry.register(createFilesystemProposeWriteTool(approvalService, chatSession.id));
+  }
+
+  const toolExecutor = new ToolExecutor(toolRegistry);
+  const agent = getAgentCatalog().get(chatSession.agentId);
+  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceGateway, agent.toolPolicies);
+
+  const built = await buildAgentChatContext(
     chatSession,
     nextConversation,
-    workspaceContext.registrations,
-    workspaceContext.selectedWorkspaceId,
+    registrations,
+    selectedWorkspace?.id,
     toolRegistry.getModelTools(),
   );
   const result = await runtime.runWithTrace(
@@ -626,35 +993,43 @@ async function runChatMessage(message: string): Promise<{
     {
       modelId: endpoint.modelId,
       executionMode: effectiveRoutingPolicy(endpoint) === 'local_only' ? 'local_only' : 'provider_allowed',
-      workspaceId: workspaceContext.selectedWorkspaceId,
+      workspaceId: selectedWorkspace?.id,
       taskKind: 'chat',
     },
-    new AbortController().signal,
+    signal,
   );
+  signal.throwIfAborted();
   const route = router?.getLastDecision() ?? simulatedRoute();
-  await appendChatPair(chatSession.id, message, chatSession.mode, result.content, result.sourceReferences, route);
   return {
-    userMessage: message,
-    assistantMessage: result.content,
-    sourceReferences: result.sourceReferences,
-    route,
-    mode: chatSession.mode,
+    sessionId: chatSession.id,
+    exchange: {
+      userMessage: message,
+      assistantMessage: result.content,
+      sourceReferences: result.sourceReferences,
+      route,
+      mode: chatSession.mode,
+    },
   };
 }
 
 function createRuntime(
   endpoint: EndpointConfig,
   toolExecutor: ToolExecutor,
-  workspaceGateway: DefaultWorkspaceGateway,
+  workspaceGateway: DefaultWorkspaceGateway | undefined,
+  toolPolicies: Readonly<Record<string, 'allow' | 'require_approval' | 'deny'>>,
 ): { runtime: AgentRuntime; router: AdaptiveRoutingIntelligenceAdapter | null } {
   const { intelligence, router } = createRoutingIntelligence(endpoint);
   const runtime = new AgentRuntime(
     intelligence,
     {
-      execute: (toolName, input, context) => toolExecutor.execute(toolName, input, { ...context, workspaceGateway }),
+      execute: (toolName, input, context) => toolExecutor.execute(toolName, input, {
+        ...context,
+        workspaceId: context.workspaceId ?? '',
+        workspaceGateway,
+      }),
       getMetadata: (toolName) => toolExecutor.getMetadata(toolName),
     },
-    new PolicyGate(),
+    new AgentPolicyGate(toolPolicies),
     {
       maxSteps: 6,
       maxToolCalls: 8,
@@ -690,11 +1065,12 @@ async function runCareerAudit(): Promise<{
   toolRegistry.register(gitDiffTool);
   toolRegistry.register(createFilesystemProposeWriteTool(approvalContext.service, chatSession.id));
   const toolExecutor = new ToolExecutor(toolRegistry);
-  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceContext.gateway);
+  const agent = getAgentCatalog().get('career');
+  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceContext.gateway, agent.toolPolicies);
   const signal = new AbortController().signal;
 
   const evidenceMessages: ModelMessage[] = [];
-  const evidenceSources: Array<{ type: 'file' | 'git_commit' | 'git_diff' | 'git_status' | 'memory'; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }> = [];
+  const evidenceSources: SourceReference[] = [];
   const registrations = await db.listWorkspaces();
   for (const workspace of registrations) {
     const evidenceRequests = workspace.kind === 'profile' || workspace.kind === 'cv'
@@ -723,8 +1099,6 @@ async function runCareerAudit(): Promise<{
     }
   }
 
-  const loader = new CareerAgentLoader(new FileSystemAgentDefinitionSource(getCareerAgentDirectory()));
-  const agent = loader.load();
   const auditService = new CareerAuditService(
     {
       saveWorkspace: (workspace) => db.saveWorkspace(workspace),
@@ -832,7 +1206,7 @@ async function proposeProfileUpdate(input: {
       },
       getMetadata: (toolName) => toolExecutor.getMetadata(toolName),
     },
-    new PolicyGate(),
+    new AgentPolicyGate(getAgentCatalog().get('career').toolPolicies),
     {
       maxSteps: 3,
       maxToolCalls: 3,
@@ -934,6 +1308,146 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.getEndpointConfig, async () => getEndpointConfig());
 
+  ipcMain.handle(IPC_CHANNELS.getPublicationSetup, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.listPublicationCandidates, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    return (await getPublicationCandidates()).map(({ artifactHashes: _artifactHashes, ...candidate }) => candidate);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.savePublicationSiteTarget, async (_event, payload: unknown) => {
+    const target = parsePublicationSiteTargetInput(payload);
+    await getPublicationPersistence().saveSiteTarget(target);
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.clearPublicationSiteTarget, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    await getPublicationPersistence().clearSiteTarget();
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.saveLinkedInPublisherConfiguration, async (_event, payload: unknown) => {
+    const configuration = parseLinkedInPublisherConfigurationInput(payload);
+    await getPublicationPersistence().saveLinkedInPublisherConfiguration(configuration);
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.connectLinkedIn, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    const configuration = await getPublicationPersistence().getLinkedInPublisherConfiguration();
+    if (!configuration) throw new Error('Save the LinkedIn client ID and API version before connecting');
+    await getLinkedInOAuth().connect(configuration, new AbortController().signal);
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.disconnectLinkedIn, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    await getLinkedInOAuth().disconnect();
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.startPublication, async (_event, payload: unknown) => {
+    const input = parseStartPublicationInput(payload);
+    return startPublicationBundle(input);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.startPublicationCandidate, async (_event, payload: unknown) => {
+    const { candidateId, primaryLanguage } = parseStartPublicationCandidateInput(payload);
+    const candidate = (await getPublicationCandidates()).find((value) => value.id === candidateId);
+    if (!candidate) {
+      throw new Error('Approved Blogger files changed or are no longer available. Refresh and review them again.');
+    }
+    const primary = candidate.articles[primaryLanguage];
+    const translation = candidate.articles[primaryLanguage === 'tr' ? 'en' : 'tr'];
+    return startPublicationBundle({
+      contentId: candidate.contentId,
+      primaryArticlePath: primary.path,
+      translationPaths: [translation.path],
+      ...(candidate.visuals.length ? { visualAssetPaths: candidate.visuals.map((visual) => visual.path) } : {}),
+    }, candidate.artifactHashes);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.approveSitePublication, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    await getPublicationCoordinator().approveSite(publicationIdentity('site approval'));
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.publishSite, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    const controller = new AbortController();
+    await getPublicationCoordinator().publish(
+      publicationIdentity('site publication'),
+      publicationIdentity('site verification'),
+      controller.signal,
+    );
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.retrySiteVerification, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    await getPublicationCoordinator().retrySiteVerification(
+      publicationIdentity('site verification retry'),
+      new AbortController().signal,
+    );
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.requestLinkedInApproval, async (_event, payload: unknown) => {
+    const { commentary } = parseLinkedInApprovalRequestInput(payload);
+    const store = getPublicationPersistence();
+    const [configuration, workflow] = await Promise.all([
+      store.getLinkedInPublisherConfiguration(),
+      store.getActiveWorkflow(),
+    ]);
+    if (!configuration) throw new Error('LinkedIn publisher setup is missing');
+    if (!workflow?.sitePublication) throw new Error('Verified site publication is required before LinkedIn approval');
+    const credential = await getLinkedInOAuth().getValidCredential(configuration);
+    await getPublicationCoordinator().requestLinkedInApproval({
+      commentary,
+      publicationUrl: workflow.sitePublication.publicationUrl,
+      authorUrn: credential.member.authorUrn,
+      memberSubject: credential.member.subject,
+      ...(credential.member.displayName ? { memberDisplayName: credential.member.displayName } : {}),
+    }, publicationIdentity('LinkedIn approval request'));
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.approveLinkedIn, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    await getPublicationCoordinator().approveLinkedIn(publicationIdentity('LinkedIn approval'));
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.shareLinkedIn, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    await getPublicationCoordinator().share(
+      publicationIdentity('LinkedIn share'),
+      publicationIdentity('LinkedIn share verification'),
+      new AbortController().signal,
+    );
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.retryLinkedInVerification, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    await getPublicationCoordinator().retryLinkedInVerification(
+      publicationIdentity('LinkedIn verification retry'),
+      new AbortController().signal,
+    );
+    return getPublicationSetup();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.archivePublication, async (_event, payload: unknown) => {
+    parsePublicationNoPayloadInput(payload);
+    await getPublicationCoordinator().archiveCompleted();
+    return getPublicationSetup();
+  });
+
   ipcMain.handle(IPC_CHANNELS.listProviderConnections, async () => listProviderConnections());
 
   ipcMain.handle(IPC_CHANNELS.discoverLocalModels, async (_event, payload: unknown) => {
@@ -986,15 +1500,35 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.listAgents, async () => {
-    const agent = new CareerAgentLoader(
-      new FileSystemAgentDefinitionSource(getCareerAgentDirectory()),
-    ).load();
-    return [{
-      id: agent.id,
-      name: agent.name,
-      description: agent.description,
-      quickActions: agent.quickActions,
-    }];
+    return Promise.all(getAgentCatalog().list().map(toAgentSummary));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.renameAgentDisplayName, async (_event, payload: unknown) => {
+    const { agentId, displayName } = parseRenameAgentDisplayNameInput(payload);
+    const agent = getAgentCatalog().get(agentId);
+    await getAgentDisplayNameService().save(agentId, displayName);
+    return toAgentSummary(agent);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getAgentOnboarding, async (_event, payload: unknown) => {
+    const { agentId, intent } = parseAgentOnboardingInput(payload);
+    return createOnboardingService(await getEndpointConfig()).getStep(agentId, intent);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getAgentMemory, async (_event, payload: unknown) => {
+    const { agentId } = parseAgentOnboardingInput(payload);
+    getAgentCatalog().get(agentId);
+    return getAgentMemoryStore().getAgentMemory(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.openAgentMemoryFile, async (_event, payload: unknown) => {
+    const { agentId } = parseAgentOnboardingInput(payload);
+    getAgentCatalog().get(agentId);
+    await getAgentMemoryStore().getAgentMemory(agentId);
+    const path = getAgentMemoryStore().filePath(agentId);
+    const error = await shell.openPath(path);
+    if (error) throw new Error(error);
+    return path;
   });
 
   ipcMain.handle(IPC_CHANNELS.listChatSessions, async () => {
@@ -1009,6 +1543,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.createChatSession, async (_event, payload: unknown) => {
     const input = parseCreateChatSessionInput(payload);
+    getAgentCatalog().get(input.agentId);
     if (input.workspaceId && !(await getPersistence().getWorkspace(input.workspaceId))) {
       throw new Error(`Unknown workspace: ${input.workspaceId}`);
     }
@@ -1029,6 +1564,7 @@ function registerIpcHandlers(): void {
     await db.saveChatSession(created);
     await db.selectChatSession(created.id);
     if (created.workspaceId) await db.selectWorkspace(created.workspaceId);
+    await persistInitialOnboardingPrompt(created);
     return { ...created, selected: true };
   });
 
@@ -1079,8 +1615,33 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.getChatContextUsage, async () => getChatContextUsage());
 
   ipcMain.handle(IPC_CHANNELS.sendChatMessage, async (_event, payload: unknown) => {
-    const { message } = parseChatMessageInput(payload);
-    return runChatMessage(message);
+    const { message, requestId, sessionId } = parseChatMessageInput(payload);
+    const controller = registerChatRequest(chatRequestControllers, requestId);
+    try {
+      const prepared = await prepareChatMessage(message, sessionId, controller.signal);
+      releaseChatRequest(chatRequestControllers, requestId, controller);
+      await appendChatPair(
+        prepared.sessionId,
+        prepared.exchange.userMessage,
+        prepared.exchange.mode,
+        prepared.exchange.assistantMessage,
+        prepared.exchange.sourceReferences,
+        prepared.exchange.route,
+      );
+      return prepared.exchange;
+    } finally {
+      releaseChatRequest(chatRequestControllers, requestId, controller);
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.cancelChatMessage, async (_event, payload: unknown) => {
+    const { requestId } = parseCancelChatMessageInput(payload);
+    return cancelChatRequest(chatRequestControllers, requestId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.openExternalLink, async (_event, payload: unknown) => {
+    const { url } = parseExternalLinkInput(payload);
+    await shell.openExternal(url);
   });
 
   ipcMain.handle(IPC_CHANNELS.listPendingActions, async () => {

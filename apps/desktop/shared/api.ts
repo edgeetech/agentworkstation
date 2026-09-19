@@ -3,6 +3,7 @@ export type SourceReference = {
   workspaceId?: string;
   relativePath?: string;
   commitSha?: string;
+  url?: string;
   label?: string;
 };
 
@@ -83,6 +84,8 @@ export type ProviderConnection = {
   authenticated: boolean | null;
   detail: string;
   defaultModel: string;
+  modelLabel?: string;
+  version?: string;
   availability?: 'available' | 'limited' | 'unavailable' | 'unknown';
   lastError?: string;
 };
@@ -147,12 +150,138 @@ export type AgentSummary = {
   name: string;
   description: string;
   quickActions: AgentQuickAction[];
+  onboarding: OnboardingQuestion[];
+};
+
+export type OnboardingIntent = 'initial' | 'publish' | 'linkedin';
+export type OnboardingQuestion = {
+  id: string;
+  prompt: string;
+  memoryKey: string;
+  intent: OnboardingIntent;
+  critical: boolean;
+  required?: boolean;
+  optional?: boolean;
+  extractionHint: string;
+};
+export type AgentMemoryEntry = {
+  agentId: string;
+  fieldKey: string;
+  value: unknown;
+  provenance: { source: 'user_message'; questionId: string; capturedAt: string };
+  confidence: number;
+  confirmationStatus: 'pending' | 'confirmed' | 'rejected';
+  confirmedAt?: string;
+  updatedAt: string;
+};
+export type OnboardingStep =
+  | { kind: 'question'; question: OnboardingQuestion }
+  | { kind: 'confirmation'; question: OnboardingQuestion; memory: AgentMemoryEntry }
+  | { kind: 'complete'; intent: OnboardingIntent };
+
+export type PublicationSiteTarget = {
+  displayDomain: string;
+  workspaceId: string;
+  contentDirectory: string;
+  publishBranch: string;
+  approvedAssetDirectories?: readonly string[];
+  publicBaseUrl?: string;
+};
+
+export type LinkedInPublisherConfiguration = { clientId: string; apiVersion: string };
+
+export type LinkedInConnectionState = {
+  state: 'disconnected' | 'connecting' | 'connected' | 'expired' | 'error';
+  member?: { subject: string; authorUrn: string; displayName?: string };
+  expiresAt?: string;
+  error?: string;
+};
+
+export type PublicationStage =
+  | 'SITE_APPROVAL_PENDING'
+  | 'SITE_APPROVED'
+  | 'SITE_PUBLICATION_AWAITING_VERIFICATION'
+  | 'SITE_PUBLISHED_VERIFIED'
+  | 'LINKEDIN_APPROVAL_PENDING'
+  | 'LINKEDIN_APPROVED'
+  | 'LINKEDIN_SHARE_AWAITING_VERIFICATION'
+  | 'LINKEDIN_SHARED_VERIFIED';
+
+export type PublicationWorkflowSummary = {
+  id: string;
+  contentId: string;
+  stage: PublicationStage;
+  bundle: {
+    contentId: string;
+    primaryArticlePath: string;
+    artifacts: readonly {
+      path: string;
+      sha256: string;
+      role: 'primary-article' | 'translation' | 'visual-asset' | 'other-asset';
+    }[];
+  };
+  publicationUrl?: string;
+  linkedInShareUrl?: string;
+  linkedInApproval?: {
+    commentary: string;
+    publicationUrl: string;
+    authorUrn: string;
+    memberDisplayName?: string;
+    approvedBy?: string;
+    approvedAt?: string;
+  };
+};
+
+export type PublicationSetup = {
+  siteTarget: PublicationSiteTarget | null;
+  linkedInConfiguration: LinkedInPublisherConfiguration | null;
+  linkedInState: LinkedInConnectionState;
+  activeWorkflow: PublicationWorkflowSummary | null;
+  history: readonly PublicationWorkflowSummary[];
+};
+
+export type StartPublicationInput = {
+  contentId: string;
+  primaryArticlePath: string;
+  translationPaths: string[];
+  visualAssetPaths?: string[];
+  otherAssetPaths?: string[];
+};
+
+export type PublicationCandidateLanguage = 'tr' | 'en';
+
+export type PublicationCandidate = {
+  id: string;
+  contentId: string;
+  label: string;
+  sessionId: string;
+  sessionName: string;
+  workspaceId: string;
+  updatedAt: string;
+  recommendedPrimaryLanguage: PublicationCandidateLanguage;
+  articles: Record<PublicationCandidateLanguage, {
+    language: PublicationCandidateLanguage;
+    title: string;
+    description?: string;
+    path: string;
+    preview: string;
+    byteLength: number;
+  }>;
+  visuals: readonly {
+    path: string;
+    name: string;
+    format: string;
+    byteLength: number;
+    width?: string;
+    height?: string;
+    altText?: string;
+  }[];
 };
 
 export type CreateChatSessionInput = {
   name: string;
   workspaceId?: string;
-  agentId: 'career';
+  agentId: string;
   intelligencePreference: 'auto';
   permissionMode: 'interactive';
   isolationMode: 'read_only';
@@ -173,6 +302,30 @@ export type AgentWorkstationApi = {
   saveEndpointConfig: (config: EndpointConfig) => Promise<void>;
   testEndpointConnection: (config: EndpointConfig) => Promise<{ ok: true; message: string }>;
   listAgents: () => Promise<AgentSummary[]>;
+  renameAgentDisplayName: (agentId: string, displayName: string | null) => Promise<AgentSummary>;
+  getAgentOnboarding: (agentId: string, intent?: OnboardingIntent) => Promise<OnboardingStep>;
+  getAgentMemory: (agentId: string) => Promise<AgentMemoryEntry[]>;
+  openAgentMemoryFile: (agentId: string) => Promise<string>;
+  getPublicationSetup: () => Promise<PublicationSetup>;
+  listPublicationCandidates: () => Promise<PublicationCandidate[]>;
+  savePublicationSiteTarget: (target: PublicationSiteTarget) => Promise<PublicationSetup>;
+  clearPublicationSiteTarget: () => Promise<PublicationSetup>;
+  saveLinkedInPublisherConfiguration: (configuration: LinkedInPublisherConfiguration) => Promise<PublicationSetup>;
+  connectLinkedIn: () => Promise<PublicationSetup>;
+  disconnectLinkedIn: () => Promise<PublicationSetup>;
+  startPublication: (input: StartPublicationInput) => Promise<PublicationSetup>;
+  startPublicationCandidate: (
+    candidateId: string,
+    primaryLanguage: PublicationCandidateLanguage,
+  ) => Promise<PublicationSetup>;
+  approveSitePublication: () => Promise<PublicationSetup>;
+  publishSite: () => Promise<PublicationSetup>;
+  retrySiteVerification: () => Promise<PublicationSetup>;
+  requestLinkedInApproval: (commentary: string) => Promise<PublicationSetup>;
+  approveLinkedIn: () => Promise<PublicationSetup>;
+  shareLinkedIn: () => Promise<PublicationSetup>;
+  retryLinkedInVerification: () => Promise<PublicationSetup>;
+  archivePublication: () => Promise<PublicationSetup>;
   listChatSessions: () => Promise<ChatSessionRecord[]>;
   createChatSession: (input: CreateChatSessionInput | string) => Promise<ChatSessionRecord>;
   renameChatSession: (id: string, name: string) => Promise<ChatSessionRecord>;
@@ -181,7 +334,9 @@ export type AgentWorkstationApi = {
   selectChatSession: (id: string) => Promise<void>;
   getChatHistory: () => Promise<ChatExchange[]>;
   getChatContextUsage: () => Promise<ChatContextUsage>;
-  sendChatMessage: (message: string) => Promise<ChatExchange>;
+  sendChatMessage: (message: string, requestId: string, sessionId: string) => Promise<ChatExchange>;
+  cancelChatMessage: (requestId: string) => Promise<boolean>;
+  openExternalLink: (url: string) => Promise<void>;
   listPendingActions: () => Promise<PendingAction[]>;
   proposeProfileUpdate: (input: ProposalRequest) => Promise<PendingAction>;
   approvePendingAction: (actionId: string) => Promise<PendingAction>;

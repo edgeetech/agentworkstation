@@ -21,15 +21,15 @@ export class AgentRuntime {
       execute(toolName: string, input: unknown, context: { workspaceId: string; signal: AbortSignal }): Promise<{ output: unknown; sourceReferences: SourceReference[] }>;
       getMetadata(toolName: string): ToolMetadata;
     },
-    private readonly policyGate: { decide(metadata: { sideEffect: 'none' | 'propose' | 'external' }): 'allow' | 'require_approval' | 'deny' },
+    private readonly policyGate: { decide(metadata: { sideEffect: 'none' | 'propose' | 'external' }, toolName?: string): 'allow' | 'require_approval' | 'deny' },
     private readonly limits: ExecutionLimits,
   ) {}
 
-  async run(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId: string; taskKind?: TaskKind }, signal: AbortSignal): Promise<string> {
+  async run(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId?: string; taskKind?: TaskKind }, signal: AbortSignal): Promise<string> {
     return (await this.runWithTrace(request, context, signal)).content;
   }
 
-  async runWithTrace(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId: string; taskKind?: TaskKind }, signal: AbortSignal): Promise<AgentRunResult> {
+  async runWithTrace(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId?: string; taskKind?: TaskKind }, signal: AbortSignal): Promise<AgentRunResult> {
     let toolCalls = 0;
     const sourceReferences: SourceReference[] = [];
     for (let step = 0; step < this.limits.maxSteps; step += 1) {
@@ -50,7 +50,34 @@ export class AgentRuntime {
       toolCalls += 1;
       if (toolCalls > this.limits.maxToolCalls) throw new Error('Max tool calls exceeded');
       const metadata = this.toolExecutor.getMetadata(response.call.toolName);
-      const policy = this.policyGate.decide(metadata);
+      const workspaceId = context.workspaceId;
+      if (metadata.requiresWorkspace && !workspaceId) {
+        request = {
+          messages: [
+            ...request.messages,
+            {
+              role: 'assistant',
+              content: '',
+              toolCalls: [{
+                id: response.call.id,
+                toolName: response.call.toolName,
+                input: response.call.input,
+              }],
+            },
+            {
+              role: 'tool',
+              content: JSON.stringify({
+                error: 'Local workspace access is not configured. Continue without local files, or ask the user to add a folder from Workspaces when file access is essential.',
+              }),
+              toolCallId: response.call.id,
+              toolName: response.call.toolName,
+            },
+          ],
+          tools: request.tools,
+        };
+        continue;
+      }
+      const policy = this.policyGate.decide(metadata, response.call.toolName);
       if (policy === 'deny') throw new Error('Tool not allowed');
       if (policy === 'require_approval' && metadata.sideEffect !== 'propose') {
         throw new Error('Tool not allowed');
@@ -59,7 +86,7 @@ export class AgentRuntime {
       let result: { output: unknown; sourceReferences: SourceReference[] };
       try {
         result = await this.withTimeout(
-          () => this.toolExecutor.execute(response.call.toolName, response.call.input, { workspaceId: context.workspaceId, signal: AbortSignal.any([signal, toolAbort.signal]) }),
+          () => this.toolExecutor.execute(response.call.toolName, response.call.input, { workspaceId: workspaceId ?? '', signal: AbortSignal.any([signal, toolAbort.signal]) }),
           this.limits.toolTimeoutMs,
           toolAbort,
           'Tool timeout exceeded',

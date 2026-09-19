@@ -45,6 +45,13 @@ Agent Workstation provides that common foundation:
 Release 0.1 proves this hub model as a Windows-first Electron application.
 **Career Agent** is the first complete specialist: it connects profile and project
 repositories, audits career evidence, and proposes human-reviewed improvements.
+**Blogger Agent** is the second specialist and validates the multi-agent experience:
+it learns from explicitly selected published writing, prepares natural Turkish and
+English drafts, proposes original copyright-safe SVG visuals, and assembles exact
+reviewable publication bundles. Site delivery is owned by Agent Workstation behind
+target configuration, immutable content hashes, a production-branch check, separate
+human approval, and live URL verification. LinkedIn posting remains unavailable until
+a real OAuth connection is configured and the exact social copy receives its own approval.
 
 ```text
 Agent Workstation hub
@@ -53,7 +60,8 @@ Agent Workstation hub
 ├── Files, evidence, actions, and privacy
 ├── Policy gates and human approval
 └── Specialized agent definitions
-    └── Career Agent (included in Release 0.1)
+    ├── Career Agent
+    └── Blogger Agent (bilingual draft, visual, publication, and social workflows)
 ```
 
 ---
@@ -112,7 +120,7 @@ synthetic repositories. No private workspace content is included.
 |---|---|
 | 🧭 **Specialized-agent hub** | Choose an agent, workspace, and persistent session on the left; work in the focused conversation at the center; inspect Files / Evidence / Actions / Privacy on the right. |
 | 💬 **Persistent agent sessions** | Create, switch, rename, and delete workspace-bound conversations. Agent identity, history, mode, model route, and context usage survive restarts. |
-| 🗂️ **Many registered workspaces** | Register the repositories agents may use. The shipped Career Agent can reason across profile and project workspaces while each active session keeps one authoritative workspace context. |
+| 🗂️ **Files when needed** | Paste a public URL or an exact absolute text-file path into chat for read-only inspection. Connect a folder only when the agent needs to explore further files or Git history. |
 | 🔎 **Evidence-first inspection** | Browse safe workspace files and inspect structured provenance from files, Git status, Git log, Git diff, and agent memory. |
 | 🧠 **Automatic intelligence routing** | Allow on-device Ollama, Ollama Cloud, detected provider CLIs, or a combination. The router evaluates the prompt and availability instead of asking the user to pick a model for every message. |
 | 🟢 **Visible model availability** | See which local models and provider connections are available, limited, incompatible, or unavailable. The resolved model remains visible on each answer. |
@@ -121,6 +129,7 @@ synthetic repositories. No private workspace content is included.
 | 📊 **Context awareness** | A continuously visible context indicator uses the application's authoritative prompt-budget calculation; it is not estimated separately in React. |
 | ✅ **Human-approved editing** | File changes become PendingActions with an exact diff. Approval checks for stale source content before an atomic application-owned write. |
 | 💾 **Restart recovery** | SQLite persists workspaces, sessions, messages, routing metadata, context-relevant state, and pending actions in Electron's user-data directory. |
+| 📝 **Editable agent memory** | Confirmed setup facts live in `agents/<agent-id>/memory.json` under the same user-data directory. Use the chat `+` menu to open the file; valid edits are read on the next interaction. Existing SQLite memory is migrated on first access. |
 
 ---
 
@@ -197,9 +206,11 @@ Built-in quick actions cover:
 
 ## 🔒 Safety and privacy
 
-- **Workspace-bounded file access.** `WorkspaceGateway` canonicalizes paths,
+- **Workspace-bounded exploration.** `WorkspaceGateway` canonicalizes paths,
   rejects traversal and symlink escapes, denies sensitive filenames, and limits
-  file size before content reaches an agent.
+  file size before content reaches an agent. An exact absolute text-file path
+  explicitly written by the user may also be read without connecting its folder;
+  this grant does not extend to neighboring files.
 - **No renderer filesystem shortcut.** The Electron renderer uses narrow IPC
   contracts; it never receives arbitrary filesystem or Infrastructure access.
 - **Policy-gated tools.** Read-only and side-effecting tools carry metadata and
@@ -217,7 +228,7 @@ Built-in quick actions cover:
 
 Registered repositories are never moved into the application. Operational state
 is stored in `agentworkstation.db` under Electron's per-user application-data
-directory.
+directory; editable, non-secret setup memory is stored separately as per-agent JSON.
 
 ---
 

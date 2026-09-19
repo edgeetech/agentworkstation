@@ -35,4 +35,18 @@ describe('chat context usage', () => {
     expect(usage.percentage).toBe(100);
     expect(usage.truncatedSections).toEqual(['conversation', 'toolResults']);
   });
+
+  it('reports zero for a fresh session even when agent instructions and onboarding prompts exist', () => {
+    const usage = summarizeChatContextUsage(
+      result(chatContextBudget.maxTotalContentBytes / 4, ['instructions']),
+      { hasUserContext: false },
+    );
+
+    expect(usage).toEqual({
+      usedBytes: 0,
+      limitBytes: 48 * 1024,
+      percentage: 0,
+      truncatedSections: [],
+    });
+  });
 });

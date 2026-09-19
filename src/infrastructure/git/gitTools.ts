@@ -141,7 +141,7 @@ export const gitStatusTool: AgentTool<{ workspaceId: string }, ToolResult> = {
     required: ['workspaceId'],
     additionalProperties: false,
   },
-  metadata: { readOnly: true, sideEffect: 'none', sensitive: false },
+  metadata: { readOnly: true, sideEffect: 'none', sensitive: false, requiresWorkspace: true },
   async execute(input, context): Promise<ToolResult> {
     const workspacePath = requireWorkspaceRoot(context, input.workspaceId);
     const output = await runGit(workspacePath, ['status', '--porcelain=v1', '--branch', '-z'], context.signal);
@@ -167,7 +167,7 @@ export const gitLogTool: AgentTool<{ workspaceId: string; limit?: number }, Tool
     required: ['workspaceId'],
     additionalProperties: false,
   },
-  metadata: { readOnly: true, sideEffect: 'none', sensitive: false },
+  metadata: { readOnly: true, sideEffect: 'none', sensitive: false, requiresWorkspace: true },
   async execute(input, context): Promise<ToolResult> {
     const workspacePath = requireWorkspaceRoot(context, input.workspaceId);
     const limit = Math.min(input.limit ?? 10, 20);
@@ -197,7 +197,7 @@ export const gitDiffTool: AgentTool<GitDiffInput, ToolResult> = {
     required: ['workspaceId'],
     additionalProperties: false,
   },
-  metadata: { readOnly: true, sideEffect: 'none', sensitive: false },
+  metadata: { readOnly: true, sideEffect: 'none', sensitive: false, requiresWorkspace: true },
   async execute(input, context): Promise<ToolResult> {
     const workspacePath = requireWorkspaceRoot(context, input.workspaceId);
     const maxBytes = Math.min(input.maxBytes ?? DEFAULT_DIFF_BYTES, MAX_DIFF_BYTES);

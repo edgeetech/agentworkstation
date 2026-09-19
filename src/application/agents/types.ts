@@ -1,4 +1,5 @@
 import type { SourceReference } from '@domain/intelligence';
+import type { OnboardingQuestion } from '@domain/onboarding';
 
 export type AgentToolPolicy = 'allow' | 'require_approval' | 'deny';
 
@@ -22,10 +23,12 @@ export type AgentDefinitionMaterials = {
   workflows: AgentContentFile[];
   memory: AgentContentFile[];
   quickActions: AgentQuickAction[];
+  onboarding?: OnboardingQuestion[];
   toolPolicies: Record<string, AgentToolPolicy>;
 };
 
-export type AgentDefinition = AgentDefinitionMaterials & {
+export type AgentDefinition = Omit<AgentDefinitionMaterials, 'onboarding'> & {
+  onboarding: OnboardingQuestion[];
   systemPrompt: string;
   memoryContext: {
     content: string;

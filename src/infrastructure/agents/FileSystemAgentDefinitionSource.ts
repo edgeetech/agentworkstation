@@ -17,6 +17,16 @@ const agentConfigSchema = z.object({
     prompt: z.string().min(1),
     workflow: z.string().min(1).optional(),
   })).default([]),
+  onboarding: z.array(z.object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+    prompt: z.string().min(1),
+    memoryKey: z.string().regex(/^[a-z][A-Za-z0-9]*(?:\.[a-z][A-Za-z0-9]*)+$/),
+    intent: z.enum(['initial', 'publish', 'linkedin']),
+    critical: z.boolean(),
+    required: z.boolean().optional(),
+    optional: z.boolean().optional(),
+    extractionHint: z.string().min(1),
+  })).default([]),
   memory: z.object({ directory: z.string().min(1) }).optional(),
   toolPolicies: z.record(z.enum(['allow', 'require_approval', 'deny'])),
 });
@@ -43,6 +53,7 @@ export class FileSystemAgentDefinitionSource implements AgentDefinitionSource {
       workflows,
       memory,
       quickActions: config.quickActions,
+      onboarding: config.onboarding,
       toolPolicies: config.toolPolicies,
     };
   }

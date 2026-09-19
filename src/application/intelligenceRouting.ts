@@ -21,6 +21,11 @@ export type RoutingAttempt = {
   error?: string;
 };
 
+export type RoutedModelResponse = {
+  response: ModelResponse;
+  route: RoutingDecision;
+};
+
 export function promptNeedsStrongerReasoning(request: ModelRequest): boolean {
   const prompt = [...request.messages].reverse().find((message) => message.role === 'user')?.content.trim() ?? '';
   if (!prompt) return false;
@@ -60,6 +65,14 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
     context: ModelExecutionContext,
     signal: AbortSignal,
   ): Promise<ModelResponse> {
+    return (await this.executeWithRouting(request, context, signal)).response;
+  }
+
+  async executeWithRouting(
+    request: ModelRequest,
+    context: ModelExecutionContext,
+    signal: AbortSignal,
+  ): Promise<RoutedModelResponse> {
     const candidates = this.candidatesFor(request, context);
     if (candidates.length === 0) {
       throw new Error(this.policy === 'local_only'
@@ -87,8 +100,9 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
         );
         if (response.type === 'error') throw new Error(response.error);
         this.onAttempt?.({ candidate, status: 'available' });
-        this.lastDecision = this.decisionFor(candidate, context, index > 0);
-        return response;
+        const route = this.decisionFor(candidate, context, index > 0);
+        this.lastDecision = route;
+        return { response, route };
       } catch (error) {
         if (signal.aborted) throw error;
         const message = attemptAbort.signal.aborted
@@ -111,11 +125,10 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
     if (this.policy === 'local_only') return this.local;
     const prefersExternal = context.taskKind === 'audit'
       || context.taskKind === 'proposal'
+      || context.taskKind === 'onboarding_extraction'
       || (context.taskKind === 'chat' && promptNeedsStrongerReasoning(request));
     if (this.policy === 'adaptive' && prefersExternal) {
-      const [preferredExternal, ...otherExternal] = this.external;
-      return [preferredExternal, ...this.local, ...otherExternal]
-        .filter((candidate): candidate is RoutingCandidate => candidate !== undefined);
+      return [...this.external, ...this.local];
     }
     return [...this.local, ...this.external];
   }

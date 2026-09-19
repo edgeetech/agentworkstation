@@ -27,6 +27,14 @@ function makeRegistry(): WorkspaceRegistryPort {
 }
 
 describe('WorkspaceService', () => {
+  it('keeps ordinary conversation available when no local workspace exists', () => {
+    const instructions = buildWorkspaceAccessInstructions([]);
+
+    expect(instructions).toContain('Continue normal conversation and reasoning without local files');
+    expect(instructions).toContain('ask the user to add a folder from Workspaces');
+    expect(instructions).toContain('Never present missing workspace access as a failed message');
+  });
+
   it('builds trusted ID-to-root instructions for workspace-aware tool calls', () => {
     const instructions = buildWorkspaceAccessInstructions([
       { id: 'site-profile', rootPath: 'C:\\Workspace\\profile', kind: 'profile' },

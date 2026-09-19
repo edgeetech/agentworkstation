@@ -6,17 +6,38 @@ describe('agent runtime', () => {
   it('returns final text', async () => {
     const runtime = new AgentRuntime(
       new MockIntelligenceAdapter([{ type: 'text', content: 'done' }]),
-      { execute: async () => ({ output: 'ok' }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
+      { execute: async () => ({ output: 'ok', sourceReferences: [] }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
       { decide: () => 'allow' },
       { maxSteps: 3, maxToolCalls: 3, maxToolResultBytes: 1024, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
     );
     await expect(runtime.run({ messages: [{ role: 'user', content: 'hi' }] }, { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' }, new AbortController().signal)).resolves.toBe('done');
   });
 
+  it('returns missing workspace access to the model instead of failing the conversation', async () => {
+    const runtime = new AgentRuntime(
+      new MockIntelligenceAdapter([
+        { type: 'tool_call', call: { id: 'call-files', toolName: 'filesystem.read', input: { workspaceId: 'missing', relativePath: 'README.md' } } },
+        { type: 'text', content: 'Please add the folder you want me to inspect, or we can continue without files.' },
+      ]),
+      {
+        execute: async () => { throw new Error('tool executor must not run without a workspace'); },
+        getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: true, requiresWorkspace: true }),
+      },
+      { decide: () => 'allow' },
+      { maxSteps: 3, maxToolCalls: 3, maxToolResultBytes: 1024, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
+    );
+
+    await expect(runtime.run(
+      { messages: [{ role: 'user', content: 'Read my latest article.' }] },
+      { modelId: 'mock', executionMode: 'local_only' },
+      new AbortController().signal,
+    )).resolves.toContain('add the folder');
+  });
+
   it('enforces policy based on tool metadata', async () => {
     const runtime = new AgentRuntime(
       new MockIntelligenceAdapter([{ type: 'tool_call', call: { id: 'call-dangerous', toolName: 'dangerous', input: {} } }]),
-      { execute: async () => ({ output: 'ok' }), getMetadata: () => ({ readOnly: false, sideEffect: 'external', sensitive: false }) },
+      { execute: async () => ({ output: 'ok', sourceReferences: [] }), getMetadata: () => ({ readOnly: false, sideEffect: 'external', sensitive: false }) },
       { decide: (metadata) => (metadata.sideEffect === 'external' ? 'deny' : 'allow') },
       { maxSteps: 1, maxToolCalls: 1, maxToolResultBytes: 1024, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
     );
@@ -26,7 +47,7 @@ describe('agent runtime', () => {
   it('enforces tool result size limits', async () => {
     const runtime = new AgentRuntime(
       new MockIntelligenceAdapter([{ type: 'tool_call', call: { id: 'call-echo', toolName: 'echo', input: {} } }]),
-      { execute: async () => ({ output: 'this result is too large' }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
+      { execute: async () => ({ output: 'this result is too large', sourceReferences: [] }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
       { decide: () => 'allow' },
       { maxSteps: 1, maxToolCalls: 1, maxToolResultBytes: 5, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
     );
@@ -38,7 +59,7 @@ describe('agent runtime', () => {
       {
         execute: async () => new Promise(() => {}),
       },
-      { execute: async () => ({ output: 'ok' }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
+      { execute: async () => ({ output: 'ok', sourceReferences: [] }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
       { decide: () => 'allow' },
       { maxSteps: 1, maxToolCalls: 1, maxToolResultBytes: 1024, modelTimeoutMs: 10, toolTimeoutMs: 1000 },
     );

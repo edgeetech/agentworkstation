@@ -10,6 +10,15 @@ export function buildWorkspaceAccessInstructions(
   registrations: WorkspaceRegistration[],
   selectedWorkspaceId?: string,
 ): string {
+  if (registrations.length === 0) {
+    return [
+      '## Local workspace access',
+      'No local workspace is registered for this conversation.',
+      'Continue normal conversation and reasoning without local files.',
+      'Only when the request genuinely requires inspecting or changing local files, explain what access is needed and ask the user to add a folder from Workspaces.',
+      'Never present missing workspace access as a failed message or a provider availability problem.',
+    ].join('\n');
+  }
   const selected = registrations.find((workspace) => workspace.id === selectedWorkspaceId);
   const ordered = selected
     ? [selected, ...registrations.filter((workspace) => workspace.id !== selected.id)]

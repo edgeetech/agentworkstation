@@ -15,6 +15,27 @@ export const IPC_CHANNELS = {
   saveEndpointConfig: 'agentWorkstation:saveEndpointConfig',
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
   listAgents: 'agentWorkstation:listAgents',
+  renameAgentDisplayName: 'agentWorkstation:renameAgentDisplayName',
+  getAgentOnboarding: 'agentWorkstation:getAgentOnboarding',
+  getAgentMemory: 'agentWorkstation:getAgentMemory',
+  openAgentMemoryFile: 'agentWorkstation:openAgentMemoryFile',
+  getPublicationSetup: 'agentWorkstation:getPublicationSetup',
+  listPublicationCandidates: 'agentWorkstation:listPublicationCandidates',
+  savePublicationSiteTarget: 'agentWorkstation:savePublicationSiteTarget',
+  clearPublicationSiteTarget: 'agentWorkstation:clearPublicationSiteTarget',
+  saveLinkedInPublisherConfiguration: 'agentWorkstation:saveLinkedInPublisherConfiguration',
+  connectLinkedIn: 'agentWorkstation:connectLinkedIn',
+  disconnectLinkedIn: 'agentWorkstation:disconnectLinkedIn',
+  startPublication: 'agentWorkstation:startPublication',
+  startPublicationCandidate: 'agentWorkstation:startPublicationCandidate',
+  approveSitePublication: 'agentWorkstation:approveSitePublication',
+  publishSite: 'agentWorkstation:publishSite',
+  retrySiteVerification: 'agentWorkstation:retrySiteVerification',
+  requestLinkedInApproval: 'agentWorkstation:requestLinkedInApproval',
+  approveLinkedIn: 'agentWorkstation:approveLinkedIn',
+  shareLinkedIn: 'agentWorkstation:shareLinkedIn',
+  retryLinkedInVerification: 'agentWorkstation:retryLinkedInVerification',
+  archivePublication: 'agentWorkstation:archivePublication',
   listChatSessions: 'agentWorkstation:listChatSessions',
   createChatSession: 'agentWorkstation:createChatSession',
   renameChatSession: 'agentWorkstation:renameChatSession',
@@ -24,6 +45,8 @@ export const IPC_CHANNELS = {
   getChatHistory: 'agentWorkstation:getChatHistory',
   getChatContextUsage: 'agentWorkstation:getChatContextUsage',
   sendChatMessage: 'agentWorkstation:sendChatMessage',
+  cancelChatMessage: 'agentWorkstation:cancelChatMessage',
+  openExternalLink: 'agentWorkstation:openExternalLink',
   listPendingActions: 'agentWorkstation:listPendingActions',
   proposeProfileUpdate: 'agentWorkstation:proposeProfileUpdate',
   approvePendingAction: 'agentWorkstation:approvePendingAction',
@@ -57,8 +80,15 @@ const endpointConfigSchema = z.object({
 }).superRefine((value, context) => {
   const cloudAllowed = value.allowedPaths?.cloudProviders
     ?? (value.mode === 'delegated' || (value.routingPolicy !== undefined && value.routingPolicy !== 'local_only'));
-  if (cloudAllowed && !value.providerId) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Delegated mode requires providerId' });
+  const providerIds = value.providerIds ?? (value.providerId ? [value.providerId] : []);
+  if (cloudAllowed && providerIds.length === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Cloud providers require an explicit allowlist' });
+  }
+  if (new Set(providerIds).size !== providerIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Provider priority list cannot contain duplicates' });
+  }
+  if (value.providerId && providerIds.length > 0 && value.providerId !== providerIds[0]) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'providerId must match the first allowed provider' });
   }
   if (value.mode !== 'mock' && value.allowedPaths && !value.allowedPaths.localModels
     && !value.allowedPaths.ollamaCloudModels && !value.allowedPaths.cloudProviders) {
@@ -66,23 +96,113 @@ const endpointConfigSchema = z.object({
   }
 });
 
+const agentOnboardingSchema = z.object({
+  agentId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
+  intent: z.enum(['initial', 'publish', 'linkedin']).default('initial'),
+});
+
+const renameAgentDisplayNameSchema = z.object({
+  agentId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
+  displayName: z.string()
+    .trim()
+    .min(1)
+    .max(48)
+    .refine((value) => !/\p{Cc}/u.test(value), 'Agent display name cannot contain control characters')
+    .nullable(),
+}).strict();
+
+export function parseAgentOnboardingInput(value: unknown): {
+  agentId: string;
+  intent: 'initial' | 'publish' | 'linkedin';
+} {
+  return agentOnboardingSchema.parse(value);
+}
+
+export function parseRenameAgentDisplayNameInput(value: unknown): { agentId: string; displayName: string | null } {
+  return renameAgentDisplayNameSchema.parse(value);
+}
+
 const workspacePathSchema = z.object({
   workspaceId: z.string().min(1),
   relativePath: z.string().min(1).max(4096),
 });
 
+const requestIdSchema = z.string().uuid();
+
 const chatMessageSchema = z.object({
   message: z.string().min(1),
+  requestId: requestIdSchema,
+  sessionId: z.string().min(1),
+});
+
+const cancelChatMessageSchema = z.object({
+  requestId: requestIdSchema,
+});
+
+const externalLinkSchema = z.object({
+  url: z.string().url().refine((value) => {
+    const protocol = new URL(value).protocol;
+    return protocol === 'https:' || protocol === 'http:';
+  }, 'Only HTTP and HTTPS links are allowed'),
 });
 
 const createChatSessionSchema = z.object({
   name: z.string().trim().min(1).max(120),
   workspaceId: z.string().min(1).optional(),
-  agentId: z.literal('career').default('career'),
+  agentId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/).default('career'),
   intelligencePreference: z.literal('auto').default('auto'),
   permissionMode: z.literal('interactive').default('interactive'),
   isolationMode: z.literal('read_only').default('read_only'),
 });
+
+const publicationSiteTargetSchema = z.object({
+  displayDomain: z.string().trim().min(1).max(253),
+  workspaceId: z.string().trim().min(1).max(128),
+  contentDirectory: z.string().trim().min(1).max(4096),
+  publishBranch: z.string().trim().min(1).max(128),
+  approvedAssetDirectories: z.array(z.string().trim().min(1).max(512)).optional(),
+  publicBaseUrl: z.string().trim().url().optional(),
+}).strict();
+
+const linkedInConnectionReferenceSchema = z.object({
+  reference: z.string().trim().min(1).max(256),
+}).strict();
+
+const linkedInPublisherConfigurationSchema = z.object({
+  clientId: z.string().min(1).max(256).regex(/^[A-Za-z0-9_-]+$/u),
+  apiVersion: z.string().regex(/^\d{6}$/u).refine((value) => {
+    const month = Number(value.slice(4));
+    return month >= 1 && month <= 12;
+  }, 'LinkedIn API version must use a valid YYYYMM value'),
+}).strict();
+
+const linkedInApprovalRequestSchema = z.object({
+  commentary: z.string().min(1).max(3_000).refine((value) => Boolean(value.trim()), 'Commentary is required'),
+}).strict();
+
+const publicationArtifactPathSchema = z.string().trim().min(1).max(1024);
+const startPublicationSchema = z.object({
+  contentId: z.string().trim().min(1).max(256),
+  primaryArticlePath: publicationArtifactPathSchema,
+  translationPaths: z.array(publicationArtifactPathSchema).min(1).max(100),
+  visualAssetPaths: z.array(publicationArtifactPathSchema).max(100).optional(),
+  otherAssetPaths: z.array(publicationArtifactPathSchema).max(100).optional(),
+}).strict().superRefine((value, context) => {
+  const paths = [
+    value.primaryArticlePath,
+    ...value.translationPaths,
+    ...(value.visualAssetPaths ?? []),
+    ...(value.otherAssetPaths ?? []),
+  ];
+  if (new Set(paths.map((item) => item.replaceAll('\\', '/').toLowerCase())).size !== paths.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Publication artifact paths must be unique' });
+  }
+});
+const startPublicationCandidateSchema = z.object({
+  candidateId: z.string().regex(/^[0-9a-f]{64}$/u),
+  primaryLanguage: z.enum(['tr', 'en']),
+}).strict();
+const publicationNoPayloadSchema = z.undefined();
 
 const renameChatSessionSchema = z.object({
   id: z.string().min(1),
@@ -143,19 +263,103 @@ export function parseEndpointConfigInput(value: unknown): {
   return endpointConfigSchema.parse(value);
 }
 
-export function parseChatMessageInput(value: unknown): { message: string } {
+export function parseChatMessageInput(value: unknown): { message: string; requestId: string; sessionId: string } {
   return chatMessageSchema.parse(value);
+}
+
+export function parseCancelChatMessageInput(value: unknown): { requestId: string } {
+  return cancelChatMessageSchema.parse(value);
+}
+
+export function parseExternalLinkInput(value: unknown): { url: string } {
+  return externalLinkSchema.parse(value);
+}
+
+export function registerChatRequest(
+  controllers: Map<string, AbortController>,
+  requestId: string,
+): AbortController {
+  if (controllers.has(requestId)) {
+    throw new Error(`Chat request is already running: ${requestId}`);
+  }
+  const controller = new AbortController();
+  controllers.set(requestId, controller);
+  return controller;
+}
+
+export function cancelChatRequest(
+  controllers: Map<string, AbortController>,
+  requestId: string,
+): boolean {
+  const controller = controllers.get(requestId);
+  if (!controller) return false;
+  controller.abort();
+  return true;
+}
+
+export function releaseChatRequest(
+  controllers: Map<string, AbortController>,
+  requestId: string,
+  controller: AbortController,
+): void {
+  if (controllers.get(requestId) === controller) {
+    controllers.delete(requestId);
+  }
 }
 
 export function parseCreateChatSessionInput(value: unknown): {
   name: string;
   workspaceId?: string;
-  agentId: 'career';
+  agentId: string;
   intelligencePreference: 'auto';
   permissionMode: 'interactive';
   isolationMode: 'read_only';
 } {
   return createChatSessionSchema.parse(value);
+}
+
+export function parsePublicationSiteTargetInput(value: unknown): {
+  displayDomain: string;
+  workspaceId: string;
+  contentDirectory: string;
+  publishBranch: string;
+  approvedAssetDirectories?: string[];
+  publicBaseUrl?: string;
+} {
+  return publicationSiteTargetSchema.parse(value);
+}
+
+export function parseLinkedInConnectionReferenceInput(value: unknown): { reference: string } {
+  return linkedInConnectionReferenceSchema.parse(value);
+}
+
+export function parseLinkedInPublisherConfigurationInput(value: unknown): { clientId: string; apiVersion: string } {
+  return linkedInPublisherConfigurationSchema.parse(value);
+}
+
+export function parseLinkedInApprovalRequestInput(value: unknown): { commentary: string } {
+  return linkedInApprovalRequestSchema.parse(value);
+}
+
+export function parseStartPublicationInput(value: unknown): {
+  contentId: string;
+  primaryArticlePath: string;
+  translationPaths: string[];
+  visualAssetPaths?: string[];
+  otherAssetPaths?: string[];
+} {
+  return startPublicationSchema.parse(value);
+}
+
+export function parseStartPublicationCandidateInput(value: unknown): {
+  candidateId: string;
+  primaryLanguage: 'tr' | 'en';
+} {
+  return startPublicationCandidateSchema.parse(value);
+}
+
+export function parsePublicationNoPayloadInput(value: unknown): undefined {
+  return publicationNoPayloadSchema.parse(value);
 }
 
 export function parseWorkspacePathInput(value: unknown): { workspaceId: string; relativePath: string } {

@@ -1,4 +1,5 @@
 import type { ChatMode, RoutingDecision } from '../../../shared/api';
+import { useI18n } from '../../i18n';
 
 export function PrivacyPanel({
   cloudPermitted,
@@ -9,18 +10,19 @@ export function PrivacyPanel({
   mode: ChatMode;
   route?: RoutingDecision;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
     <dl className="privacy-details">
-      <div><dt>Intelligence preference</dt><dd>Auto</dd></div>
-      <div><dt>Resolved intelligence</dt><dd>{route ? route.location === 'simulated' ? 'Simulated demo' : route.modelId : 'Not resolved yet'}</dd></div>
-      <div><dt>Execution mode</dt><dd>{mode === 'autopilot' ? 'Autopilot' : 'Standard'}</dd></div>
-      <div><dt>Policy</dt><dd>{cloudPermitted ? 'Cloud permitted' : 'Local Only'}</dd></div>
-      <div><dt>Last endpoint</dt><dd>{route ? `${route.providerLabel} · ${route.location}` : 'No request in this session'}</dd></div>
-      <div><dt>Telemetry</dt><dd>Not implemented</dd></div>
-      <div><dt>Network ledger</dt><dd>Detailed request history unavailable</dd></div>
+      <div><dt>{t('inspector.intelligencePreference')}</dt><dd>{t('inspector.auto')}</dd></div>
+      <div><dt>{t('inspector.resolvedIntelligence')}</dt><dd>{route ? route.location === 'simulated' ? t('inspector.simulated') : route.modelId : t('inspector.notResolved')}</dd></div>
+      <div><dt>{t('inspector.executionMode')}</dt><dd>{mode === 'autopilot' ? t('sidebar.autopilot') : t('sidebar.standard')}</dd></div>
+      <div><dt>{t('inspector.policy')}</dt><dd>{cloudPermitted ? t('sidebar.cloudPermitted') : t('sidebar.localOnly')}</dd></div>
+      <div><dt>{t('inspector.lastEndpoint')}</dt><dd>{route ? `${route.providerLabel} · ${route.location}` : t('inspector.noRequest')}</dd></div>
+      <div><dt>{t('inspector.telemetry')}</dt><dd>{t('inspector.notImplemented')}</dd></div>
+      <div><dt>{t('inspector.networkLedger')}</dt><dd>{t('inspector.historyUnavailable')}</dd></div>
       <p>{cloudPermitted
-        ? 'Allowed external intelligence may receive prompt context when selected by routing.'
-        : 'Current policy does not permit cloud intelligence. This panel does not infer unobserved network activity.'}</p>
+        ? t('inspector.cloudContext')
+        : t('inspector.localContext')}</p>
     </dl>
   );
 }

@@ -12,6 +12,7 @@ import { EvidencePanel } from './EvidencePanel';
 import { FilesPanel } from './FilesPanel';
 import { PendingActionsPanel } from './PendingActionsPanel';
 import { PrivacyPanel } from './PrivacyPanel';
+import { useI18n } from '../../i18n';
 
 type InspectorTab = 'files' | 'evidence' | 'actions' | 'privacy';
 
@@ -54,6 +55,7 @@ export function SessionInspector({
   onOpenReview: () => void;
   onError: (message: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [tab, setTab] = useState<InspectorTab>('evidence');
   const [requestedFile, setRequestedFile] = useState<SourceReference | null>(null);
   const sources = useMemo(() => uniqueSources(history, additionalSources), [additionalSources, history]);
@@ -61,19 +63,19 @@ export function SessionInspector({
 
   if (!session) {
     return (
-      <aside className="session-inspector" aria-label="Active session inspector">
-        <div className="inspector-empty standalone"><strong>No active session</strong><p>Create a session to inspect files, evidence, actions, and privacy.</p></div>
+      <aside className="session-inspector" aria-label={t('inspector.aria')}>
+        <div className="inspector-empty standalone"><strong>{t('inspector.noSession')}</strong><p>{t('inspector.noSessionHelp')}</p></div>
       </aside>
     );
   }
   return (
-    <aside className="session-inspector" aria-label="Active session inspector">
+    <aside className="session-inspector" aria-label={t('inspector.aria')}>
       <div className="inspector-heading">
-        <span>Active session</span>
+        <span>{t('inspector.activeSession')}</span>
         <strong>{session.name}</strong>
-        <small>{workspace?.id ?? 'Unassigned workspace'} · Career Agent</small>
+        <small>{workspace?.id ?? t('inspector.unassigned')} · {session.agentId === 'career' ? 'Career' : session.agentId === 'blogger' ? 'Blogger' : session.agentId}</small>
       </div>
-      <div className="inspector-tabs" role="tablist" aria-label="Session context">
+      <div className="inspector-tabs" role="tablist" aria-label={t('inspector.context')}>
         {(['files', 'evidence', 'actions', 'privacy'] as const).map((item) => (
           <button
             type="button"
@@ -88,7 +90,7 @@ export function SessionInspector({
               setTab(item);
             }}
           >
-            {item[0].toUpperCase() + item.slice(1)}
+            {t(`inspector.${item}`)}
             {item === 'evidence' && sources.length ? <b>{sources.length}</b> : null}
             {item === 'actions' && actions.length ? <b>{actions.length}</b> : null}
           </button>

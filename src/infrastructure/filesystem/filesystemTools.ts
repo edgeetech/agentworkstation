@@ -16,7 +16,7 @@ export const filesystemReadTool: AgentTool<{ workspaceId: string; relativePath: 
     required: ['workspaceId', 'relativePath'],
     additionalProperties: false,
   },
-  metadata: { readOnly: true, sideEffect: 'none', sensitive: true },
+  metadata: { readOnly: true, sideEffect: 'none', sensitive: true, requiresWorkspace: true },
   async execute(input, context): Promise<ToolResult> {
     if (!context.workspaceGateway) throw new Error('Workspace gateway unavailable');
     const result = await context.workspaceGateway.readFile(input.workspaceId, input.relativePath);
@@ -51,7 +51,7 @@ export function createFilesystemProposeWriteTool(
       required: ['workspaceId', 'targetPath', 'proposedContent'],
       additionalProperties: false,
     },
-    metadata: { readOnly: false, sideEffect: 'propose', sensitive: true },
+    metadata: { readOnly: false, sideEffect: 'propose', sensitive: true, requiresWorkspace: true },
     async execute(input): Promise<ToolResult> {
       const pendingAction = await approvals.proposeWrite({
         workspaceId: input.workspaceId,

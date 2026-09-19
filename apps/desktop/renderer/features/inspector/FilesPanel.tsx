@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WorkspaceEntry, WorkspaceFilePreview } from '../../../shared/api';
+import { useI18n } from '../../i18n';
 
 function parentPath(relativePath: string): string {
   const parts = relativePath.split('/').filter((part) => part && part !== '.');
@@ -20,6 +21,7 @@ export function FilesPanel({
   requestedFile?: string | null;
   onError: (message: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [directory, setDirectory] = useState('.');
   const [entries, setEntries] = useState<WorkspaceEntry[]>([]);
   const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);
@@ -74,28 +76,28 @@ export function FilesPanel({
   }, [requestedFile, workspaceId]);
 
   if (!workspaceId) {
-    return <div className="inspector-empty"><strong>No workspace</strong><p>Create or select a workspace session to browse files.</p></div>;
+    return <div className="inspector-empty"><strong>{t('inspector.noWorkspace')}</strong><p>{t('inspector.noWorkspaceHelp')}</p></div>;
   }
   return (
     <div className="files-panel">
       <div className="file-breadcrumb">
-        <button type="button" aria-label="Parent directory" disabled={directory === '.'} onClick={() => { setPreview(null); setDirectory(parentPath(directory)); }}>←</button>
+        <button type="button" aria-label={t('inspector.parentDirectory')} disabled={directory === '.'} onClick={() => { setPreview(null); setDirectory(parentPath(directory)); }}>←</button>
         <span>{workspaceId} / {directory === '.' ? '' : directory}</span>
       </div>
       {error ? (
         <div className="inspector-error" role="alert">
-          <strong>Files unavailable</strong>
+          <strong>{t('inspector.filesUnavailable')}</strong>
           <p>{error}</p>
-          <button type="button" onClick={() => { setPreview(null); setReloadVersion((value) => value + 1); }}>Reload directory</button>
+          <button type="button" onClick={() => { setPreview(null); setReloadVersion((value) => value + 1); }}>{t('inspector.reloadDirectory')}</button>
         </div>
       ) : preview ? (
         <div className="file-preview">
-          <div><button type="button" onClick={() => setPreview(null)}>Back to files</button><strong>{preview.relativePath}</strong></div>
-          {preview.truncated ? <small>Preview limited to 64 KB.</small> : null}
+          <div><button type="button" onClick={() => setPreview(null)}>{t('inspector.backToFiles')}</button><strong>{preview.relativePath}</strong></div>
+          {preview.truncated ? <small>{t('inspector.previewLimit')}</small> : null}
           <pre>{preview.content}</pre>
         </div>
-      ) : loading ? <div className="inspector-loading" role="status">Loading files…</div> : entries.length === 0 ? (
-        <div className="inspector-empty"><strong>Nothing to show</strong><p>This directory is empty or contains only protected files.</p></div>
+      ) : loading ? <div className="inspector-loading" role="status">{t('inspector.loadingFiles')}</div> : entries.length === 0 ? (
+        <div className="inspector-empty"><strong>{t('inspector.nothing')}</strong><p>{t('inspector.nothingHelp')}</p></div>
       ) : (
         <ul className="file-list">
           {entries.map((entry) => (
