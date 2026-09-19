@@ -9,13 +9,17 @@ function createActionId(): string {
   return `pending-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function contentHash(value: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+// SHA-256 replaces the previous FNV-1a 32-bit hash (weak, collision-prone).
+// Uses the standard Web Crypto API (available in both Electron renderer/main
+// and Node) rather than `node:crypto`, since the application layer is not
+// allowed to depend on Node-specific modules (see tests/architecture/boundaries.test.ts).
+// Old `fnv1a32:` hashes stored on pending actions from before this change will
+// never match a freshly computed `sha256:` hash, so approveAndExecute correctly
+// falls through to marking them STALE instead of silently accepting them.
+async function contentHash(value: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `sha256:${hex}`;
 }
 
 function normalizeLines(value: string): string[] {
@@ -108,8 +112,8 @@ export class ApprovalService {
       createdAt: now,
       status: 'PROPOSED',
       workspaceId: input.workspaceId,
-      expectedOriginalHash: contentHash(currentContent),
-      proposedContentHash: contentHash(input.proposedContent),
+      expectedOriginalHash: await contentHash(currentContent),
+      proposedContentHash: await contentHash(input.proposedContent),
       targetPath: input.targetPath,
       proposedContent: input.proposedContent,
       diff: buildUnifiedDiff(input.targetPath, currentContent, input.proposedContent),
@@ -146,7 +150,7 @@ export class ApprovalService {
     if (!targetWorkspaceId) throw new Error('Pending action missing workspace binding');
 
     const current = await this.workspaceGateway.readFileIfExists(targetWorkspaceId, existing.targetPath);
-    const currentHash = contentHash(current?.content ?? '');
+    const currentHash = await contentHash(current?.content ?? '');
     if (currentHash !== existing.expectedOriginalHash) {
       const stale: PendingAction = {
         ...existing,

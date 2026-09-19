@@ -68,6 +68,31 @@ describe('approval service', () => {
     expect(stale?.status).toBe('STALE');
   });
 
+  it('uses sha256 content hashes and marks pre-existing fnv1a32 hashes as stale', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-approval-hash-'));
+    fs.writeFileSync(path.join(root, 'README.md'), 'version A\n');
+    const gateway = new DefaultWorkspaceGateway({ project: root });
+    const persistence = makeDb();
+    const approvals = new ApprovalService(persistence, gateway);
+
+    const action = await approvals.proposeWrite({
+      workspaceId: 'project',
+      targetPath: 'README.md',
+      proposedContent: 'version B\n',
+      sessionId: 'session-hash',
+    });
+
+    expect(action.expectedOriginalHash.startsWith('sha256:')).toBe(true);
+    expect(action.proposedContentHash.startsWith('sha256:')).toBe(true);
+
+    const legacyHashed = { ...action, expectedOriginalHash: 'fnv1a32:deadbeef' };
+    await persistence.savePendingAction(legacyHashed);
+
+    await expect(approvals.approveAndExecute(action.id, 'project')).rejects.toThrow('stale');
+    const stale = await persistence.getPendingAction(action.id);
+    expect(stale?.status).toBe('STALE');
+  });
+
   it('creates pending actions through filesystem.proposeWrite without writing files', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-approval-tool-'));
     fs.writeFileSync(path.join(root, 'README.md'), 'initial\n');
