@@ -10,6 +10,7 @@ export type RoutingDecision = {
   modelId: string;
   reason: string;
   fallback: boolean;
+  costUsd?: number | null;
 };
 
 export type ModelExecutionContext = {

@@ -1,5 +1,6 @@
 import type { ExecutionMode, IntelligencePort, ModelRequest, ModelResponse } from '@domain/intelligence';
 import { buildProviderPrompt, parseDelegatedModelResponse } from './delegatedCliAdapter';
+import { buildDelegatedChildEnv } from './sessionEnv';
 
 type ClaudeAgentSdkModule = typeof import('@anthropic-ai/claude-agent-sdk');
 export type ClaudeAgentSdkQueryFn = ClaudeAgentSdkModule['query'];
@@ -31,25 +32,6 @@ const safeModel = (modelId: string): string => {
   if (!/^[a-zA-Z0-9._:/-]+$/.test(modelId)) throw new Error('Invalid delegated model ID');
   return modelId;
 };
-
-// Nested-session and gateway-routing markers must never leak into the delegated
-// process: a `claude` CLI spawned while the host machine is itself inside another
-// Claude Code session (messaging socket/session-id env vars) can hang waiting on a
-// handshake with a parent that isn't there, and an ambient ANTHROPIC_BASE_URL/
-// TAKSIM_* override would silently reroute this call through unrelated local
-// tooling (see docs/adr/ADR-011-taksim-integration-boundary.md).
-const SESSION_ENV_PREFIXES = ['CLAUDE_CODE_', 'CLAUDE_HOOKS_', 'TAKSIM_'];
-const SESSION_ENV_KEYS = new Set(['CLAUDECODE', 'CLAUDE_PID', 'ANTHROPIC_BASE_URL']);
-
-function buildChildEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const key of Object.keys(env)) {
-    if (SESSION_ENV_KEYS.has(key) || SESSION_ENV_PREFIXES.some((prefix) => key.startsWith(prefix))) {
-      delete env[key];
-    }
-  }
-  return env;
-}
 
 function accumulateUsage(usage: ClaudeAgentSdkUsage, source: Record<string, unknown>): void {
   const num = (value: unknown): number => (typeof value === 'number' ? value : 0);
@@ -93,7 +75,7 @@ export class ClaudeAgentSdkAdapter implements IntelligencePort {
     if (signal.aborted) forwardAbort();
     else signal.addEventListener('abort', forwardAbort, { once: true });
 
-    const cleanEnv = buildChildEnv();
+    const cleanEnv = buildDelegatedChildEnv();
 
     const usage: ClaudeAgentSdkUsage = {
       inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, totalCostUsd: null, model: null,

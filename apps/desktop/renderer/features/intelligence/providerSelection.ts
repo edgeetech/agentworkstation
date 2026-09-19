@@ -40,3 +40,8 @@ export function routeDisplayLabel(
     : route.modelId;
   return `${route.providerLabel} · ${model}`;
 }
+
+/** Formats a USD turn cost for display; sub-cent amounts keep enough precision to be non-zero. */
+export function formatCostUsd(costUsd: number): string {
+  return costUsd < 0.01 ? `$${costUsd.toFixed(4)}` : `$${costUsd.toFixed(2)}`;
+}

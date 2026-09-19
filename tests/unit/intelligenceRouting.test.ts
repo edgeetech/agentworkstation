@@ -156,4 +156,22 @@ describe('adaptive intelligence routing', () => {
     expect(local).not.toHaveBeenCalled();
     expect(router.getLastDecision()).toMatchObject({ providerId: 'claude', fallback: true });
   });
+
+  it('surfaces the turn cost from a candidate that reports usage', async () => {
+    const execute = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'cloud' }));
+    const claude = {
+      id: 'claude', label: 'claude', location: 'external' as const, modelId: 'claude-model',
+      intelligence: { execute, getLastUsage: () => ({ totalCostUsd: 0.0336 }) },
+    };
+    const router = new AdaptiveRoutingIntelligenceAdapter('adaptive', null, claude);
+    await router.execute(request, { modelId: 'ignored', executionMode: 'provider_allowed' }, new AbortController().signal);
+    expect(router.getLastDecision()).toMatchObject({ providerId: 'claude', costUsd: 0.0336 });
+  });
+
+  it('leaves cost unset for a candidate that does not report usage', async () => {
+    const local = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'local' }));
+    const router = new AdaptiveRoutingIntelligenceAdapter('local_only', candidate('ollama', 'local', local), null);
+    await router.execute(request, { modelId: 'ignored', executionMode: 'local_only' }, new AbortController().signal);
+    expect(router.getLastDecision()?.costUsd).toBeNull();
+  });
 });

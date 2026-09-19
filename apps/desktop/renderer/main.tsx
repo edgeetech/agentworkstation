@@ -25,6 +25,7 @@ import { PublicationSetupPanel } from "./features/publication/PublicationSetupPa
 import { SpecialistAvatar } from "./features/agents/SpecialistAvatar";
 import { MemoryConfirmation } from "./features/onboarding/MemoryConfirmation";
 import {
+  formatCostUsd,
   moveProvider,
   providerModelLabel,
   routeDisplayLabel,
@@ -111,6 +112,9 @@ const providerAvailable = (provider: ProviderConnection): boolean =>
 
 const routeLabel = (route: NonNullable<ChatExchange["route"]>, t: Translator): string =>
   routeDisplayLabel(route, t('chat.providerSelectedModel'), t('chat.simulatedModel'));
+
+const routeTooltip = (route: NonNullable<ChatExchange["route"]>, t: Translator): string =>
+  route.costUsd ? `${route.reason} · ${t('chat.modelCost', { cost: formatCostUsd(route.costUsd) })}` : route.reason;
 
 const availabilityLabel = (value: LocalModel["availability"] | ProviderConnection["availability"], t: Translator): string => {
   if (value === "limited") return t('app.usageLimited');
@@ -794,12 +798,19 @@ function App(): JSX.Element {
               <h1>{t('chat.helpTitle', { name: selectedAgentName })}</h1>
               <p>{selectedAgent?.description ?? t('chat.chooseContext')}</p>
             </div> : null
-          ) : history.map((exchange, i) => (
+          ) : history.map((exchange, i) => {
+            // The live onboarding card above already shows this turn's question or
+            // confirmation with proper localization; the raw backend-authored
+            // message (which onboarding renders in a fixed language regardless of
+            // the interface language) would otherwise duplicate it right below.
+            const isLiveOnboardingEcho = onboardingStep !== null && onboardingStep.kind !== "complete" && i === history.length - 1;
+            return (
             <div className="exchange" key={`${exchange.userMessage}-${i}`}>
               <div className="user-turn">
                 <div className="message user"><p>{exchange.userMessage}</p></div>
                 <PromptModeIcon mode={exchange.mode} />
               </div>
+              {isLiveOnboardingEcho ? null : (
               <div className="message assistant">
                 <span>{selectedAgentName}</span>
                 <MessageContent content={exchange.assistantMessage} />
@@ -814,7 +825,7 @@ function App(): JSX.Element {
                   <div
                     className="model-status"
                     aria-label={t('chat.modelUsed', { model: routeLabel(exchange.route, t) })}
-                    title={exchange.route.reason}
+                    title={routeTooltip(exchange.route, t)}
                   >
                     <i aria-hidden="true" />
                     <span>{routeLabel(exchange.route, t)}</span>
@@ -822,8 +833,10 @@ function App(): JSX.Element {
                   </div>
                 ) : null}
               </div>
+              )}
             </div>
-          ))}
+            );
+          })}
           {visibleChatFailure ? (
             <div className="exchange failed-exchange">
               <div className="user-turn">

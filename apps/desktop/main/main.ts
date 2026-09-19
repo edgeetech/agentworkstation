@@ -535,9 +535,17 @@ function effectiveRoutingPolicy(endpoint: EndpointConfig): RoutingPolicy {
 }
 
 function createDelegatedIntelligence(provider: DelegatedProviderDefinition): IntelligencePort {
-  return provider.id === 'claude'
-    ? new ClaudeAgentSdkAdapter(app.getPath('temp'))
-    : new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp')));
+  // Copilot intentionally stays on the CLI adapter: @github/copilot-sdk pins a
+  // JSON-RPC protocol version against its own installed CLI build, and this
+  // machine's separately-installed `copilot` CLI reports an older, incompatible
+  // version ("SDK supports versions 3-3, but server reports version 2"). The SDK's
+  // own bundled runtime avoids that mismatch but would need to be shipped in the
+  // packaged app (its win32 binary is currently excluded, see package.json) and
+  // it is not yet verified whether it shares the user's existing GitHub Copilot
+  // sign-in. CopilotAgentSdkAdapter is implemented and unit-tested for when that
+  // is resolved, but is not wired in here yet.
+  if (provider.id === 'claude') return new ClaudeAgentSdkAdapter(app.getPath('temp'));
+  return new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp')));
 }
 
 function createRoutingIntelligence(endpoint: EndpointConfig): {
