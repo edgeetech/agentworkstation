@@ -40,7 +40,9 @@ import {
   NodeCliProcessRunner,
   delegatedProviders,
   getDelegatedProvider,
+  type DelegatedProviderDefinition,
 } from '../../../src/infrastructure/intelligence/delegatedCliAdapter';
+import { ClaudeAgentSdkAdapter } from '../../../src/infrastructure/intelligence/claudeAgentSdkAdapter';
 import { MockIntelligenceAdapter } from '../../../src/infrastructure/mock/mockIntelligence';
 import { DefaultNetworkGateway } from '../../../src/infrastructure/network/DefaultNetworkGateway';
 import { webReadTool } from '../../../src/infrastructure/network/webReadTool';
@@ -532,6 +534,12 @@ function effectiveRoutingPolicy(endpoint: EndpointConfig): RoutingPolicy {
   return externalIntelligenceAllowed(endpoint) ? 'adaptive' : 'local_only';
 }
 
+function createDelegatedIntelligence(provider: DelegatedProviderDefinition): IntelligencePort {
+  return provider.id === 'claude'
+    ? new ClaudeAgentSdkAdapter(app.getPath('temp'))
+    : new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp')));
+}
+
 function createRoutingIntelligence(endpoint: EndpointConfig): {
   intelligence: IntelligencePort;
   router: AdaptiveRoutingIntelligenceAdapter | null;
@@ -563,10 +571,7 @@ function createRoutingIntelligence(endpoint: EndpointConfig): {
         modelId: providerId === endpoint.providerId
           ? endpoint.providerModelId ?? provider.defaultModel
           : provider.defaultModel,
-        intelligence: new DelegatedCliIntelligenceAdapter(
-          provider,
-          new NodeCliProcessRunner(app.getPath('temp')),
-        ),
+        intelligence: createDelegatedIntelligence(provider),
       };
     }).filter(routeCandidateReady)
     : [];
@@ -662,7 +667,7 @@ async function testEndpointConnection(config: EndpointConfig): Promise<{ ok: tru
         modelId: providerId === config.providerId
           ? config.providerModelId ?? provider.defaultModel
           : provider.defaultModel,
-        intelligence: new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp'))),
+        intelligence: createDelegatedIntelligence(provider),
       }, 'provider_allowed', 60_000);
     }
   } else if (useProviders) failures.push('Connected providers: no authenticated provider discovered');

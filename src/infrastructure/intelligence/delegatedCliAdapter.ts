@@ -147,7 +147,7 @@ export function getDelegatedProvider(id: string): DelegatedProviderDefinition {
   return provider;
 }
 
-function buildProviderPrompt(request: ModelRequest): string {
+export function buildProviderPrompt(request: ModelRequest): string {
   return [
     'You are an intelligence provider inside Agent Workstation.',
     'Do not use your own tools, shell, filesystem, network, plugins, or repository context.',

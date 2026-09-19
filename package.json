@@ -23,6 +23,7 @@
     "e2e": "npm run electron:prepare && playwright test"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.141",
     "better-sqlite3": "^11.9.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -63,7 +64,8 @@
       "dist/**/*",
       "dist-electron/**/*",
       "electron-main.cjs",
-      "package.json"
+      "package.json",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**/*"
     ],
     "extraResources": [
       {
