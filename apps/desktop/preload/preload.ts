@@ -49,6 +49,7 @@ const IPC_CHANNELS = {
   cancelChatMessage: 'agentWorkstation:cancelChatMessage',
   openExternalLink: 'agentWorkstation:openExternalLink',
   listPendingActions: 'agentWorkstation:listPendingActions',
+  getProposalTally: 'agentWorkstation:getProposalTally',
   proposeProfileUpdate: 'agentWorkstation:proposeProfileUpdate',
   approvePendingAction: 'agentWorkstation:approvePendingAction',
   rejectPendingAction: 'agentWorkstation:rejectPendingAction',
@@ -130,6 +131,7 @@ const api: AgentWorkstationApi = {
     ipcRenderer.invoke(IPC_CHANNELS.cancelChatMessage, { requestId }),
   openExternalLink: async (url) => ipcRenderer.invoke(IPC_CHANNELS.openExternalLink, { url }),
   listPendingActions: async () => ipcRenderer.invoke(IPC_CHANNELS.listPendingActions),
+  getProposalTally: async (agentId) => ipcRenderer.invoke(IPC_CHANNELS.getProposalTally, { agentId }),
   proposeProfileUpdate: async (input) => ipcRenderer.invoke(IPC_CHANNELS.proposeProfileUpdate, input),
   approvePendingAction: async (actionId) =>
     ipcRenderer.invoke(IPC_CHANNELS.approvePendingAction, { actionId }),

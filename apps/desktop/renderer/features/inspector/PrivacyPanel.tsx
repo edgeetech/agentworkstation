@@ -20,6 +20,7 @@ export function PrivacyPanel({
       <div><dt>{t('inspector.policy')}</dt><dd>{cloudPermitted ? t('sidebar.cloudPermitted') : t('sidebar.localOnly')}</dd></div>
       <div><dt>{t('inspector.lastEndpoint')}</dt><dd>{route ? `${route.providerLabel} · ${route.location}` : t('inspector.noRequest')}</dd></div>
       {route?.costUsd ? <div><dt>{t('inspector.lastCost')}</dt><dd>{formatCostUsd(route.costUsd)}</dd></div> : null}
+      {route?.authDisclosure ? <div><dt>{t('inspector.authDisclosure')}</dt><dd>{route.authDisclosure}</dd></div> : null}
       <div><dt>{t('inspector.telemetry')}</dt><dd>{t('inspector.notImplemented')}</dd></div>
       <div><dt>{t('inspector.networkLedger')}</dt><dd>{t('inspector.historyUnavailable')}</dd></div>
       <p>{cloudPermitted

@@ -11,6 +11,9 @@ export type RoutingDecision = {
   reason: string;
   fallback: boolean;
   costUsd?: number | null;
+  /** ToS-relevant note surfaced in the UI, e.g. when a provider route uses a
+   *  subscription login rather than metered API billing. */
+  authDisclosure?: string;
 };
 
 export type ModelExecutionContext = {

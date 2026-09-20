@@ -29,6 +29,14 @@ export type PendingAction = {
   route?: RoutingDecision;
 };
 
+/** Approve/reject tally over the most recent proposals for one agent, shown in the empty-state and session inspector. */
+export type ProposalTally = {
+  limit: number;
+  total: number;
+  approved: number;
+  rejected: number;
+};
+
 export type WorkspaceRecord = {
   id: string;
   rootPath: string;
@@ -75,6 +83,7 @@ export type RoutingDecision = {
   reason: string;
   fallback: boolean;
   costUsd?: number | null;
+  authDisclosure?: string;
 };
 
 export type ProviderConnection = {
@@ -339,6 +348,7 @@ export type AgentWorkstationApi = {
   cancelChatMessage: (requestId: string) => Promise<boolean>;
   openExternalLink: (url: string) => Promise<void>;
   listPendingActions: () => Promise<PendingAction[]>;
+  getProposalTally: (agentId: string) => Promise<ProposalTally>;
   proposeProfileUpdate: (input: ProposalRequest) => Promise<PendingAction>;
   approvePendingAction: (actionId: string) => Promise<PendingAction>;
   rejectPendingAction: (actionId: string, reason: string) => Promise<PendingAction>;

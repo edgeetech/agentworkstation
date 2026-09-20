@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   moveProvider,
   providerModelLabel,
+  routeBadgeLabel,
+  routeBadgeTooltip,
   routeDisplayLabel,
   selectedProviderIds,
   toggleProvider,
@@ -36,5 +38,30 @@ describe('provider selection policy', () => {
       policy: 'adaptive', location: 'external', providerId: 'codex', providerLabel: 'OpenAI Codex',
       modelId: 'default', reason: 'preferred', fallback: false,
     }, 'provider-selected model', 'Simulated demo')).toBe('OpenAI Codex · provider-selected model');
+  });
+
+  it('always names a cost in the model badge, falling back to n/a when unknown', () => {
+    const routeWithCost = {
+      policy: 'adaptive' as const, location: 'external' as const, providerId: 'claude', providerLabel: 'Claude',
+      modelId: 'sonnet', reason: 'preferred', fallback: false, costUsd: 0.0123,
+    };
+    expect(routeBadgeLabel(routeWithCost, 'provider-selected model', 'Simulated demo', (cost) => `cost ${cost}`, 'cost n/a'))
+      .toBe('Claude · sonnet · cost $0.01');
+
+    const routeWithoutCost = { ...routeWithCost, costUsd: undefined };
+    expect(routeBadgeLabel(routeWithoutCost, 'provider-selected model', 'Simulated demo', (cost) => `cost ${cost}`, 'cost n/a'))
+      .toBe('Claude · sonnet · cost n/a');
+  });
+
+  it('appends the provider auth disclosure to the badge tooltip only when present', () => {
+    const base = {
+      policy: 'adaptive' as const, location: 'external' as const, providerId: 'claude', providerLabel: 'Claude',
+      modelId: 'sonnet', reason: 'preferred', fallback: false,
+    };
+    expect(routeBadgeTooltip(base, (cost) => `cost ${cost}`, 'cost n/a')).toBe('preferred · cost n/a');
+    expect(routeBadgeTooltip(
+      { ...base, authDisclosure: 'Uses your local Claude Code login.' },
+      (cost) => `cost ${cost}`, 'cost n/a',
+    )).toBe('preferred · cost n/a · Uses your local Claude Code login.');
   });
 });

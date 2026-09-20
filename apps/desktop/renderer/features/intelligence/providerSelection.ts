@@ -45,3 +45,36 @@ export function routeDisplayLabel(
 export function formatCostUsd(costUsd: number): string {
   return costUsd < 0.01 ? `$${costUsd.toFixed(4)}` : `$${costUsd.toFixed(2)}`;
 }
+
+/**
+ * The model badge must always name a cost, even when none is known (local/simulated
+ * routes, or a provider that did not report one), so the user is never left guessing.
+ */
+export function routeCostLabel(
+  route: Pick<RoutingDecision, 'costUsd'>,
+  costTemplate: (cost: string) => string,
+  naLabel: string,
+): string {
+  return route.costUsd ? costTemplate(formatCostUsd(route.costUsd)) : naLabel;
+}
+
+/** Full model badge text: `<provider> · <model> · <cost>`. */
+export function routeBadgeLabel(
+  route: RoutingDecision,
+  providerSelectedModel: string,
+  simulatedModel: string,
+  costTemplate: (cost: string) => string,
+  naLabel: string,
+): string {
+  return `${routeDisplayLabel(route, providerSelectedModel, simulatedModel)} · ${routeCostLabel(route, costTemplate, naLabel)}`;
+}
+
+/** Model badge tooltip: routing reason, cost, and (when applicable) a provider auth disclosure. */
+export function routeBadgeTooltip(
+  route: RoutingDecision,
+  costTemplate: (cost: string) => string,
+  naLabel: string,
+): string {
+  const base = `${route.reason} · ${routeCostLabel(route, costTemplate, naLabel)}`;
+  return route.authDisclosure ? `${base} · ${route.authDisclosure}` : base;
+}

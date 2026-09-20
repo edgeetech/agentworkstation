@@ -215,6 +215,17 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
     return this.db.prepare('select * from pending_actions order by createdAt desc, id desc').all() as PendingAction[];
   }
 
+  /** Most recent proposals (any status) whose session belongs to the given agent, newest first. */
+  async listPendingActionsByAgent(agentId: string, limit: number): Promise<PendingAction[]> {
+    return this.db.prepare(`
+      select pa.* from pending_actions pa
+      join chat_sessions cs on cs.id = pa.sessionId
+      where cs.agentId = ?
+      order by pa.createdAt desc, pa.id desc
+      limit ?
+    `).all(agentId, limit) as PendingAction[];
+  }
+
   async saveWorkspace(workspace: WorkspaceRegistration): Promise<void> {
     this.db.prepare(`
       insert into workspace_registrations (id, rootPath, kind)

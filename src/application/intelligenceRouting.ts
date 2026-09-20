@@ -13,6 +13,7 @@ export type RoutingCandidate = {
   location: 'local' | 'external';
   modelId: string;
   intelligence: IntelligencePort;
+  authDisclosure?: string;
 };
 
 export type RoutingAttempt = {
@@ -171,6 +172,7 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
       reason,
       fallback,
       costUsd,
+      authDisclosure: candidate.authDisclosure,
     };
   }
 }

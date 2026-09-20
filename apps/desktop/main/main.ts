@@ -29,6 +29,7 @@ import type {
   SourceReference,
 } from '../../../src/domain/intelligence';
 import type { ChatMode, ChatSession } from '../../../src/domain/sessions';
+import { tallyProposals } from '../../../src/domain/actions';
 import { FileSystemAgentCatalog } from '../../../src/infrastructure/agents/FileSystemAgentCatalog';
 import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../src/infrastructure/filesystem/filesystemTools';
 import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
@@ -548,6 +549,17 @@ function createDelegatedIntelligence(provider: DelegatedProviderDefinition): Int
   return new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp')));
 }
 
+// ClaudeAgentSdkAdapter drives the `claude` CLI (pathToClaudeCodeExecutable: 'claude'),
+// which uses ANTHROPIC_API_KEY when present and otherwise falls back to the user's
+// existing Claude Code subscription login. Only the second path raises a ToS question
+// (using subscription credentials programmatically), so the disclosure is shown only
+// when no API key is configured.
+function claudeAuthDisclosure(providerId: string): string | undefined {
+  if (providerId !== 'claude' || process.env.ANTHROPIC_API_KEY) return undefined;
+  return 'Uses your local Claude Code login; check Anthropic’s terms for third-party use of subscription credentials. '
+    + 'Set ANTHROPIC_API_KEY to route this provider through metered API billing instead.';
+}
+
 function createRoutingIntelligence(endpoint: EndpointConfig): {
   intelligence: IntelligencePort;
   router: AdaptiveRoutingIntelligenceAdapter | null;
@@ -580,6 +592,7 @@ function createRoutingIntelligence(endpoint: EndpointConfig): {
           ? endpoint.providerModelId ?? provider.defaultModel
           : provider.defaultModel,
         intelligence: createDelegatedIntelligence(provider),
+        authDisclosure: claudeAuthDisclosure(providerId),
       };
     }).filter(routeCandidateReady)
     : [];
@@ -1664,6 +1677,12 @@ function registerIpcHandlers(): void {
       ...action,
       ...(action.routingJson ? { route: JSON.parse(action.routingJson) as RoutingDecision } : {}),
     }));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getProposalTally, async (_event, payload: unknown) => {
+    const { agentId } = payload as { agentId: string };
+    const recent = await getPersistence().listPendingActionsByAgent(agentId, 10);
+    return tallyProposals(recent, 10);
   });
 
   ipcMain.handle(IPC_CHANNELS.testEndpointConnection, async (_event, payload: unknown) => {

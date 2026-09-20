@@ -12,6 +12,7 @@ import type {
   LocalModel,
   ProviderConnection,
   OnboardingStep,
+  ProposalTally,
   WorkspaceRecord,
 } from "../shared/api";
 import {
@@ -25,10 +26,10 @@ import { PublicationSetupPanel } from "./features/publication/PublicationSetupPa
 import { SpecialistAvatar } from "./features/agents/SpecialistAvatar";
 import { MemoryConfirmation } from "./features/onboarding/MemoryConfirmation";
 import {
-  formatCostUsd,
   moveProvider,
   providerModelLabel,
-  routeDisplayLabel,
+  routeBadgeLabel,
+  routeBadgeTooltip,
   selectedProviderIds,
   toggleProvider,
 } from "./features/intelligence/providerSelection";
@@ -111,10 +112,13 @@ const providerAvailable = (provider: ProviderConnection): boolean =>
   providerReady(provider) && provider.availability !== "limited" && provider.availability !== "unavailable";
 
 const routeLabel = (route: NonNullable<ChatExchange["route"]>, t: Translator): string =>
-  routeDisplayLabel(route, t('chat.providerSelectedModel'), t('chat.simulatedModel'));
+  routeBadgeLabel(
+    route, t('chat.providerSelectedModel'), t('chat.simulatedModel'),
+    (cost) => t('chat.modelCost', { cost }), t('chat.modelCostNA'),
+  );
 
 const routeTooltip = (route: NonNullable<ChatExchange["route"]>, t: Translator): string =>
-  route.costUsd ? `${route.reason} · ${t('chat.modelCost', { cost: formatCostUsd(route.costUsd) })}` : route.reason;
+  routeBadgeTooltip(route, (cost) => t('chat.modelCost', { cost }), t('chat.modelCostNA'));
 
 const availabilityLabel = (value: LocalModel["availability"] | ProviderConnection["availability"], t: Translator): string => {
   if (value === "limited") return t('app.usageLimited');
@@ -211,6 +215,7 @@ function App(): JSX.Element {
   const [sessions, setSessions] = useState<ChatSessionRecord[]>([]);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(null);
+  const [proposalTally, setProposalTally] = useState<ProposalTally | null>(null);
   const [preferredAgentId, setPreferredAgentId] = useState<string | undefined>();
   const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
   const modeMenu = useRef<HTMLDetailsElement>(null);
@@ -361,6 +366,11 @@ function App(): JSX.Element {
     setSessions(nextSessions);
     setHistory(nextHistory);
     setOnboardingStep(nextOnboarding);
+    setProposalTally(
+      activeSession && typeof api.getProposalTally === "function"
+        ? await api.getProposalTally(activeSession.agentId)
+        : null,
+    );
     await loadChatContextUsage();
   };
   const loadLocalModels = useCallback(async (baseUrl: string): Promise<void> => {
@@ -435,7 +445,12 @@ function App(): JSX.Element {
         setHistory(nextHistory);
         setAgents(nextAgents);
         const activeSession = nextSessions.find((session) => session.selected);
-        if (activeSession) void api.getAgentOnboarding(activeSession.agentId).then(setOnboardingStep);
+        if (activeSession) {
+          void api.getAgentOnboarding(activeSession.agentId).then(setOnboardingStep);
+          if (typeof api.getProposalTally === "function") {
+            void api.getProposalTally(activeSession.agentId).then(setProposalTally);
+          }
+        }
         setProposalWorkspace(chooseProposalWorkspace(records));
         void loadChatContextUsage().catch(() => setContextUsage(null));
         if ((config.allowedPaths?.localModels ?? config.mode === "local") || config.allowedPaths?.ollamaCloudModels) {
@@ -797,6 +812,16 @@ function App(): JSX.Element {
               <SpecialistAvatar agentId={selectedAgent?.id ?? "unknown"} name={selectedAgentName} large />
               <h1>{t('chat.helpTitle', { name: selectedAgentName })}</h1>
               <p>{selectedAgent?.description ?? t('chat.chooseContext')}</p>
+              <p>{t('chat.approvalNotice')}</p>
+              {proposalTally && proposalTally.total > 0 ? (
+                <p className="proposal-tally">
+                  {t('chat.proposalTally', {
+                    limit: String(proposalTally.total),
+                    approved: String(proposalTally.approved),
+                    rejected: String(proposalTally.rejected),
+                  })}
+                </p>
+              ) : null}
             </div> : null
           ) : history.map((exchange, i) => {
             // The live onboarding card above already shows this turn's question or

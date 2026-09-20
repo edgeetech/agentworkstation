@@ -48,6 +48,7 @@ export const IPC_CHANNELS = {
   cancelChatMessage: 'agentWorkstation:cancelChatMessage',
   openExternalLink: 'agentWorkstation:openExternalLink',
   listPendingActions: 'agentWorkstation:listPendingActions',
+  getProposalTally: 'agentWorkstation:getProposalTally',
   proposeProfileUpdate: 'agentWorkstation:proposeProfileUpdate',
   approvePendingAction: 'agentWorkstation:approvePendingAction',
   rejectPendingAction: 'agentWorkstation:rejectPendingAction',
