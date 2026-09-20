@@ -74,14 +74,20 @@ not completion of deferred Release 0.2+ product architecture.
 
 ## Final verification
 
+Test and check counts drift as the codebase grows; this section is a snapshot,
+not a maintained ledger. For the current numbers, see the
+[CI workflow](.github/workflows/ci.yml) and its
+[latest run](https://github.com/edgeetech/agentworkstation/actions/workflows/ci.yml)
+rather than the figures below.
+
 - ESLint: passed with 0 warnings (including renderer TSX and React Hooks).
 - Renderer and Electron TypeScript checks: passed.
 - Architecture boundaries: 6/6 tests passed.
-- Unit, integration, security, evaluation, and architecture suite: 144/144 tests
-  passed across 34 files.
+- Unit, integration, security, evaluation, and architecture suite: 294 tests
+  passed across 54 files (last checked 2026-09-20).
 - Electron renderer production build and Electron main/preload TypeScript build:
   passed.
-- Playwright desktop regression suite: 2 passed; the opt-in real Ollama test was
-  skipped because its environment flag was not enabled.
+- Playwright desktop regression suite: 7 tests across 2 spec files; the opt-in
+  real Ollama acceptance test is skipped unless its environment flag is enabled.
 - Windows NSIS package built and includes both Career and Blogger agent resources.
 - Full dependency audit: 0 vulnerabilities.

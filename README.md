@@ -21,7 +21,39 @@ You decide which repositories and intelligence paths are allowed. The hub select
 an available model per prompt, shows what it used, cites workspace evidence, and
 requires approval before any file is changed.
 
-</div>
+> ## 📋 Status: personal-first, maintenance mode
+>
+> Agent Workstation is built primarily for the author's own use and is
+> open-sourced as-is, installable by others; it is not offered as a commercial
+> product or under any support commitment.
+>
+> **Works today** — Career Agent's chat, on-demand audit, and
+> propose → review-diff → approve/reject flow over registered workspaces;
+> routing to on-device Ollama or connected Claude (via the real
+> `@anthropic-ai/claude-agent-sdk`); the Files/Evidence/Actions/Privacy
+> inspector.
+>
+> **Experimental / incomplete** — the Blogger Agent's bilingual
+> draft → visual → publication-bundle → Git delivery path is implemented and
+> tested in isolation but has never been exercised end to end against a real
+> site; LinkedIn posting requires each user to register and configure their
+> own LinkedIn Developer OAuth client ID; a GitHub Copilot Agent SDK adapter
+> is implemented but disabled (the installed `copilot` CLI reports an older
+> JSON-RPC protocol than the SDK expects, so Copilot still runs through the
+> plain CLI adapter — see [`WHATS_LEFT.md`](./WHATS_LEFT.md)); the packaged
+> Windows installer is ~118 MB, unsigned (expect an unsigned-publisher
+> warning), and has no auto-update.
+>
+> **Privacy** — prompts, model replies, and proposed diffs are stored in
+> plaintext in the local SQLite database under Electron's per-user
+> `userData` directory. There is no telemetry and no analytics of any kind.
+>
+> **Lint strictness** — `no-console` and `@typescript-eslint/no-explicit-any`
+> are enforced as errors (there were zero pre-existing violations to migrate).
+>
+> The codebase is roughly 19.9k lines of TypeScript/TSX, about 5.7k of which
+> are tests (`npm test` runs 294 unit/integration/security tests; a separate
+> Playwright suite covers 7 desktop end-to-end scenarios across 2 spec files).
 
 ---
 
@@ -159,6 +191,16 @@ The Release 0.1 provider paths are:
   installations that are already authenticated by their own provider tooling.
   Agent Workstation does not ask you to paste those provider credentials into
   the application.
+
+> **Claude provider auth.** The Claude route runs through
+> `@anthropic-ai/claude-agent-sdk` driving your local `claude` CLI. If the
+> `ANTHROPIC_API_KEY` environment variable is set before launching Agent
+> Workstation, the SDK uses it and bills through the standard metered API.
+> Otherwise it falls back to your existing Claude Code subscription login —
+> the model badge tooltip and Privacy panel disclose this so you can check
+> Anthropic's terms on third-party/programmatic use of subscription
+> credentials. Setting `ANTHROPIC_API_KEY` is the recommended path for
+> connected Claude.
 
 The Intelligence Access screen shows what is installed and reachable before you
 allow a path. Routing remains bounded by that permission: **Local Only** never
