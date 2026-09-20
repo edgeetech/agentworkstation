@@ -3,6 +3,20 @@
 Last updated: 2026-09-20. This file is a short, current punch list, not a
 changelog — history lives in `git log`, not here.
 
+## CI is currently red (Windows quality gate)
+
+`tests/e2e/windows-mvp.e2e.spec.ts` asserts that "Allow connected cloud
+providers" becomes clickable and that "Cognition Devin" appears as a detected
+provider. Both require at least one delegated CLI (Codex/Copilot/Claude/Devin)
+to be installed and on `PATH`, which is true on a developer machine but never
+true on a clean `windows-latest` GitHub-hosted runner — CI installs no CLI.
+This has been broken since `bd173f6` (Blogger Agent commit) and was masked by
+an unrelated `npm ci` failure (fixed 2026-09-20) until now. Fixing it requires
+either a CI-installed stub CLI or a test-mode provider-detection override, and
+verifying the fix means launching Electron, which this pass didn't do. All
+other CI steps (lint, typecheck, unit/integration/security tests, architecture
+boundaries, renderer/Electron build, dependency audit) are green.
+
 ## Known gaps (honest, not blocking personal use)
 
 - **Blogger publication bundle** — the bilingual draft → visual → publication
