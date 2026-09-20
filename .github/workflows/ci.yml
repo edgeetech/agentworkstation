@@ -53,6 +53,7 @@ jobs:
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v6
+        continue-on-error: true
         with:
           name: agent-workstation-windows-installer
           path: release/*.exe
