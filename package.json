@@ -24,7 +24,6 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.141",
-    "@github/copilot-sdk": "^1.0.14",
     "better-sqlite3": "^11.9.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -34,6 +33,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.25.1",
+    "@github/copilot-sdk": "^1.0.14",
     "@playwright/test": "^1.54.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.15.3",
@@ -66,8 +66,7 @@
       "dist-electron/**/*",
       "electron-main.cjs",
       "package.json",
-      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
-      "!node_modules/@github/copilot-sdk-*/**/*"
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**/*"
     ],
     "extraResources": [
       {
