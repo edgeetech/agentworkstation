@@ -728,6 +728,19 @@ async function listProviderConnections(): Promise<Array<{
   authenticated: boolean | null; detail: string; defaultModel: string;
   availability: 'available' | 'limited' | 'unavailable' | 'unknown'; lastError?: string;
 }>> {
+  // Test-only double: CI runners never have a delegated provider CLI installed,
+  // so the real `--version`/`auth status` probes below always report unavailable.
+  // This registers every provider as connected without spawning anything, letting
+  // e2e exercise the "connected cloud providers" UI deterministically on CI.
+  if (!app.isPackaged && process.env.AW_E2E_FAKE_PROVIDERS === '1') {
+    return delegatedProviders.map((provider) => ({
+      id: provider.id, label: provider.label, kind: 'delegated_cli' as const,
+      installed: true, authenticated: true,
+      detail: 'Signed in through the provider CLI; use Test connection to verify inference.',
+      defaultModel: provider.defaultModel,
+      availability: 'available' as const,
+    }));
+  }
   const runner = new NodeCliProcessRunner(app.getPath('temp'));
   const connections = await Promise.all(delegatedProviders.map(async (provider) => {
     const controller = new AbortController();

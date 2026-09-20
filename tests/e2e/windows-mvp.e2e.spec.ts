@@ -130,6 +130,7 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
       AW_USER_DATA_PATH: appDataRoot,
       AW_MOCK_RESPONSE_DELAY_MS: '300',
       AW_LINKEDIN_MOCK: '1',
+      AW_E2E_FAKE_PROVIDERS: '1',
     },
   });
 
