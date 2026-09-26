@@ -502,6 +502,9 @@ const en = {
   'connect.localConnected': 'On-device models are connected. Nothing leaves this computer.',
   'shell.onDevice': 'On-device',
   'shell.modelStatus': 'Model status',
+  'chat.onboardingAccountantCompany': 'Which company are we keeping the books for? Share the company name, Companies House number, accounting year end (for example 31 March), and your VAT quarters if registered.',
+  'chat.onboardingAccountantSources': 'Where are your bookkeeping records? Point me to the folder or files with your Xero or bank CSV exports. If you have none yet, reply no.',
+  'chat.accountantCompanyExample': 'Example Ltd, 12345678, year end 31 March, VAT quarters end March, June, September, December, one director on payroll',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1005,6 +1008,9 @@ const tr: Record<MessageKey, string> = {
   'connect.localConnected': 'Cihaz içi modeller bağlandı. Hiçbir şey bu bilgisayardan çıkmaz.',
   'shell.onDevice': 'Cihaz içi',
   'shell.modelStatus': 'Model durumu',
+  'chat.onboardingAccountantCompany': 'Hangi şirketin defterini tutuyoruz? Şirket adını, Companies House numarasını, hesap dönemi sonunu (ör. 31 Mart) ve kayıtlıysan KDV (VAT) çeyreklerini yaz.',
+  'chat.onboardingAccountantSources': 'Muhasebe kayıtların nerede? Xero veya banka CSV dışa aktarımlarının bulunduğu klasörü ya da dosyaları göster. Henüz yoksa hayır yazman yeterli.',
+  'chat.accountantCompanyExample': 'Örnek Ltd, 12345678, yıl sonu 31 Mart, KDV çeyrekleri Mart, Haziran, Eylül, Aralık sonunda, bordroda bir direktör',
 };
 
 const catalogs: Record<UiLocale, Record<MessageKey, string>> = { en, tr };

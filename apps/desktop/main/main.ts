@@ -34,6 +34,7 @@ import { FileSystemAgentCatalog } from '../../../src/infrastructure/agents/FileS
 import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../src/infrastructure/filesystem/filesystemTools';
 import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
 import { gitDiffTool, gitLogTool, gitStatusTool } from '../../../src/infrastructure/git/gitTools';
+import { createUkDeadlinesTool, ledgerSummaryTool } from '../../../src/infrastructure/accounting/accountingTools';
 import { OpenAICompatibleLocalAdapter } from '../../../src/infrastructure/intelligence/openaiCompatibleLocalAdapter';
 import { DeterministicMemoryExtractionAdapter } from '../../../src/infrastructure/intelligence/deterministicMemoryExtractionAdapter';
 import {
@@ -1016,8 +1017,11 @@ async function prepareChatMessage(
   const persistedConversation = await getChatConversation(chatSession.id);
   const nextConversation = [...persistedConversation, { role: 'user' as const, content: message }];
 
+  const agent = getAgentCatalog().get(chatSession.agentId);
   const toolRegistry = new ToolRegistry();
   toolRegistry.register(webReadTool);
+  // Specialist-only tools are offered only to agents whose policy names them.
+  if (agent.toolPolicies['accounting.ukDeadlines']) toolRegistry.register(createUkDeadlinesTool());
   toolRegistry.register(createSharedPathReadTool(nextConversation
     .filter((turn) => turn.role === 'user').map((turn) => turn.content)));
   if (workspaceGateway && selectedWorkspace) {
@@ -1027,10 +1031,10 @@ async function prepareChatMessage(
     toolRegistry.register(gitLogTool);
     toolRegistry.register(gitDiffTool);
     toolRegistry.register(createFilesystemProposeWriteTool(approvalService, chatSession.id));
+    if (agent.toolPolicies['accounting.summarizeLedger']) toolRegistry.register(ledgerSummaryTool);
   }
 
   const toolExecutor = new ToolExecutor(toolRegistry);
-  const agent = getAgentCatalog().get(chatSession.agentId);
   const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceGateway, agent.toolPolicies);
 
   const built = await buildAgentChatContext(

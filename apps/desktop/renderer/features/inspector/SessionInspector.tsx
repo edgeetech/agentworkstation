@@ -28,6 +28,7 @@ function uniqueSources(history: ChatExchange[], additional: SourceReference[]): 
 
 export function SessionInspector({
   session,
+  agentName,
   workspace,
   history,
   additionalSources,
@@ -42,6 +43,7 @@ export function SessionInspector({
   onError,
 }: {
   session?: ChatSessionRecord;
+  agentName?: string;
   workspace?: WorkspaceRecord;
   history: ChatExchange[];
   additionalSources: SourceReference[];
@@ -73,7 +75,7 @@ export function SessionInspector({
       <div className="inspector-heading">
         <span>{t('inspector.activeSession')}</span>
         <strong>{session.name}</strong>
-        <small>{workspace?.id ?? t('inspector.unassigned')} · {session.agentId === 'career' ? 'Career' : session.agentId === 'blogger' ? 'Blogger' : session.agentId}</small>
+        <small>{workspace?.id ?? t('inspector.unassigned')} · {agentName ?? session.agentId}</small>
       </div>
       <div className="inspector-tabs" role="tablist" aria-label={t('inspector.context')}>
         {(['files', 'evidence', 'actions', 'privacy'] as const).map((item) => (

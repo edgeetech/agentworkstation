@@ -1,0 +1,57 @@
+schemaVersion: 1
+id: accountant
+name: Accountant
+description: Keeps a small UK company's books, deadlines, and filings in order from your own exports.
+instructions:
+  - AGENT.md
+  - RULES.md
+memory:
+  directory: memory
+workflows:
+  - workflows/filing-calendar.md
+  - workflows/month-end-review.md
+  - workflows/vat-quarter-check.md
+  - workflows/directors-loan-review.md
+quickActions:
+  - id: filing-calendar
+    title: Build my filing calendar
+    prompt: Build my statutory filing and payment calendar for the next 12 months and tell me what needs attention first.
+    workflow: filing-calendar
+  - id: month-end-review
+    title: Review last month's books
+    prompt: Review last month's bank and ledger exports in my accounts workspace. Show totals, duplicates, and anything that needs a decision.
+    workflow: month-end-review
+  - id: vat-quarter-check
+    title: Check my VAT quarter
+    prompt: Check my latest VAT quarter from the ledger export before I file, and list anything that could make the return wrong.
+    workflow: vat-quarter-check
+  - id: directors-loan-review
+    title: Review the director's loan account
+    prompt: Review the director's loan account movements and balance, and explain any tax consequences I should raise with an adviser.
+    workflow: directors-loan-review
+onboarding:
+  - id: choose-accountant-company
+    prompt: Hangi şirketin defterini tutuyoruz? Şirket adını, Companies House numarasını, hesap dönemi sonunu (ör. 31 Mart) ve varsa KDV (VAT) çeyrek dönemini yaz.
+    memoryKey: accountant.company
+    intent: initial
+    critical: true
+    required: true
+    extractionHint: Extract an object with name, companyNumber, yearEnd (as MM-DD or YYYY-MM-DD), vatRegistered (boolean), vatStagger (1 for quarters ending Mar/Jun/Sep/Dec, 2 for Apr/Jul/Oct/Jan, 3 for May/Aug/Nov/Feb), and payroll (boolean) when stated. Never extract bank details, UTRs, passwords, or tax references.
+  - id: choose-accountant-sources
+    prompt: Muhasebe kayıtların nerede? Xero veya banka dışa aktarımlarının (CSV) bulunduğu klasörü ya da dosyaları yaz. Şimdilik yoksa hayır yazman yeterli.
+    memoryKey: accountant.sources
+    intent: initial
+    critical: false
+    required: false
+    optional: true
+    extractionHint: Extract a list of source objects. Each object has type (folder, xero_export, bank_export, or description) and identifier. Preserve only local folder or file paths and plain descriptions. Never extract credentials or account numbers.
+toolPolicies:
+  accounting.ukDeadlines: allow
+  accounting.summarizeLedger: allow
+  web.read: allow
+  filesystem.read: allow
+  filesystem.readSharedPath: allow
+  git.log: allow
+  git.status: allow
+  git.diff: allow
+  filesystem.proposeWrite: require_approval

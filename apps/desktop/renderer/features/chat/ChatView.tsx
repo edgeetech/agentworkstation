@@ -29,6 +29,8 @@ const onboardingPromptKeys: Record<string, MessageKey> = {
   'choose-writing-sources': 'chat.onboardingBloggerSources',
   'choose-blog-publish-target': 'chat.onboardingBloggerPublish',
   'choose-blog-social-account': 'chat.onboardingBloggerLinkedIn',
+  'choose-accountant-company': 'chat.onboardingAccountantCompany',
+  'choose-accountant-sources': 'chat.onboardingAccountantSources',
 };
 
 const contextSize = (bytes: number): string => `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
@@ -239,7 +241,9 @@ export function ChatView({
         ? [t('chat.github'), t('chat.linkedin'), t('chat.cv'), t('chat.describeSelf')]
         : agentId === 'blogger'
           ? [t('chat.publishedArticles'), t('chat.writingFolder'), t('chat.describeStyle')]
-          : []
+          : agentId === 'accountant'
+            ? [t('chat.accountantCompanyExample')]
+            : []
     : [];
 
   const fillPrompt = (prompt: string): void => {

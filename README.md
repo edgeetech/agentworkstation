@@ -84,6 +84,11 @@ reviewable publication bundles. Site delivery is owned by Agent Workstation behi
 target configuration, immutable content hashes, a production-branch check, separate
 human approval, and live URL verification. LinkedIn posting remains unavailable until
 a real OAuth connection is configured and the exact social copy receives its own approval.
+**Accountant Agent** is the third specialist. It helps a small UK limited company director
+stay on top of statutory deadlines and bookkeeping from their own CSV exports. Dates come
+from a deterministic UK deadline calculator and totals from a deterministic ledger
+summarizer, so the model explains the numbers but never invents them. It never files,
+pays, or submits anything.
 
 ```text
 Agent Workstation hub
@@ -93,7 +98,8 @@ Agent Workstation hub
 ├── Policy gates and human approval
 └── Specialized agent definitions
     ├── Career Agent
-    └── Blogger Agent (bilingual draft, visual, publication, and social workflows)
+    ├── Blogger Agent (bilingual draft, visual, publication, and social workflows)
+    └── Accountant Agent (UK company deadlines and bookkeeping checks from your exports)
 ```
 
 ---
