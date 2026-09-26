@@ -1662,6 +1662,7 @@ function App(): JSX.Element {
       <SessionInspector
         key={selectedChatSession?.id ?? "no-session"}
         session={selectedChatSession}
+        agentName={sessionAgent?.name}
         workspace={selectedSessionWorkspace}
         history={history}
         additionalSources={activeAuditSources}

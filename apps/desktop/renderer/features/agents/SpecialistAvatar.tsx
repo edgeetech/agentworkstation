@@ -39,5 +39,16 @@ export function SpecialistAvatar({
     );
   }
 
+  if (agentId === 'accountant') {
+    return (
+      <span className={className} aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <rect x="5" y="3.5" width="14" height="17" rx="2.5" />
+          <path d="M8.5 7.5h7M8.5 11h1.5M12 11h1.5M15.5 11h0M8.5 14.5h1.5M12 14.5h1.5M8.5 17.5h5M15.5 14.5v3" />
+        </svg>
+      </span>
+    );
+  }
+
   return <span className={className} aria-hidden="true">{initials(name)}</span>;
 }

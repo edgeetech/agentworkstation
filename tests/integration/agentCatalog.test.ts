@@ -36,18 +36,26 @@ afterEach(() => {
 });
 
 describe('FileSystemAgentCatalog', () => {
-  it('discovers and deterministically loads the Career and Blogger agents', () => {
+  it('discovers and deterministically loads the Accountant, Career, and Blogger agents', () => {
     const catalog = new FileSystemAgentCatalog(path.resolve('src/agents'));
 
     const agents = catalog.list();
 
-    expect(agents.map((agent) => agent.id)).toEqual(['blogger', 'career']);
-    expect(agents.map((agent) => agent.name)).toEqual(['Blogger', 'Career']);
+    expect(agents.map((agent) => agent.id)).toEqual(['accountant', 'blogger', 'career']);
+    expect(agents.map((agent) => agent.name)).toEqual(['Accountant', 'Blogger', 'Career']);
     expect(agents.every((agent) => agent.systemPrompt.length > 0)).toBe(true);
     expect(catalog.get('career').onboarding.map((question) => question.intent))
       .toEqual(['initial', 'initial', 'publish', 'linkedin']);
     expect(catalog.get('blogger').onboarding.map((question) => question.intent))
       .toEqual(['initial', 'initial', 'publish', 'linkedin']);
+    const accountant = catalog.get('accountant');
+    expect(accountant.onboarding.map((question) => question.memoryKey)).toEqual(['accountant.company', 'accountant.sources']);
+    expect(accountant.toolPolicies).toMatchObject({
+      'accounting.ukDeadlines': 'allow',
+      'accounting.summarizeLedger': 'allow',
+      'filesystem.proposeWrite': 'require_approval',
+    });
+    expect(accountant.systemPrompt).toContain('Never file, submit, pay, or send anything');
   });
 
   it('gets an agent by its configured id', () => {
