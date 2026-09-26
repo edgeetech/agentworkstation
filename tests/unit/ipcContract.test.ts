@@ -22,6 +22,7 @@ import {
   parseAgentOnboardingInput,
   parseRejectPendingActionInput,
   parseWorkspacePathInput,
+  parseReminderSettingsInput,
   registerChatRequest,
   releaseChatRequest,
 } from '../../apps/desktop/main/ipcContract';
@@ -237,5 +238,11 @@ describe('ipc contract', () => {
     controllers.set(newerId, replacement);
     releaseChatRequest(controllers, newerId, newer);
     expect(controllers.get(newerId)).toBe(replacement);
+  });
+
+  it('validates reminder settings payload', () => {
+    expect(parseReminderSettingsInput({ accountantDeadlines: true })).toEqual({ accountantDeadlines: true });
+    expect(() => parseReminderSettingsInput({ accountantDeadlines: 'true' })).toThrow();
+    expect(() => parseReminderSettingsInput({ accountantDeadlines: true, extra: 1 })).toThrow();
   });
 });

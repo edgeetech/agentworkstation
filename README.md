@@ -88,7 +88,9 @@ a real OAuth connection is configured and the exact social copy receives its own
 stay on top of statutory deadlines and bookkeeping from their own CSV exports. Dates come
 from a deterministic UK deadline calculator and totals from a deterministic ledger
 summarizer, so the model explains the numbers but never invents them. It never files,
-pays, or submits anything.
+pays, or submits anything. Once the company's details are confirmed, Agent Workstation
+also checks upcoming and overdue deadlines in the background and raises a native
+notification, at zero model cost, so nothing has to be asked for proactively.
 
 ```text
 Agent Workstation hub
