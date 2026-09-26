@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AgentOnboardingService, inferJustInTimeIntent } from '../../src/application/onboarding/AgentOnboardingService';
 import type { IntelligencePort, ModelResponse, RoutingDecision } from '../../src/domain/intelligence';
 import type { AgentMemoryEntry, AgentMemoryStore, OnboardingQuestion } from '../../src/domain/onboarding';
-import { renderOnboardingStep } from '../../src/application/onboarding/AgentOnboardingService';
+import { looksLikeRequestNotAnswer, renderOnboardingStep } from '../../src/application/onboarding/AgentOnboardingService';
 
 class MemoryStore implements AgentMemoryStore {
   readonly entries = new Map<string, AgentMemoryEntry>();
@@ -348,5 +348,32 @@ describe('AgentOnboardingService', () => {
 
     expect(reply?.route).toEqual(route);
     expect(reply?.route?.location).not.toBe('simulated');
+  });
+
+  it('lets the user skip a setup question and moves to the next one', async () => {
+    const store = new MemoryStore();
+    const reply = await service(store, fakeIntelligence()).handleMessage('career', 'Skip for now', new AbortController().signal);
+    expect(reply?.step).toMatchObject({ kind: 'question', question: { id: 'preference' } });
+    expect(await store.getMemoryEntry('career', 'career.sources')).toMatchObject({ value: [], confirmationStatus: 'confirmed' });
+    const done = await service(store, fakeIntelligence()).handleMessage('career', 'atla', new AbortController().signal);
+    expect(done?.step).toEqual({ kind: 'complete', intent: 'initial' });
+    expect(await store.getMemoryEntry('career', 'career.language')).toMatchObject({ value: null });
+  });
+
+  it('passes real questions and tasks to the agent instead of storing them as setup answers', async () => {
+    const store = new MemoryStore();
+    const onboarding = service(store, fakeIntelligence());
+    for (const message of [
+      'Which of my projects best shows leadership?',
+      'Review my latest pull requests and summarise them',
+      'Bu hafta neler yaptım, özetle',
+    ]) {
+      await expect(onboarding.handleMessage('career', message, new AbortController().signal)).resolves.toBeNull();
+    }
+    expect(await store.getAgentMemory('career')).toEqual([]);
+    expect(looksLikeRequestNotAnswer('My GitHub profile')).toBe(false);
+    expect(looksLikeRequestNotAnswer('https://github.com/asozyurt?tab=repositories')).toBe(false);
+    expect(looksLikeRequestNotAnswer('Can you use C:\\cv\\resume.docx?')).toBe(false);
+    expect(looksLikeRequestNotAnswer('I will describe it myself')).toBe(false);
   });
 });

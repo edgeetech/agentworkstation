@@ -505,6 +505,15 @@ const en = {
   'chat.onboardingAccountantCompany': 'Which company are we keeping the books for? Share the company name, Companies House number, accounting year end (for example 31 March), and your VAT quarters if registered.',
   'chat.onboardingAccountantSources': 'Where are your bookkeeping records? Point me to the folder or files with your Xero or bank CSV exports. If you have none yet, reply no.',
   'chat.accountantCompanyExample': 'Example Ltd, 12345678, year end 31 March, VAT quarters end March, June, September, December, one director on payroll',
+  'chat.confirmYesCommand': 'yes',
+  'chat.confirmNoCommand': 'no',
+  'chat.skipCommand': 'Skip for now',
+  'chat.skipSetup': 'Skip for now',
+  'chat.naturalAnswerOrAsk': 'Write naturally and {name} will confirm anything it stores. You can also ask a question or give a task first; setup waits.',
+  'chat.understood': 'Here is what I understood:',
+  'chat.isThisRight': 'Is this right?',
+  'chat.setupDone': 'Setup is done. What would you like to work on?',
+  'chat.setupDoneAction': 'I have what I need for this.',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1011,6 +1020,15 @@ const tr: Record<MessageKey, string> = {
   'chat.onboardingAccountantCompany': 'Hangi şirketin defterini tutuyoruz? Şirket adını, Companies House numarasını, hesap dönemi sonunu (ör. 31 Mart) ve kayıtlıysan KDV (VAT) çeyreklerini yaz.',
   'chat.onboardingAccountantSources': 'Muhasebe kayıtların nerede? Xero veya banka CSV dışa aktarımlarının bulunduğu klasörü ya da dosyaları göster. Henüz yoksa hayır yazman yeterli.',
   'chat.accountantCompanyExample': 'Örnek Ltd, 12345678, yıl sonu 31 Mart, KDV çeyrekleri Mart, Haziran, Eylül, Aralık sonunda, bordroda bir direktör',
+  'chat.confirmYesCommand': 'evet',
+  'chat.confirmNoCommand': 'hayır',
+  'chat.skipCommand': 'Şimdilik atla',
+  'chat.skipSetup': 'Şimdilik atla',
+  'chat.naturalAnswerOrAsk': 'Doğal bir dille yaz, {name} kaydedeceği her şeyi sana onaylatır. İstersen önce bir soru sor ya da görev ver; kurulum bekler.',
+  'chat.understood': 'Şunu anladım:',
+  'chat.isThisRight': 'Doğru mu?',
+  'chat.setupDone': 'Kurulum tamam. Ne üzerinde çalışalım?',
+  'chat.setupDoneAction': 'Bu iş için gerekenler hazır.',
 };
 
 const catalogs: Record<UiLocale, Record<MessageKey, string>> = { en, tr };
