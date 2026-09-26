@@ -54,6 +54,9 @@ const IPC_CHANNELS = {
   approvePendingAction: 'agentWorkstation:approvePendingAction',
   rejectPendingAction: 'agentWorkstation:rejectPendingAction',
   setWindowTheme: 'agentWorkstation:setWindowTheme',
+  getUsageLedgerSettings: 'agentWorkstation:getUsageLedgerSettings',
+  setUsageLedgerEnabled: 'agentWorkstation:setUsageLedgerEnabled',
+  openUsageLedgerFolder: 'agentWorkstation:openUsageLedgerFolder',
 } as const;
 
 const CHAT_ACTIVITY_EVENT = 'agentWorkstation:chatActivity';
@@ -141,6 +144,9 @@ const api: AgentWorkstationApi = {
   rejectPendingAction: async (actionId, reason) =>
     ipcRenderer.invoke(IPC_CHANNELS.rejectPendingAction, { actionId, reason }),
   setWindowTheme: async (theme) => ipcRenderer.invoke(IPC_CHANNELS.setWindowTheme, { theme }),
+  getUsageLedgerSettings: async () => ipcRenderer.invoke(IPC_CHANNELS.getUsageLedgerSettings),
+  setUsageLedgerEnabled: async (enabled) => ipcRenderer.invoke(IPC_CHANNELS.setUsageLedgerEnabled, { enabled }),
+  openUsageLedgerFolder: async () => ipcRenderer.invoke(IPC_CHANNELS.openUsageLedgerFolder),
   onChatActivity: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, activity: Parameters<typeof listener>[0]): void => listener(activity);
     ipcRenderer.on(CHAT_ACTIVITY_EVENT, handler);

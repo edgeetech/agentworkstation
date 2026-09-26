@@ -22,6 +22,7 @@ import {
   parseAgentOnboardingInput,
   parseRejectPendingActionInput,
   parseWorkspacePathInput,
+  parseUsageLedgerEnabledInput,
   registerChatRequest,
   releaseChatRequest,
 } from '../../apps/desktop/main/ipcContract';
@@ -48,6 +49,13 @@ describe('ipc contract', () => {
     expect(IPC_CHANNELS.retrySiteVerification).toBe('agentWorkstation:retrySiteVerification');
     expect(IPC_CHANNELS.connectLinkedIn).toBe('agentWorkstation:connectLinkedIn');
     expect(IPC_CHANNELS.shareLinkedIn).toBe('agentWorkstation:shareLinkedIn');
+  });
+
+  it('validates usage ledger enabled payload', () => {
+    expect(parseUsageLedgerEnabledInput({ enabled: true })).toEqual({ enabled: true });
+    expect(parseUsageLedgerEnabledInput({ enabled: false })).toEqual({ enabled: false });
+    expect(() => parseUsageLedgerEnabledInput({ enabled: 'yes' })).toThrow();
+    expect(() => parseUsageLedgerEnabledInput({})).toThrow();
   });
 
   it('validates approve payload', () => {

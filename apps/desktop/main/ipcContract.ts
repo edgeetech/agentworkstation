@@ -53,6 +53,9 @@ export const IPC_CHANNELS = {
   approvePendingAction: 'agentWorkstation:approvePendingAction',
   rejectPendingAction: 'agentWorkstation:rejectPendingAction',
   setWindowTheme: 'agentWorkstation:setWindowTheme',
+  getUsageLedgerSettings: 'agentWorkstation:getUsageLedgerSettings',
+  setUsageLedgerEnabled: 'agentWorkstation:setUsageLedgerEnabled',
+  openUsageLedgerFolder: 'agentWorkstation:openUsageLedgerFolder',
 } as const;
 
 /** Main-to-renderer push events (sent with webContents.send, never invoked). */
@@ -66,6 +69,14 @@ const windowThemeSchema = z.object({
 
 export function parseWindowThemeInput(value: unknown): { theme: 'light' | 'dark' } {
   return windowThemeSchema.parse(value);
+}
+
+const usageLedgerEnabledSchema = z.object({
+  enabled: z.boolean(),
+});
+
+export function parseUsageLedgerEnabledInput(value: unknown): { enabled: boolean } {
+  return usageLedgerEnabledSchema.parse(value);
 }
 
 const workspaceIdSchema = z.object({
