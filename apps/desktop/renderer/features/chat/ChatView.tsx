@@ -44,6 +44,27 @@ const routeLabel = (route: NonNullable<ChatExchange['route']>, t: Translator): s
     (cost) => t('chat.modelCost', { cost }), t('chat.modelCostNA'),
   );
 
+const confirmationEcho = /^Şunu anladım:\n([\s\S]*)\n\nDoğru mu\? Lütfen evet veya hayır diye yanıtla\.$/;
+
+/**
+ * Onboarding replies are stored exactly as the main process rendered them, which
+ * is always Turkish. Show them in the interface language and report whether a
+ * message is an onboarding echo at all (null for real agent answers).
+ */
+function localizeOnboardingEcho(content: string, agent: AgentSummary | undefined, t: Translator): string | null {
+  const text = content.trim();
+  const question = agent?.onboarding.find((candidate) => candidate.prompt.trim() === text);
+  if (question) {
+    const key = onboardingPromptKeys[question.id];
+    return key ? t(key) : question.prompt;
+  }
+  const confirmation = confirmationEcho.exec(text);
+  if (confirmation) return `${t('chat.understood')}\n${confirmation[1]}\n\n${t('chat.isThisRight')}`;
+  if (text === 'Başlangıç bilgilerin hazır.') return t('chat.setupDone');
+  if (text === 'Bu işlem için gereken bilgiler hazır.') return t('chat.setupDoneAction');
+  return null;
+}
+
 const prefersReducedMotion = (): boolean =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -262,22 +283,21 @@ export function ChatView({
       {onboardingStep.kind === 'question' ? (
         <>
           <h2 className="onboarding-question">{onboardingQuestion}</h2>
-          <p className="onboarding-help">{t('chat.naturalAnswer', { name: agentName })}</p>
-          {suggestions.length ? (
-            <div className="onboarding-suggestions" aria-label={t('chat.examples')}>
-              {suggestions.map((suggestion) => (
-                <button type="button" key={suggestion} onClick={() => fillPrompt(suggestion)}>{suggestion}</button>
-              ))}
-            </div>
-          ) : null}
+          <p className="onboarding-help">{t('chat.naturalAnswerOrAsk', { name: agentName })}</p>
+          <div className="onboarding-suggestions" aria-label={t('chat.examples')}>
+            {suggestions.map((suggestion) => (
+              <button type="button" key={suggestion} onClick={() => fillPrompt(suggestion)}>{suggestion}</button>
+            ))}
+            <button type="button" className="text onboarding-skip" onClick={() => onSend(t('chat.skipCommand'))}>{t('chat.skipSetup')}</button>
+          </div>
         </>
       ) : (
         <>
           <h2 className="onboarding-question">{t('chat.confirmTitle')}</h2>
           <MemoryConfirmation fieldKey={onboardingStep.memory.fieldKey} value={onboardingStep.memory.value} />
           <div className="onboarding-suggestions">
-            <button className="primary" type="button" onClick={() => onSend('evet')}>{t('chat.confirmYes')}</button>
-            <button type="button" onClick={() => onSend('hayır')}>{t('chat.confirmNo')}</button>
+            <button className="primary" type="button" onClick={() => onSend(t('chat.confirmYesCommand'))}>{t('chat.confirmYes')}</button>
+            <button type="button" onClick={() => onSend(t('chat.confirmNoCommand'))}>{t('chat.confirmNo')}</button>
           </div>
         </>
       )}
@@ -331,7 +351,9 @@ export function ChatView({
         <div className="conversation-content">
           {greeting}
           {history.map((exchange, index) => {
-            const isLiveOnboardingEcho = onboardingActive && index === history.length - 1;
+            const localizedEcho = localizeOnboardingEcho(exchange.assistantMessage, agent, t);
+            const isLiveOnboardingEcho = onboardingActive && index === history.length - 1 && localizedEcho !== null;
+            const shownMessage = localizedEcho ?? exchange.assistantMessage;
             const isFresh = freshReply !== null && index === history.length - 1 && exchange.assistantMessage === freshReply;
             return (
               <div className="exchange" key={`${index}-${exchange.userMessage.slice(0, 24)}`}>
@@ -340,8 +362,8 @@ export function ChatView({
                   <div className="message assistant">
                     <span className="assistant-name">{agentName}</span>
                     {isFresh
-                      ? <RevealText content={exchange.assistantMessage} onDone={onRevealDone} onProgress={() => { if (pinned.current) scrollToEnd(); }} />
-                      : <MessageContent content={exchange.assistantMessage} />}
+                      ? <RevealText content={shownMessage} onDone={onRevealDone} onProgress={() => { if (pinned.current) scrollToEnd(); }} />
+                      : <MessageContent content={shownMessage} />}
                     {exchange.sourceReferences.length ? (
                       <div className="chips">
                         {exchange.sourceReferences.map((source, sourceIndex) => (

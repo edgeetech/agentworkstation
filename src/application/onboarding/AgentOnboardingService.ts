@@ -55,6 +55,23 @@ export function inferJustInTimeIntent(message: string): OnboardingIntent | null 
   return null;
 }
 
+const skipCommand = /^(?:skip|skip for now|not now|later|atla|şimdilik atla|simdilik atla|geç|gec|sonra)[.!]?$/i;
+
+/**
+ * True when a message reads as a task or question for the agent rather than an
+ * answer to the pending setup question. Such messages go to the agent instead of
+ * being stored as memory, so setup never blocks real work.
+ */
+export function looksLikeRequestNotAnswer(message: string): boolean {
+  const text = message.trim();
+  if (text.length < 12) return false;
+  if (/https?:\/\/|www\.|[a-z]:[\\/]|\/[\w.-]+\/|\.(?:pdf|docx?|md|txt|csv|json)\b/i.test(text)) return false;
+  if (/\?\s*$/.test(text)) return true;
+  // Turkish puts the verb last: "Bu hafta neler yaptım, özetle".
+  if (/(?:^|[\s,])(?:özetle|ozetle|incele|yaz|anlat|açıkla|acikla|listele|göster|goster|hazırla|hazirla|karşılaştır|karsilastir|kontrol et|bul)[.!]?$/i.test(text)) return true;
+  return /^(?:can|could|would|will|please|what|how|why|who|when|where|which|tell|explain|help|write|draft|review|summari[sz]e|analy[sz]e|compare|list|show|find|check|build|prepare|ne|neler|nasıl|nasil|neden|niye|kim|hangi|lütfen|lutfen|yaz|anlat|açıkla|acikla|incele|özetle|ozetle|karşılaştır|karsilastir|listele|göster|goster|bul|kontrol|hazırla|hazirla)(?=\s|$)/i.test(text);
+}
+
 export function renderOnboardingStep(step: OnboardingStep): string {
   if (step.kind === 'question') return step.question.prompt;
   if (step.kind === 'confirmation') {
@@ -197,6 +214,23 @@ export class AgentOnboardingService {
 
     let next: OnboardingStep;
     let route: RoutingDecision | undefined;
+    if (step.kind === 'question' && looksLikeRequestNotAnswer(message)) return null;
+    if (step.kind === 'question' && skipCommand.test(message.trim())) {
+      const timestamp = this.now().toISOString();
+      await this.memory.saveMemoryEntry({
+        agentId,
+        fieldKey: step.question.memoryKey,
+        value: step.question.memoryKey.toLowerCase().includes('sources') ? [] : null,
+        provenance: { source: 'user_message', questionId: step.question.id, capturedAt: timestamp },
+        confidence: 1,
+        confirmationStatus: 'confirmed',
+        confirmedAt: timestamp,
+        updatedAt: timestamp,
+      });
+      next = await this.getStep(agentId, step.question.intent);
+      if (next.kind === 'complete' && next.intent !== 'initial') await this.memory.setActiveOnboardingIntent(agentId, null);
+      return { step: next, message: renderOnboardingStep(next) };
+    }
     if (step.kind === 'confirmation') {
       if (/^(?:evet|yes|doğru|dogru|onaylıyorum|onayliyorum|ok|okay)$/i.test(message.trim())) {
         next = await this.confirm(agentId, step.memory.fieldKey, true);
