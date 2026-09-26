@@ -174,4 +174,22 @@ describe('adaptive intelligence routing', () => {
     await router.execute(request, { modelId: 'ignored', executionMode: 'local_only' }, new AbortController().signal);
     expect(router.getLastDecision()?.costUsd).toBeNull();
   });
+
+  it('surfaces the reported model from a candidate that exposes it', async () => {
+    const execute = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'cloud' }));
+    const claude = {
+      id: 'claude', label: 'claude', location: 'external' as const, modelId: 'default',
+      intelligence: { execute, getLastUsage: () => ({ totalCostUsd: 0.0336, model: 'claude-sonnet-5' }) },
+    };
+    const router = new AdaptiveRoutingIntelligenceAdapter('adaptive', null, claude);
+    await router.execute(request, { modelId: 'ignored', executionMode: 'provider_allowed' }, new AbortController().signal);
+    expect(router.getLastDecision()).toMatchObject({ reportedModel: 'claude-sonnet-5' });
+  });
+
+  it('leaves reportedModel null for a candidate that does not report usage', async () => {
+    const local = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'local' }));
+    const router = new AdaptiveRoutingIntelligenceAdapter('local_only', candidate('ollama', 'local', local), null);
+    await router.execute(request, { modelId: 'ignored', executionMode: 'local_only' }, new AbortController().signal);
+    expect(router.getLastDecision()?.reportedModel).toBeNull();
+  });
 });

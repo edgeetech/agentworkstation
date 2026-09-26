@@ -29,13 +29,19 @@ export type RoutedModelResponse = {
 
 /** Duck-typed: adapters that ran a real billed turn (e.g. ClaudeAgentSdkAdapter) expose this. */
 interface UsageReportingIntelligence {
-  getLastUsage(): { totalCostUsd: number | null } | null;
+  getLastUsage(): { totalCostUsd: number | null; model?: string | null } | null;
 }
 
 function readLastCostUsd(intelligence: IntelligencePort): number | null {
   const reporter = intelligence as Partial<UsageReportingIntelligence>;
   if (typeof reporter.getLastUsage !== 'function') return null;
   return reporter.getLastUsage?.()?.totalCostUsd ?? null;
+}
+
+function readLastReportedModel(intelligence: IntelligencePort): string | null {
+  const reporter = intelligence as Partial<UsageReportingIntelligence>;
+  if (typeof reporter.getLastUsage !== 'function') return null;
+  return reporter.getLastUsage?.()?.model ?? null;
 }
 
 export function promptNeedsStrongerReasoning(request: ModelRequest): boolean {
@@ -112,7 +118,9 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
         );
         if (response.type === 'error') throw new Error(response.error);
         this.onAttempt?.({ candidate, status: 'available' });
-        const route = this.decisionFor(candidate, context, index > 0, readLastCostUsd(candidate.intelligence));
+        const route = this.decisionFor(
+          candidate, context, index > 0, readLastCostUsd(candidate.intelligence), readLastReportedModel(candidate.intelligence),
+        );
         this.lastDecision = route;
         return { response, route };
       } catch (error) {
@@ -150,6 +158,7 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
     context: ModelExecutionContext,
     fallback: boolean,
     costUsd: number | null = null,
+    reportedModel: string | null = null,
   ): RoutingDecision {
     let reason: string;
     if (fallback) {
@@ -172,6 +181,7 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
       reason,
       fallback,
       costUsd,
+      reportedModel,
       authDisclosure: candidate.authDisclosure,
     };
   }
