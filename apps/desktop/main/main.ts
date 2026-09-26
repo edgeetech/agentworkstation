@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, Notification, safeStorage, screen, session, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { randomUUID } from 'node:crypto';
+import { promises as fsPromises } from 'node:fs';
 import { join } from 'node:path';
 import { wireUpdateNotifications } from '../../../src/infrastructure/updates/updateNotifier';
 import { EditableAgentMemoryStore } from '../../../src/infrastructure/persistence/EditableAgentMemoryStore';
@@ -92,6 +93,7 @@ import {
   parseRejectPendingActionInput,
   parseWorkspaceIdInput,
   parseWindowThemeInput,
+  parseUsageLedgerEnabledInput,
   parseReminderSettingsInput,
   parseInstallUpdateInput,
   registerChatRequest,
@@ -100,6 +102,8 @@ import {
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
 import type { AgentSummary, PublicationSetup, ReminderSettings } from '../shared/api';
 import { discoverOllamaModels, inspectOllamaModel, isOllamaCloudModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
+import { buildApprovalRecord, buildModelTurnRecord, classifyErrorKind } from '../../../src/application/usage/usageLedger';
+import { JsonlUsageLedger, hashSessionKey } from '../../../src/infrastructure/usage/JsonlUsageLedger';
 
 const userDataOverride = process.env.AW_USER_DATA_PATH?.trim();
 if (userDataOverride) app.setPath('userData', userDataOverride);
@@ -111,6 +115,7 @@ const intelligenceHealth = new Map<string, {
 }>();
 const chatRequestControllers = new Map<string, AbortController>();
 const endpointSettingKey = 'endpoint-config';
+const usageLedgerEnabledSettingKey = 'usageLedger.enabled';
 const reminderEnabledSettingKey = 'reminders.accountant.enabled';
 const reminderNotifiedSettingKey = 'reminders.accountant.notified';
 let persistence: SqlitePersistence | null = null;
@@ -118,6 +123,7 @@ let agentMemory: EditableAgentMemoryStore | null = null;
 let linkedInOAuth: LinkedInOAuthService | null = null;
 let linkedInPostsApi: LinkedInPostsApi | null = null;
 let publicationCoordinator: PublicationCoordinator | null = null;
+let usageLedger: JsonlUsageLedger | null = null;
 
 class DesktopMockIntelligenceAdapter implements IntelligencePort {
   async execute(
@@ -154,6 +160,120 @@ function getPersistence(): SqlitePersistence {
   if (persistence) return persistence;
   persistence = new SqlitePersistence(join(app.getPath('userData'), 'agentworkstation.db'));
   return persistence;
+}
+
+function usageLedgerDir(): string {
+  return join(app.getPath('userData'), 'usage');
+}
+
+function getUsageLedger(): JsonlUsageLedger {
+  usageLedger ??= new JsonlUsageLedger(usageLedgerDir());
+  return usageLedger;
+}
+
+async function isUsageLedgerEnabled(): Promise<boolean> {
+  const raw = await getPersistence().getSetting(usageLedgerEnabledSettingKey);
+  return raw === null ? true : raw === '1';
+}
+
+async function getUsageLedgerSettings(): Promise<{ enabled: boolean; path: string }> {
+  return { enabled: await isUsageLedgerEnabled(), path: usageLedgerDir() };
+}
+
+/**
+ * Best-effort route info for a chat turn that never reached a routing decision (e.g. every
+ * candidate failed before responding). Only used for the usage ledger — it never influences
+ * routing itself.
+ */
+function fallbackUsageRoute(endpoint: EndpointConfig): {
+  providerId: string;
+  providerLabel: string;
+  modelId: string;
+  location: 'local' | 'external' | 'simulated';
+  fallback: boolean;
+  costUsd: number | null;
+  reportedModel: string | null;
+} {
+  const policy = effectiveRoutingPolicy(endpoint);
+  return {
+    providerId: endpoint.providerId ?? endpoint.mode,
+    providerLabel: endpoint.providerId ?? endpoint.mode,
+    modelId: endpoint.modelId,
+    location: endpoint.mode === 'mock' ? 'simulated' : policy === 'local_only' ? 'local' : 'external',
+    fallback: false,
+    costUsd: null,
+    reportedModel: null,
+  };
+}
+
+/** Records one `model_turn` line for Taksim; never throws into the chat path. */
+async function recordModelTurn(params: {
+  sessionId: string;
+  agentId: string;
+  taskKind: string;
+  route: {
+    providerId: string;
+    providerLabel: string;
+    modelId: string;
+    location: 'local' | 'external' | 'simulated';
+    fallback: boolean;
+    costUsd?: number | null;
+    reportedModel?: string | null;
+  };
+  startedAt: number;
+  steps: number;
+  toolCalls: number;
+  outcome: 'answered' | 'failed' | 'cancelled';
+  error: unknown;
+}): Promise<void> {
+  try {
+    if (!(await isUsageLedgerEnabled())) return;
+    const record = buildModelTurnRecord({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      sessionKey: hashSessionKey(params.sessionId),
+      agentId: params.agentId,
+      taskKind: params.taskKind,
+      providerId: params.route.providerId,
+      providerLabel: params.route.providerLabel,
+      modelId: params.route.modelId,
+      reportedModel: params.route.reportedModel ?? null,
+      location: params.route.location,
+      fallback: params.route.fallback,
+      costUsd: params.route.costUsd ?? null,
+      durationMs: Date.now() - params.startedAt,
+      steps: params.steps,
+      toolCalls: params.toolCalls,
+      outcome: params.outcome,
+      errorKind: classifyErrorKind(params.outcome, params.error),
+    });
+    await getUsageLedger().append(record);
+  } catch (error) {
+    process.stderr.write(`[usage-ledger] failed to record model turn: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+}
+
+/** Records one `approval` line for Taksim; never throws into the approve/reject path. */
+async function recordUsageApproval(params: {
+  sessionId: string;
+  agentId: string;
+  decision: 'approved' | 'rejected';
+  actionKind: string;
+}): Promise<void> {
+  try {
+    if (!(await isUsageLedgerEnabled())) return;
+    const record = buildApprovalRecord({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      sessionKey: hashSessionKey(params.sessionId),
+      agentId: params.agentId,
+      decision: params.decision,
+      actionKind: params.actionKind,
+    });
+    await getUsageLedger().append(record);
+  } catch (error) {
+    process.stderr.write(`[usage-ledger] failed to record approval: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
 }
 
 function getAgentMemoryStore(): EditableAgentMemoryStore {
@@ -1063,6 +1183,9 @@ async function prepareChatMessage(
   observe?: AgentRunObserver,
 ): Promise<{
   sessionId: string;
+  agentId: string;
+  /** False for onboarding-only turns (no model run), which the usage ledger never records. */
+  recordUsage: boolean;
   exchange: {
     userMessage: string;
     assistantMessage: string;
@@ -1080,6 +1203,8 @@ async function prepareChatMessage(
   if (onboarding) {
     return {
       sessionId: chatSession.id,
+      agentId: chatSession.agentId,
+      recordUsage: false,
       exchange: {
         userMessage: message,
         assistantMessage: onboarding.message,
@@ -1143,6 +1268,8 @@ async function prepareChatMessage(
   const route = router?.getLastDecision() ?? simulatedRoute();
   return {
     sessionId: chatSession.id,
+    agentId: chatSession.agentId,
+    recordUsage: true,
     exchange: {
       userMessage: message,
       assistantMessage: result.content,
@@ -1759,7 +1886,12 @@ function registerIpcHandlers(): void {
     const { message, requestId, sessionId } = parseChatMessageInput(payload);
     const controller = registerChatRequest(chatRequestControllers, requestId);
     const sender = event.sender;
+    const startedAt = Date.now();
+    let steps = 0;
+    let toolCalls = 0;
     const observe: AgentRunObserver = (activity) => {
+      if (activity.type === 'thinking') steps += 1;
+      if (activity.type === 'tool') toolCalls += 1;
       if (!sender.isDestroyed()) sender.send(IPC_EVENTS.chatActivity, { requestId, ...activity });
     };
     try {
@@ -1774,7 +1906,36 @@ function registerIpcHandlers(): void {
         prepared.exchange.route,
       );
       notifyReplyIfUnfocused(BrowserWindow.fromWebContents(sender), sessionId, prepared.exchange.assistantMessage);
+      if (prepared.recordUsage && prepared.exchange.route) {
+        void recordModelTurn({
+          sessionId: prepared.sessionId,
+          agentId: prepared.agentId,
+          taskKind: 'chat',
+          route: prepared.exchange.route,
+          startedAt,
+          steps,
+          toolCalls,
+          outcome: 'answered',
+          error: null,
+        });
+      }
       return prepared.exchange;
+    } catch (error) {
+      const outcome = controller.signal.aborted ? 'cancelled' : 'failed';
+      const agentId = (await getPersistence().listChatSessions())
+        .find((session) => session.id === sessionId)?.agentId ?? 'unknown';
+      void recordModelTurn({
+        sessionId,
+        agentId,
+        taskKind: 'chat',
+        route: fallbackUsageRoute(await getEndpointConfig()),
+        startedAt,
+        steps,
+        toolCalls,
+        outcome,
+        error,
+      });
+      throw error;
     } finally {
       releaseChatRequest(chatRequestControllers, requestId, controller);
     }
@@ -1818,13 +1979,34 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.approvePendingAction, async (_event, payload: unknown) => {
     const { actionId } = parseApprovePendingActionInput(payload);
     const { service, workspaceId } = await approvals();
-    return service.approveAndExecute(actionId, workspaceId);
+    const action = await service.approveAndExecute(actionId, workspaceId);
+    const agentId = (await getPersistence().listChatSessions())
+      .find((session) => session.id === action.sessionId)?.agentId ?? 'unknown';
+    void recordUsageApproval({ sessionId: action.sessionId, agentId, decision: 'approved', actionKind: 'file_write' });
+    return action;
   });
 
   ipcMain.handle(IPC_CHANNELS.rejectPendingAction, async (_event, payload: unknown) => {
     const { actionId, reason } = parseRejectPendingActionInput(payload);
     const { service } = await approvals();
-    return service.rejectAction(actionId, reason);
+    const action = await service.rejectAction(actionId, reason);
+    const agentId = (await getPersistence().listChatSessions())
+      .find((session) => session.id === action.sessionId)?.agentId ?? 'unknown';
+    void recordUsageApproval({ sessionId: action.sessionId, agentId, decision: 'rejected', actionKind: 'file_write' });
+    return action;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getUsageLedgerSettings, async () => getUsageLedgerSettings());
+
+  ipcMain.handle(IPC_CHANNELS.setUsageLedgerEnabled, async (_event, payload: unknown) => {
+    const { enabled } = parseUsageLedgerEnabledInput(payload);
+    await getPersistence().setSetting(usageLedgerEnabledSettingKey, enabled ? '1' : '0');
+    return getUsageLedgerSettings();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.openUsageLedgerFolder, async () => {
+    await fsPromises.mkdir(usageLedgerDir(), { recursive: true });
+    await shell.openPath(usageLedgerDir());
   });
 
   ipcMain.handle(IPC_CHANNELS.setWindowTheme, async (event, payload: unknown) => {

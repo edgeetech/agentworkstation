@@ -14,6 +14,7 @@ import type {
   ProviderConnection,
   OnboardingStep,
   ProposalTally,
+  UsageLedgerSettings,
   ReminderSettings,
   UpdateReadyInfo,
   WorkspaceRecord,
@@ -53,6 +54,7 @@ type Busy =
   | "audit"
   | "proposal"
   | "approval"
+  | "usageLedger"
   | null;
 const careerNav = (t: Translator): AgentNavigationItem[] => [
   { id: "chat", label: t('nav.careerChat'), hint: t('nav.careerChatHint') },
@@ -182,6 +184,7 @@ function App(): JSX.Element {
   const [modelDiscoveryBusy, setModelDiscoveryBusy] = useState(false);
   const [modelDiscoveryError, setModelDiscoveryError] = useState<string | null>(null);
   const [demoSessionEnabled, setDemoSessionEnabled] = useState(false);
+  const [usageLedgerSettings, setUsageLedgerSettings] = useState<UsageLedgerSettings>({ enabled: true, path: "" });
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>({ accountantDeadlines: true });
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateReady, setUpdateReady] = useState<UpdateReadyInfo | null>(null);
@@ -390,6 +393,9 @@ function App(): JSX.Element {
         }
       })
       .catch((value: unknown) => setError(messageOf(value)));
+    if (typeof api.getUsageLedgerSettings === "function") {
+      void api.getUsageLedgerSettings().then(setUsageLedgerSettings).catch(() => undefined);
+    }
     void loadProviderConnections()
       .catch(() => setProviderConnections([]));
     void api.getReminderSettings().then(setReminderSettings).catch(() => undefined);
@@ -1470,6 +1476,41 @@ function App(): JSX.Element {
                   <span className="toggle-switch" aria-hidden="true"><span /></span>
                 </span>
               </button>
+            </div>
+          </details>
+          <details className="settings-details">
+            <summary>{t('settings.usageLedgerTitle')}</summary>
+            <div className="details-content usage-ledger-settings">
+              <button
+                type="button"
+                className={`permission-card ${usageLedgerSettings.enabled ? "allowed" : ""}`}
+                aria-label={t('settings.usageLedgerToggleLabel')}
+                aria-pressed={usageLedgerSettings.enabled}
+                disabled={busy === "usageLedger"}
+                onClick={() => void task("usageLedger", async () => {
+                  const next = await api.setUsageLedgerEnabled(!usageLedgerSettings.enabled);
+                  setUsageLedgerSettings(next);
+                })}
+              >
+                <span className="permission-copy">
+                  <strong>{t('settings.usageLedgerToggleLabel')}</strong>
+                  <small>{t('settings.usageLedgerHelp', { path: usageLedgerSettings.path })}</small>
+                </span>
+                <span className="permission-state">
+                  <span className="toggle-switch" aria-hidden="true"><span /></span>
+                </span>
+              </button>
+              <div className="actions">
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => void task("usageLedger", async () => {
+                    await api.openUsageLedgerFolder();
+                  })}
+                >
+                  {t('settings.usageLedgerOpenFolder')}
+                </button>
+              </div>
             </div>
           </details>
           <div className="actions">

@@ -39,3 +39,24 @@ exists, Agent Workstation keeps its existing local and delegated adapters.
 Architecture tests continue to prevent Infrastructure from leaking into Domain
 or Application. A future Taksim adapter requires contract tests covering content,
 tool calls, cancellation, terminal failures, and request-correlated route data.
+
+## 2026-09 addendum: usage ledger as the chosen integration
+
+Taksim refuses to intermediate subscription traffic, so a live `IntelligencePort`
+adapter that routes through Taksim remains out of scope: most of Agent
+Workstation's delegated providers are used via subscription login rather than
+metered API billing, and Taksim's cost/quality product is built around routing
+calls it bills directly. Wiring live routing through it would require Taksim to
+sit in the request path for traffic it has explicitly declined to intermediate.
+
+Instead, Agent Workstation writes a privacy-safe, append-only usage ledger
+(`<Electron userData>/usage/aw-usage-YYYY-MM.jsonl`) that Taksim imports out of
+band with `taksim history import --client agentworkstation`. Each line is a
+`model_turn` or `approval` record carrying model, provider, cost, duration, and
+outcome metadata — never prompt text, replies, file paths, or workspace names.
+This keeps the boundary from the original decision intact: Agent Workstation
+still owns every model call, tool execution, and approval; Taksim only ever
+observes already-completed turns after the fact. The ledger is opt-out
+(`usageLedger.enabled`, default on) and purely observational — it cannot change
+routing, prompts, or behavior, and a write failure never interrupts the chat
+path.

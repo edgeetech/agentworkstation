@@ -83,6 +83,7 @@ export type RoutingDecision = {
   reason: string;
   fallback: boolean;
   costUsd?: number | null;
+  reportedModel?: string | null;
   authDisclosure?: string;
 };
 
@@ -297,6 +298,12 @@ export type CreateChatSessionInput = {
   isolationMode: 'read_only';
 };
 
+export type UsageLedgerSettings = {
+  enabled: boolean;
+  /** Absolute path to the folder holding the monthly `aw-usage-YYYY-MM.jsonl` files. */
+  path: string;
+};
+
 export type ReminderSettings = {
   accountantDeadlines: boolean;
 };
@@ -366,6 +373,9 @@ export type AgentWorkstationApi = {
   approvePendingAction: (actionId: string) => Promise<PendingAction>;
   rejectPendingAction: (actionId: string, reason: string) => Promise<PendingAction>;
   setWindowTheme: (theme: 'light' | 'dark') => Promise<void>;
+  getUsageLedgerSettings: () => Promise<UsageLedgerSettings>;
+  setUsageLedgerEnabled: (enabled: boolean) => Promise<UsageLedgerSettings>;
+  openUsageLedgerFolder: () => Promise<void>;
   getReminderSettings: () => Promise<ReminderSettings>;
   setReminderSettings: (settings: ReminderSettings) => Promise<void>;
   onChatActivity: (listener: (activity: ChatActivity) => void) => () => void;

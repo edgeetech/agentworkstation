@@ -11,6 +11,8 @@ export type RoutingDecision = {
   reason: string;
   fallback: boolean;
   costUsd?: number | null;
+  /** The model the provider actually reported (e.g. the Claude adapter's `getLastUsage().model`); null when unknown. */
+  reportedModel?: string | null;
   /** ToS-relevant note surfaced in the UI, e.g. when a provider route uses a
    *  subscription login rather than metered API billing. */
   authDisclosure?: string;
