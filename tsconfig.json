@@ -14,5 +14,5 @@
       "@apps/*": ["apps/*"]
     }
   },
-  "include": ["src", "apps", "tests", "vite.config.ts"]
+  "include": ["src", "apps", "tests", "scripts", "vite.config.ts"]
 }

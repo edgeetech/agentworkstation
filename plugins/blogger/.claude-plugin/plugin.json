@@ -1,0 +1,19 @@
+{
+  "name": "blogger",
+  "displayName": "Blogger",
+  "version": "0.1.0",
+  "description": "Prepares evidence-based bilingual articles, original visual assets, and reviewable publication packages.",
+  "author": {
+    "name": "EdgeeTech",
+    "url": "https://edgee.tech"
+  },
+  "homepage": "https://github.com/edgeetech/agentworkstation",
+  "repository": "https://github.com/edgeetech/agentworkstation",
+  "keywords": [
+    "blogging",
+    "content",
+    "bilingual",
+    "publishing",
+    "editorial"
+  ]
+}

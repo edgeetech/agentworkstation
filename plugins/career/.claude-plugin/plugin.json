@@ -1,0 +1,18 @@
+{
+  "name": "career",
+  "displayName": "Career",
+  "version": "0.1.0",
+  "description": "Keeps professional profile information accurate and current.",
+  "author": {
+    "name": "EdgeeTech",
+    "url": "https://edgee.tech"
+  },
+  "homepage": "https://github.com/edgeetech/agentworkstation",
+  "repository": "https://github.com/edgeetech/agentworkstation",
+  "keywords": [
+    "career",
+    "cv",
+    "resume",
+    "professional-profile"
+  ]
+}

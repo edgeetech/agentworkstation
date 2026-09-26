@@ -363,6 +363,37 @@ disabled by the package command.
 
 ---
 
+## 🔌 Use the specialists in Claude Code or Cowork
+
+Every agent under `src/agents/` (Accountant, Blogger, Career) is also generated
+into a Claude plugin marketplace at `.claude-plugin/marketplace.json` and
+`plugins/`, so the same instructions, workflows, memory, and quick actions run
+inside Claude Code or Claude Cowork — one definition, two runtimes.
+
+**Claude Code:**
+
+```
+claude plugin marketplace add edgeetech/agentworkstation
+claude plugin install accountant@agent-workstation
+```
+
+**Claude Cowork:** Customize → Plugins → Upload plugin, using a zip from
+`npm run export:plugins -- --zip` (written to `release/plugins/<id>.zip`,
+not committed).
+
+The Accountant's deterministic UK filing-deadline and ledger tools ship as
+bundled Node scripts inside its skill, so dates and totals are still computed,
+never guessed. Regenerate after editing `src/agents/**` with:
+
+```powershell
+npm run export:plugins
+```
+
+`tests/integration/pluginExport.test.ts` fails CI if `plugins/` and
+`.claude-plugin/marketplace.json` are out of date with `src/agents/`.
+
+---
+
 ## 🧪 Quality gates
 
 ```powershell

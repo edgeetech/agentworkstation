@@ -1,0 +1,31 @@
+{
+  "name": "agent-workstation",
+  "owner": {
+    "name": "EdgeeTech",
+    "url": "https://edgee.tech"
+  },
+  "description": "Agent Workstation specialists packaged as a Claude Code and Claude Cowork plugin marketplace: one declarative agent definition, usable in both runtimes.",
+  "plugins": [
+    {
+      "name": "accountant",
+      "source": "./plugins/accountant",
+      "description": "Keeps a small UK company's books, deadlines, and filings in order from your own exports.",
+      "version": "0.1.0",
+      "category": "finance"
+    },
+    {
+      "name": "blogger",
+      "source": "./plugins/blogger",
+      "description": "Prepares evidence-based bilingual articles, original visual assets, and reviewable publication packages.",
+      "version": "0.1.0",
+      "category": "writing"
+    },
+    {
+      "name": "career",
+      "source": "./plugins/career",
+      "description": "Keeps professional profile information accurate and current.",
+      "version": "0.1.0",
+      "category": "productivity"
+    }
+  ]
+}

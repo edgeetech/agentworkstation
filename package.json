@@ -20,7 +20,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "check:architecture": "vitest run tests/architecture",
     "test:e2e": "npm run electron:prepare && playwright test",
-    "e2e": "npm run electron:prepare && playwright test"
+    "e2e": "npm run electron:prepare && playwright test",
+    "export:plugins": "tsx scripts/plugin-export/export-plugins.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.141",
@@ -52,7 +53,9 @@
     "electron-builder": "^26.15.3",
     "eslint": "^9.25.1",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "fflate": "^0.8.3",
     "jsdom": "^26.1.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
     "vitest": "^5.0.0"
