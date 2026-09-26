@@ -140,7 +140,7 @@ export function SessionsSidebar({
         <button
           type="button"
           className="sidebar-action new-chat"
-          aria-label={t('sidebar.newConversation', { name: activeName })}
+          aria-label={t('shell.newChatWith', { name: activeName })}
           onClick={onNewSession}
           disabled={busy}
         >
@@ -227,7 +227,19 @@ export function SessionsSidebar({
           ))}
         </nav>
         <section className="sidebar-chats" aria-label={t('sidebar.conversationHistory', { name: activeName })}>
-          <h2 className="sidebar-heading">{t('sidebar.conversations')}</h2>
+          <div className="sidebar-heading-row">
+            <h2 className="sidebar-heading">{t('sidebar.conversations')}</h2>
+            <button
+              type="button"
+              className="icon-button sidebar-heading-action"
+              aria-label={t('sidebar.newConversation', { name: activeName })}
+              title={t('sidebar.newConversation', { name: activeName })}
+              onClick={onNewSession}
+              disabled={busy}
+            >
+              <Icon name="plus" size={15} />
+            </button>
+          </div>
           {recencyGroups.length === 0 ? <p className="sidebar-empty">{t('sidebar.noConversations')}</p> : (
             <ul className="session-list" aria-label={t('sidebar.conversationList', { name: activeName })}>
               {recencyGroups.map((group) => [

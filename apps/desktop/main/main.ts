@@ -473,10 +473,16 @@ function routeCandidateReady(candidate: { id: string; modelId: string }): boolea
   return ageMs >= cooldownMs;
 }
 
+// Development-only override so end-to-end runs are deterministic on machines that
+// have a real Ollama installed.
+function defaultOllamaBaseUrl(): string {
+  return (!app.isPackaged && process.env.AW_OLLAMA_BASE_URL) || 'http://localhost:11434';
+}
+
 async function getEndpointConfig(): Promise<EndpointConfig> {
   const raw = await getPersistence().getSetting(endpointSettingKey);
   if (!raw) return {
-    mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', routingPolicy: 'local_only',
+    mode: 'local', baseUrl: defaultOllamaBaseUrl(), modelId: 'llama3.1', routingPolicy: 'local_only',
     allowedPaths: { localModels: true, ollamaCloudModels: false, cloudProviders: false },
     ollamaModelIds: ['llama3.1'], providerIds: [], configured: false,
   };
@@ -509,7 +515,7 @@ async function getEndpointConfig(): Promise<EndpointConfig> {
     };
   } catch {
     return {
-      mode: 'local', baseUrl: 'http://localhost:11434', modelId: 'llama3.1', routingPolicy: 'local_only',
+      mode: 'local', baseUrl: defaultOllamaBaseUrl(), modelId: 'llama3.1', routingPolicy: 'local_only',
       allowedPaths: { localModels: true, ollamaCloudModels: false, cloudProviders: false },
       ollamaModelIds: ['llama3.1'], providerIds: [], configured: false,
     };

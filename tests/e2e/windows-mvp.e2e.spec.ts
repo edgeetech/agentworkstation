@@ -128,7 +128,7 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
       ...process.env,
       AW_RENDERER_MODE: 'file',
       AW_USER_DATA_PATH: appDataRoot,
-      AW_MOCK_RESPONSE_DELAY_MS: '300',
+      AW_MOCK_RESPONSE_DELAY_MS: '1200',
       AW_LINKEDIN_MOCK: '1',
       AW_E2E_FAKE_PROVIDERS: '1',
     },
@@ -292,7 +292,7 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await composer.fill('What changed that should appear in my profile?');
     const sendButton = page.getByRole('button', { name: 'Send message' });
     await composer.press('Enter');
-    await expect(sendButton).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Stop generating' })).toBeVisible();
     await expect(page.getByLabel('Career is thinking')).toBeVisible();
     await expect(page.getByText(/Mock response:/).first()).toBeVisible();
     await expect(contextUsage).toHaveAccessibleName(/\d+% context used, .* of 48 KB/);
