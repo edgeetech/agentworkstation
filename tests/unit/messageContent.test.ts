@@ -4,6 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { MessageContent } from '../../apps/desktop/renderer/features/chat/MessageContent';
 
 describe('MessageContent', () => {
+  it('renders GitHub-flavoured tables that agents use for deadlines and totals', () => {
+    const html = renderToStaticMarkup(createElement(MessageContent, {
+      content: ['| Due | What |', '|---|---|', '| 2026-12-31 | Accounts |'].join('\n'),
+    }));
+    expect(html).toContain('<table>');
+    expect(html).toContain('<td>Accounts</td>');
+  });
+
   it('renders useful Markdown structure', () => {
     const html = renderToStaticMarkup(createElement(MessageContent, {
       content: '## Finding\n\n- **Evidence**\n\n`code`',

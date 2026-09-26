@@ -44,7 +44,7 @@ import {
   getDelegatedProvider,
   type DelegatedProviderDefinition,
 } from '../../../src/infrastructure/intelligence/delegatedCliAdapter';
-import { ClaudeAgentSdkAdapter } from '../../../src/infrastructure/intelligence/claudeAgentSdkAdapter';
+import { ClaudeWarmSessionAdapter } from '../../../src/infrastructure/intelligence/claudeWarmSessionAdapter';
 import { MockIntelligenceAdapter } from '../../../src/infrastructure/mock/mockIntelligence';
 import { DefaultNetworkGateway } from '../../../src/infrastructure/network/DefaultNetworkGateway';
 import { webReadTool } from '../../../src/infrastructure/network/webReadTool';
@@ -544,6 +544,14 @@ function effectiveRoutingPolicy(endpoint: EndpointConfig): RoutingPolicy {
   return externalIntelligenceAllowed(endpoint) ? 'adaptive' : 'local_only';
 }
 
+// One warm Claude session pool for the whole app, so consecutive model steps and
+// turns reuse a running `claude` process instead of cold-starting one each time.
+let claudeWarmAdapter: ClaudeWarmSessionAdapter | null = null;
+function getClaudeWarmAdapter(): ClaudeWarmSessionAdapter {
+  claudeWarmAdapter ??= new ClaudeWarmSessionAdapter(app.getPath('temp'));
+  return claudeWarmAdapter;
+}
+
 function createDelegatedIntelligence(provider: DelegatedProviderDefinition): IntelligencePort {
   // Copilot intentionally stays on the CLI adapter: @github/copilot-sdk pins a
   // JSON-RPC protocol version against its own installed CLI build, and this
@@ -554,11 +562,11 @@ function createDelegatedIntelligence(provider: DelegatedProviderDefinition): Int
   // it is not yet verified whether it shares the user's existing GitHub Copilot
   // sign-in. CopilotAgentSdkAdapter is implemented and unit-tested for when that
   // is resolved, but is not wired in here yet.
-  if (provider.id === 'claude') return new ClaudeAgentSdkAdapter(app.getPath('temp'));
+  if (provider.id === 'claude') return getClaudeWarmAdapter();
   return new DelegatedCliIntelligenceAdapter(provider, new NodeCliProcessRunner(app.getPath('temp')));
 }
 
-// ClaudeAgentSdkAdapter drives the `claude` CLI (pathToClaudeCodeExecutable: 'claude'),
+// ClaudeWarmSessionAdapter drives the `claude` CLI (pathToClaudeCodeExecutable: 'claude'),
 // which uses ANTHROPIC_API_KEY when present and otherwise falls back to the user's
 // existing Claude Code subscription login. Only the second path raises a ToS question
 // (using subscription credentials programmatically), so the disclosure is shown only
@@ -1919,7 +1927,10 @@ app.whenReady().then(() => {
   void createWindow();
 });
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  claudeWarmAdapter?.closeAll();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

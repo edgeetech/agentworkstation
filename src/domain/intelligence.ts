@@ -20,6 +20,8 @@ export type ModelExecutionContext = {
   modelId: string;
   executionMode: ExecutionMode;
   taskKind?: TaskKind;
+  /** Receives a final text answer while it is generated; adapters that cannot stream ignore it. */
+  onTextDelta?: (delta: string) => void;
 };
 
 export type SourceReference = {

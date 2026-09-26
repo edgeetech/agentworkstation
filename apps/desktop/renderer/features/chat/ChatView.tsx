@@ -168,6 +168,7 @@ export function ChatView({
   proposalTally,
   pending,
   activity,
+  streamedReply,
   failure,
   freshReply,
   draft,
@@ -191,6 +192,7 @@ export function ChatView({
   proposalTally: ProposalTally | null;
   pending: PendingChat | null;
   activity: ChatActivity[];
+  streamedReply: string;
   failure: FailedChat | null;
   freshReply: string | null;
   draft: string;
@@ -410,6 +412,7 @@ export function ChatView({
               <div className="message assistant thinking-message" role="status" aria-label={t('chat.thinking', { name: agentName })}>
                 <span className="assistant-name">{agentName}</span>
                 <ActivityTrail activity={activity} startedAt={pending.startedAt} />
+                {streamedReply ? <div className="streamed-reply"><MessageContent content={streamedReply} /></div> : null}
                 <button type="button" className="secondary cancel-message" onClick={onCancel}>{t('common.cancel')}</button>
               </div>
             </div>

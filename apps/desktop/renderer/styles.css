@@ -1423,3 +1423,16 @@ label small, .form small { color: var(--ink-3); font-size: 12px; }
   .form-grid, .publication-grid, .starter-grid { grid-template-columns: 1fr; }
   .page-heading, .hero { flex-direction: column; align-items: flex-start; }
 }
+
+.streamed-reply .markdown-content > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 3px;
+  vertical-align: -0.15em;
+  border-radius: 2px;
+  background: var(--agent);
+  animation: caret 1s steps(2, start) infinite;
+}
+@keyframes caret { to { visibility: hidden; } }
