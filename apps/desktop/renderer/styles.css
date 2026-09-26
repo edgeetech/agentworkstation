@@ -246,14 +246,8 @@ label small, .form small { color: var(--ink-3); font-size: 12px; }
 .shell[data-platform="mac"] .sidebar-top { padding-left: 84px; }
 .brand { display: flex; align-items: center; gap: 9px; font-size: 13.5px; }
 .brand strong { font-family: var(--font-display); font-weight: 650; letter-spacing: -0.01em; }
-.brand-mark {
-  width: 24px; height: 24px;
-  display: grid; place-items: center;
-  border-radius: 7px;
-  background: var(--ink);
-  color: var(--canvas);
-}
-.brand-mark svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.brand-mark { width: 24px; height: 24px; display: grid; place-items: center; color: var(--ink); }
+.brand-mark svg { width: 24px; height: 24px; }
 
 .sidebar-actions { display: grid; gap: 2px; padding: 4px 10px 8px; }
 .sidebar-action {

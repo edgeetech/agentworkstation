@@ -69,7 +69,8 @@
     "productName": "Agent Workstation",
     "npmRebuild": false,
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "publish": [
       {
@@ -93,7 +94,8 @@
     ],
     "win": {
       "target": "nsis",
-      "artifactName": "Agent-Workstation-${version}-Setup.${ext}"
+      "artifactName": "Agent-Workstation-${version}-Setup.${ext}",
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,

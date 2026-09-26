@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🧭 Agent Workstation
+<img src="./build/icon.svg" alt="Agent Workstation logo" width="96" height="96">
+
+# Agent Workstation
 
 ### A local-first hub where specialized AI agents work with real repositories, evidence, and human oversight.
 

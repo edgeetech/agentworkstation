@@ -2144,6 +2144,8 @@ async function createWindow(): Promise<void> {
     minHeight: 640,
     show: false,
     title: 'Agent Workstation',
+    // Packaged builds take the window icon from the executable.
+    ...(app.isPackaged ? {} : { icon: join(__dirname, '../../../../build/icon.png') }),
     backgroundColor: palette.background,
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'
