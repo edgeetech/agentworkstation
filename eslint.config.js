@@ -12,6 +12,8 @@ module.exports = [
       'dist/**',
       'dist-electron/**',
       'coverage/**',
+      'release/**',
+      'plugins/**',
       '*.cjs',
       'eslint.config.js',
     ],
@@ -61,6 +63,32 @@ module.exports = [
       'no-console': 'error',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
+    },
+  },
+  // Build-time scripts (Node CLI): same TS rules, but console output is the point.
+  {
+    files: ['scripts/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        project: null,
+        ecmaVersion: 2022,
+        sourceType: 'module',
+      },
+      globals: {
+        process: 'readonly',
+        Buffer: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        console: 'readonly',
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'error',
     },
   },
 ];

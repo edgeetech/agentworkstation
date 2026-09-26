@@ -1,0 +1,20 @@
+{
+  "name": "accountant",
+  "displayName": "Accountant",
+  "version": "0.1.0",
+  "description": "Keeps a small UK company's books, deadlines, and filings in order from your own exports.",
+  "author": {
+    "name": "EdgeeTech",
+    "url": "https://edgee.tech"
+  },
+  "homepage": "https://github.com/edgeetech/agentworkstation",
+  "repository": "https://github.com/edgeetech/agentworkstation",
+  "keywords": [
+    "accounting",
+    "bookkeeping",
+    "uk-tax",
+    "vat",
+    "corporation-tax",
+    "companies-house"
+  ]
+}
