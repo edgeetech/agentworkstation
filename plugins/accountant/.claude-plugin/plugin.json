@@ -1,7 +1,7 @@
 {
   "name": "accountant",
   "displayName": "Accountant",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Keeps a small UK company's books, deadlines, and filings in order from your own exports.",
   "author": {
     "name": "EdgeeTech",
