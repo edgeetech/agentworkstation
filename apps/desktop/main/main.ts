@@ -35,6 +35,8 @@ import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../s
 import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
 import { gitDiffTool, gitLogTool, gitStatusTool } from '../../../src/infrastructure/git/gitTools';
 import { createUkDeadlinesTool, ledgerSummaryTool } from '../../../src/infrastructure/accounting/accountingTools';
+import { ukCompanyDeadlines } from '../../../src/domain/accounting/ukDeadlines';
+import { deriveDeadlineInput, dueReminders } from '../../../src/domain/accounting/reminders';
 import { OpenAICompatibleLocalAdapter } from '../../../src/infrastructure/intelligence/openaiCompatibleLocalAdapter';
 import { DeterministicMemoryExtractionAdapter } from '../../../src/infrastructure/intelligence/deterministicMemoryExtractionAdapter';
 import {
@@ -88,11 +90,12 @@ import {
   parseRejectPendingActionInput,
   parseWorkspaceIdInput,
   parseWindowThemeInput,
+  parseReminderSettingsInput,
   registerChatRequest,
   releaseChatRequest,
 } from './ipcContract';
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
-import type { AgentSummary, PublicationSetup } from '../shared/api';
+import type { AgentSummary, PublicationSetup, ReminderSettings } from '../shared/api';
 import { discoverOllamaModels, inspectOllamaModel, isOllamaCloudModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
 
 const userDataOverride = process.env.AW_USER_DATA_PATH?.trim();
@@ -105,6 +108,8 @@ const intelligenceHealth = new Map<string, {
 }>();
 const chatRequestControllers = new Map<string, AbortController>();
 const endpointSettingKey = 'endpoint-config';
+const reminderEnabledSettingKey = 'reminders.accountant.enabled';
+const reminderNotifiedSettingKey = 'reminders.accountant.notified';
 let persistence: SqlitePersistence | null = null;
 let agentMemory: EditableAgentMemoryStore | null = null;
 let linkedInOAuth: LinkedInOAuthService | null = null;
@@ -538,6 +543,73 @@ async function saveEndpointConfig(config: EndpointConfig): Promise<void> {
     } : { providerId: undefined, providerModelId: undefined }),
   };
   await getPersistence().setSetting(endpointSettingKey, JSON.stringify(normalized));
+}
+
+async function getReminderSettings(): Promise<ReminderSettings> {
+  const raw = await getPersistence().getSetting(reminderEnabledSettingKey);
+  return { accountantDeadlines: raw !== 'false' };
+}
+
+async function saveReminderSettings(settings: ReminderSettings): Promise<void> {
+  await getPersistence().setSetting(reminderEnabledSettingKey, settings.accountantDeadlines ? 'true' : 'false');
+}
+
+function todayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+async function readNotifiedReminderIds(): Promise<string[]> {
+  const raw = await getPersistence().getSetting(reminderNotifiedSettingKey);
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+async function recordNotifiedReminderIds(ids: string[]): Promise<void> {
+  const existing = await readNotifiedReminderIds();
+  const merged = [...new Set([...existing, ...ids])].slice(-200);
+  await getPersistence().setSetting(reminderNotifiedSettingKey, JSON.stringify(merged));
+}
+
+/** Zero-cost, proactive nudges for the Accountant's statutory deadlines: no model call, dates come
+ * from the deterministic UK deadline calculator applied to the confirmed company memory. */
+async function checkDeadlineReminders(): Promise<void> {
+  if (!Notification.isSupported()) return;
+  const settings = await getReminderSettings();
+  if (!settings.accountantDeadlines) return;
+  const entry = await getAgentMemoryStore().getMemoryEntry('accountant', 'accountant.company');
+  if (!entry || entry.confirmationStatus !== 'confirmed') return;
+  const input = deriveDeadlineInput(entry.value, todayIso());
+  if (!input) return;
+  const deadlines = ukCompanyDeadlines({ ...input, today: todayIso() });
+  const notifiedIds = await readNotifiedReminderIds();
+  const due = dueReminders(deadlines, notifiedIds).slice(0, 3);
+  if (due.length === 0) return;
+  const win = BrowserWindow.getAllWindows()[0];
+  for (const item of due) {
+    const body = item.status === 'overdue'
+      ? `Overdue by ${Math.abs(item.daysUntil)} days since ${item.due}`
+      : `Due ${item.due}, in ${item.daysUntil} days`;
+    const notification = new Notification({ title: `Accountant: ${item.title}`, body, silent: false });
+    notification.on('click', () => {
+      focusWindow(win);
+      win?.webContents.send(IPC_EVENTS.openAgent, { agentId: 'accountant' });
+    });
+    notification.show();
+  }
+  await recordNotifiedReminderIds(due.map((item) => item.id));
+}
+
+function scheduleDeadlineReminders(): void {
+  if (process.env.AW_DISABLE_REMINDERS === '1') return;
+  const run = (): void => { void checkDeadlineReminders().catch(() => undefined); };
+  setTimeout(run, 30_000).unref?.();
+  setInterval(run, 6 * 60 * 60 * 1000).unref?.();
 }
 
 function effectiveRoutingPolicy(endpoint: EndpointConfig): RoutingPolicy {
@@ -1761,6 +1833,13 @@ function registerIpcHandlers(): void {
       win.setTitleBarOverlay({ color: palette.chrome, symbolColor: palette.symbol, height: TITLE_BAR_HEIGHT });
     }
   });
+
+  ipcMain.handle(IPC_CHANNELS.getReminderSettings, async () => getReminderSettings());
+
+  ipcMain.handle(IPC_CHANNELS.setReminderSettings, async (_event, payload: unknown) => {
+    const settings = parseReminderSettingsInput(payload);
+    await saveReminderSettings(settings);
+  });
 }
 
 /** Long agent runs finish while the user works elsewhere; tell them, like native chat apps do. */
@@ -1916,6 +1995,7 @@ app.whenReady().then(() => {
     else focusWindow(win);
   });
   registerIpcHandlers();
+  scheduleDeadlineReminders();
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
