@@ -36,7 +36,7 @@ describe('deriveDeadlineInput', () => {
 
   it('infers the VAT stagger from quarter-end months mentioned in free text', () => {
     const result = deriveDeadlineInput(
-      { text: 'EdgeeTech Ltd, 12053376, year end 31 March, VAT quarters end March June September December, payroll yes' },
+      { text: 'Example Ltd, 12345678, year end 31 March, VAT quarters end March June September December, payroll yes' },
       '2026-09-26',
     );
     expect(result).toMatchObject({ periodEnd: '2026-03-31', vatStagger: 1, payroll: true });
