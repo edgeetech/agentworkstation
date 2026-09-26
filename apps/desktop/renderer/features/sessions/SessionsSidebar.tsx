@@ -131,7 +131,11 @@ export function SessionsSidebar({
       <div className="sidebar-top">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><path d="M5 18 12 5l7 13" /><path d="M8.6 12.5h6.8" /></svg>
+            <svg viewBox="0 0 64 64">
+              <path fill="#e04a7e" d="M4 10H28.8L13.8 54z" />
+              <path fill="#0293de" d="M17 54 32 10 47 54z" />
+              <path fill="currentColor" d="M60 10H35.2L50.2 54z" />
+            </svg>
           </span>
           <strong>Agent Workstation</strong>
         </div>
