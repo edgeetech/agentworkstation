@@ -52,7 +52,21 @@ export const IPC_CHANNELS = {
   proposeProfileUpdate: 'agentWorkstation:proposeProfileUpdate',
   approvePendingAction: 'agentWorkstation:approvePendingAction',
   rejectPendingAction: 'agentWorkstation:rejectPendingAction',
+  setWindowTheme: 'agentWorkstation:setWindowTheme',
 } as const;
+
+/** Main-to-renderer push events (sent with webContents.send, never invoked). */
+export const IPC_EVENTS = {
+  chatActivity: 'agentWorkstation:chatActivity',
+} as const;
+
+const windowThemeSchema = z.object({
+  theme: z.enum(['light', 'dark']),
+});
+
+export function parseWindowThemeInput(value: unknown): { theme: 'light' | 'dark' } {
+  return windowThemeSchema.parse(value);
+}
 
 const workspaceIdSchema = z.object({
   id: z.string().min(1),

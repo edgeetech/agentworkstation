@@ -100,6 +100,39 @@ Agent Workstation hub
 
 ## 🖼️ Product tour
 
+### Feels like the desktop AI apps you already use
+
+A frameless window, a quiet sidebar, one identity colour per specialist, light
+and dark themes that follow the OS, and a command palette (`Ctrl+K`) for every
+conversation, specialist, and action. On first run the app offers the AI you
+already have (Claude Code, Codex, GitHub Copilot, or on-device Ollama) as
+one-click choices; EdgeeTech never bills you.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="./docs/images/shell-first-run.png"><img src="./docs/images/shell-first-run.png" alt="First run: Career asks for its sources and offers one-click connections to the AI subscriptions already on this computer"></a>
+      <br><strong>Connect what you already pay for</strong>
+    </td>
+    <td width="50%" valign="top">
+      <a href="./docs/images/shell-live-activity.png"><img src="./docs/images/shell-live-activity.png" alt="Career shows each step while it works: thinking, checking recent commits, and elapsed time"></a>
+      <br><strong>See what the agent is doing, live</strong>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="./docs/images/shell-dark-evidence.png"><img src="./docs/images/shell-dark-evidence.png" alt="Dark theme with the evidence panel listing the Git history the answer used"></a>
+      <br><strong>Every answer keeps its evidence</strong>
+    </td>
+    <td width="50%" valign="top">
+      <a href="./docs/images/shell-command-palette.png"><img src="./docs/images/shell-command-palette.png" alt="Command palette listing actions, specialists, and conversations with keyboard shortcuts"></a>
+      <br><strong>Keyboard first</strong>
+    </td>
+  </tr>
+</table>
+
+<sub>Captured from the desktop app against a local <code>qwen2.5:3b</code> Ollama model reading this repository.</sub>
+
 ### Ask about real work, not an isolated prompt
 
 Career Agent can read registered workspace files and Git evidence through bounded

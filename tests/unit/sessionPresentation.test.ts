@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatSessionRecord, WorkspaceRecord } from '../../apps/desktop/shared/api';
-import { groupSessionsByWorkspace, latestSessionForAgent } from '../../apps/desktop/renderer/features/sessions/sessionPresentation';
+import { groupSessionsByRecency, groupSessionsByWorkspace, latestSessionForAgent } from '../../apps/desktop/renderer/features/sessions/sessionPresentation';
 
 const workspace = (id: string): WorkspaceRecord => ({
   id,
@@ -53,5 +53,26 @@ describe('latestSessionForAgent', () => {
 
     expect(latestSessionForAgent([blogger, newCareer, oldCareer], 'career')?.id).toBe('new career');
     expect(latestSessionForAgent([blogger], 'career')).toBeUndefined();
+  });
+});
+
+describe('groupSessionsByRecency', () => {
+  it('buckets sessions by local calendar day, newest first, and drops empty buckets', () => {
+    const now = new Date(2026, 8, 26, 15, 0, 0);
+    const at = (daysAgo: number, hour = 10): string => new Date(2026, 8, 26 - daysAgo, hour).toISOString();
+    const groups = groupSessionsByRecency([
+      { ...session('old'), updatedAt: at(30) },
+      { ...session('morning'), updatedAt: at(0, 8) },
+      { ...session('afternoon'), updatedAt: at(0, 14) },
+      { ...session('yesterday'), updatedAt: at(1, 23) },
+      { ...session('week'), updatedAt: at(5) },
+    ], now);
+    expect(groups.map((group) => [group.bucket, group.sessions.map((item) => item.id)])).toEqual([
+      ['today', ['afternoon', 'morning']],
+      ['yesterday', ['yesterday']],
+      ['week', ['week']],
+      ['older', ['old']],
+    ]);
+    expect(groupSessionsByRecency([{ ...session('only'), updatedAt: at(0) }], now).map((group) => group.bucket)).toEqual(['today']);
   });
 });
