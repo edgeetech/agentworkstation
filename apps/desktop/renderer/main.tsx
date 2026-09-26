@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import type {
+  ChatActivity,
   ChatExchange,
   ChatContextUsage,
   ChatMode,
@@ -17,23 +18,29 @@ import type {
 } from "../shared/api";
 import {
   SessionsSidebar,
+  shortcutLabel,
   type AgentNavigationItem,
   type AgentView,
 } from "./features/sessions/SessionsSidebar";
 import { SessionInspector } from "./features/inspector/SessionInspector";
 import { MessageContent } from "./features/chat/MessageContent";
+import { ChatView, type FailedChat, type PendingChat } from "./features/chat/ChatView";
+import { CommandPalette, type PaletteItem } from "./features/shell/CommandPalette";
+import { ConnectPanel } from "./features/intelligence/ConnectPanel";
+import { Icon } from "./features/shell/icons";
+import { detectPlatform, useTheme } from "./features/shell/theme";
 import { PublicationSetupPanel } from "./features/publication/PublicationSetupPanel";
 import { SpecialistAvatar } from "./features/agents/SpecialistAvatar";
-import { MemoryConfirmation } from "./features/onboarding/MemoryConfirmation";
 import {
   moveProvider,
   providerModelLabel,
-  routeBadgeLabel,
-  routeBadgeTooltip,
   selectedProviderIds,
   toggleProvider,
 } from "./features/intelligence/providerSelection";
 import { I18nProvider, useI18n, type Translator } from "./i18n";
+import "@fontsource-variable/instrument-sans";
+import "@fontsource-variable/bricolage-grotesque";
+import "@fontsource-variable/jetbrains-mono";
 import "./styles.css";
 
 type View = AgentView;
@@ -111,15 +118,6 @@ const providerReady = (provider: ProviderConnection): boolean =>
 const providerAvailable = (provider: ProviderConnection): boolean =>
   providerReady(provider) && provider.availability !== "limited" && provider.availability !== "unavailable";
 
-const routeLabel = (route: NonNullable<ChatExchange["route"]>, t: Translator): string =>
-  routeBadgeLabel(
-    route, t('chat.providerSelectedModel'), t('chat.simulatedModel'),
-    (cost) => t('chat.modelCost', { cost }), t('chat.modelCostNA'),
-  );
-
-const routeTooltip = (route: NonNullable<ChatExchange["route"]>, t: Translator): string =>
-  routeBadgeTooltip(route, (cost) => t('chat.modelCost', { cost }), t('chat.modelCostNA'));
-
 const availabilityLabel = (value: LocalModel["availability"] | ProviderConnection["availability"], t: Translator): string => {
   if (value === "limited") return t('app.usageLimited');
   if (value === "unavailable") return t('app.unavailable');
@@ -129,67 +127,9 @@ const availabilityLabel = (value: LocalModel["availability"] | ProviderConnectio
 
 const modelSize = (bytes: number, t: Translator): string => bytes > 0 ? `${(bytes / (1024 ** 3)).toFixed(1)} GB` : t('app.cloudManaged');
 
-const contextSize = (bytes: number): string => `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
-const onboardingPromptKeys = {
-  'choose-career-sources': 'chat.onboardingCareerSources',
-  'choose-additional-career-sources': 'chat.onboardingCareerAdditional',
-  'choose-career-publish-target': 'chat.onboardingCareerPublish',
-  'choose-career-social-account': 'chat.onboardingCareerLinkedIn',
-  'choose-blog-topic': 'chat.onboardingBloggerTopic',
-  'choose-writing-sources': 'chat.onboardingBloggerSources',
-  'choose-blog-publish-target': 'chat.onboardingBloggerPublish',
-  'choose-blog-social-account': 'chat.onboardingBloggerLinkedIn',
-} as const;
-
-const PromptModeIcon = ({ mode }: { mode: ChatMode }): React.JSX.Element => (
-  // The mode changes execution behavior; translating its label never changes the stored mode value.
-  <PromptModeIconView mode={mode} />
-);
-
-const PromptModeIconView = ({ mode }: { mode: ChatMode }): React.JSX.Element => {
-  const { t } = useI18n();
-  const label = mode === "autopilot" ? t('sidebar.autopilot') : t('sidebar.standard');
-  return (
-  <span
-    className={`prompt-mode-icon ${mode}`}
-    aria-label={t('app.mode', { mode: label })}
-    title={t('app.mode', { mode: label })}
-  >
-    <span aria-hidden="true">{mode === "autopilot" ? "⚙" : "?"}</span>
-  </span>
-  );
-};
-
-const ContextUsageIndicator = ({ usage }: { usage: ChatContextUsage | null }): JSX.Element => {
-  const { t } = useI18n();
-  const percentage = usage?.percentage ?? 0;
-  const label = usage
-    ? `${percentage}% context used, ${contextSize(usage.usedBytes)} of ${contextSize(usage.limitBytes)}`
-    : t('app.contextUnavailableRestart');
-  return (
-    <span
-      className={`context-usage ${usage ? "" : "unavailable"}`}
-      data-testid="context-usage"
-      tabIndex={0}
-      aria-label={label}
-      style={{ "--context-percentage": `${percentage}%` } as React.CSSProperties}
-    >
-      <span className="context-pie" aria-hidden="true"><span>{usage ? `${percentage}%` : "–"}</span></span>
-      <span className="context-tooltip" role="tooltip">
-        <strong>{usage ? t('app.contextUsed', { percentage }) : t('app.contextUnavailable')}</strong>
-        <span>{usage ? t('app.contextBudget', { used: contextSize(usage.usedBytes), limit: contextSize(usage.limitBytes) }) : t('app.restartIndicator')}</span>
-        {usage?.truncatedSections.length ? <em>{t('app.contextTrimmed')}</em> : null}
-      </span>
-    </span>
-  );
-};
-
 function App(): JSX.Element {
   const { t } = useI18n();
-  const onboardingPrompt = (id: string, fallback: string): string => {
-    const key = onboardingPromptKeys[id as keyof typeof onboardingPromptKeys];
-    return key ? t(key) : fallback;
-  };
+  const theme = useTheme();
   const api = window.agentWorkstation;
   const [view, setView] = useState<View>("chat");
   const [audit, setAudit] = useState<DemoAudit | null>(null);
@@ -218,29 +158,13 @@ function App(): JSX.Element {
   const [proposalTally, setProposalTally] = useState<ProposalTally | null>(null);
   const [preferredAgentId, setPreferredAgentId] = useState<string | undefined>();
   const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
-  const modeMenu = useRef<HTMLDetailsElement>(null);
-  const addMenu = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const dismissMenus = (event: PointerEvent): void => {
-      if (!modeMenu.current?.contains(event.target as Node)) modeMenu.current?.removeAttribute('open');
-      if (!addMenu.current?.contains(event.target as Node)) addMenu.current?.removeAttribute('open');
-    };
-    document.addEventListener('pointerdown', dismissMenus);
-    return () => document.removeEventListener('pointerdown', dismissMenus);
-  }, []);
-  const [pendingChatInput, setPendingChatInput] = useState<{
-    sessionId: string;
-    requestId: string;
-    prompt: string;
-    mode: ChatMode;
-  } | null>(null);
-  const [chatFailure, setChatFailure] = useState<{
-    sessionId: string;
-    prompt: string;
-    message: string;
-    mode: ChatMode;
-  } | null>(null);
-  const conversation = useRef<HTMLDivElement>(null);
+  const [pendingChatInput, setPendingChatInput] = useState<PendingChat | null>(null);
+  const [chatFailure, setChatFailure] = useState<FailedChat | null>(null);
+  const [chatActivity, setChatActivity] = useState<ChatActivity[]>([]);
+  const [freshReply, setFreshReply] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const pendingRequestId = useRef<string | null>(null);
+  const selectedSessionIdRef = useRef<string | undefined>(undefined);
   const [proposalWorkspace, setProposalWorkspace] = useState("");
   const [targetPath, setTargetPath] = useState("README.md");
   const [recommendation, setRecommendation] = useState(
@@ -280,6 +204,7 @@ function App(): JSX.Element {
   const ready = endpointReady && workspaceReady;
   const realReady = realEndpointReady && workspaceReady;
   const selectedChatSession = sessions.find((session) => session.selected);
+  selectedSessionIdRef.current = selectedChatSession?.id;
   const visiblePendingChat = pendingChatInput?.sessionId === selectedChatSession?.id ? pendingChatInput : null;
   const visibleChatFailure = chatFailure?.sessionId === selectedChatSession?.id ? chatFailure : null;
   const chatDraftKey = selectedChatSession?.id ?? "no-session";
@@ -462,13 +387,12 @@ function App(): JSX.Element {
       .catch(() => setProviderConnections([]));
   }, [api, loadChatContextUsage, loadLocalModels, loadProviderConnections]);
   useEffect(() => {
-    if (view !== "chat") return undefined;
-    const frame = window.requestAnimationFrame(() => {
-      const transcript = conversation.current;
-      if (transcript) transcript.scrollTop = transcript.scrollHeight;
+    if (typeof api.onChatActivity !== "function") return undefined;
+    return api.onChatActivity((activity) => {
+      if (activity.requestId !== pendingRequestId.current) return;
+      setChatActivity((current) => [...current, activity].slice(-24));
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [view, history, pendingChatInput, chatFailure]);
+  }, [api]);
   const go = (next: View): void => {
     setView(next);
     setError(null);
@@ -554,7 +478,6 @@ function App(): JSX.Element {
   };
 
   const changeChatMode = (mode: ChatMode): void => {
-    modeMenu.current?.removeAttribute("open");
     if (!selectedChatSession || selectedChatSession.mode === mode) return;
     if (typeof api.setChatSessionMode !== "function") {
       setError(t('app.restartModes'));
@@ -567,7 +490,6 @@ function App(): JSX.Element {
   };
 
   const addFolderFromChat = (): void => {
-    addMenu.current?.removeAttribute("open");
     void task("workspace", async () => {
       const directory = await api.pickWorkspaceDirectory();
       if (!directory) return;
@@ -588,7 +510,6 @@ function App(): JSX.Element {
   };
 
   const openMemoryFile = (): void => {
-    addMenu.current?.removeAttribute("open");
     if (!selectedAgent) return;
     void api.openAgentMemoryFile(selectedAgent.id).catch((value: unknown) => setError(messageOf(value)));
   };
@@ -604,22 +525,32 @@ function App(): JSX.Element {
     const mode = modeOverride ?? selectedChatSession?.mode ?? "autopilot";
     const sessionId = selectedChatSession.id;
     const requestId = crypto.randomUUID();
-    setChatInput("");
+    if (promptOverride === undefined) setChatInput("");
     setChatFailure((current) => current?.sessionId === sessionId ? null : current);
-    setPendingChatInput({ sessionId, requestId, prompt, mode });
+    pendingRequestId.current = requestId;
+    setChatActivity([]);
+    setFreshReply(null);
+    setPendingChatInput({ sessionId, requestId, prompt, mode, startedAt: Date.now() });
     void task("chat", async () => {
       try {
-        await api.sendChatMessage(prompt, requestId, sessionId);
+        const exchange = await api.sendChatMessage(prompt, requestId, sessionId);
+        if (selectedSessionIdRef.current === sessionId) {
+          setHistory((current) => [...current, exchange]);
+          setFreshReply(exchange.assistantMessage);
+        }
+        pendingRequestId.current = null;
+        setPendingChatInput((current) => current?.requestId === requestId ? null : current);
         await loadChat();
       } catch (value) {
         const message = chatErrorMessage(value);
         if (/abort|cancel/i.test(message)) {
-          setChatInput(prompt);
+          setChatDrafts((current) => current[sessionId] ? current : { ...current, [sessionId]: prompt });
           setNotice(t('app.messageCancelled'));
         } else {
           setChatFailure({ sessionId, prompt, message, mode });
         }
       } finally {
+        if (pendingRequestId.current === requestId) pendingRequestId.current = null;
         setPendingChatInput((current) => current?.requestId === requestId ? null : current);
       }
     });
@@ -759,206 +690,81 @@ function App(): JSX.Element {
     </div>
   );
 
+  const connectProvider = (provider: ProviderConnection): void => {
+    void task("endpoint", async () => {
+      const config: EndpointConfig = {
+        ...endpoint,
+        mode: "local",
+        providerIds: [provider.id],
+        providerId: provider.id,
+        providerModelId: provider.defaultModel,
+        routingPolicy: "adaptive",
+        allowedPaths: { localModels: false, ollamaCloudModels: false, cloudProviders: true },
+      };
+      await api.saveEndpointConfig(config);
+      setEndpoint({ ...config, configured: true });
+      setDemoSessionEnabled(false);
+      setNotice(t('connect.connected', { name: provider.label }));
+    });
+  };
+
+  const connectLocalModels = (): void => {
+    void task("endpoint", async () => {
+      const config: EndpointConfig = {
+        ...endpoint,
+        mode: "local",
+        modelId: automaticLocalModel?.id ?? endpoint.modelId,
+        ollamaModelIds: orderedAutomaticModelIds(localModels),
+        providerIds: [],
+        providerId: undefined,
+        providerModelId: undefined,
+        routingPolicy: "local_only",
+        allowedPaths: { localModels: true, ollamaCloudModels: false, cloudProviders: false },
+      };
+      await api.saveEndpointConfig(config);
+      setEndpoint({ ...config, configured: true });
+      setDemoSessionEnabled(false);
+      setNotice(t('connect.localConnected'));
+    });
+  };
+
   const Chat = (): JSX.Element => (
-    <div className="chatgpt-chat">
-      <div className="conversation" ref={conversation} aria-live="polite">
-        <div className="conversation-content">
-          {onboardingStep && onboardingStep.kind !== "complete" ? (
-            <section className="onboarding-card" aria-label={`${selectedAgentName} setup question`}>
-              <p className="eyebrow">{selectedAgentName}</p>
-              {onboardingStep.kind === "question" ? (
-                <>
-                  <h1>{onboardingPrompt(onboardingStep.question.id, onboardingStep.question.prompt)}</h1>
-                  <p>{t('chat.naturalAnswer', { name: selectedAgentName })}</p>
-                  {onboardingStep.question.intent === "initial" ? (
-                    <div className="onboarding-suggestions" aria-label={t('chat.examples')}>
-                      {(onboardingStep.question.optional
-                        ? [{ label: t('chat.noMoreSources'), prompt: t('chat.noMoreSources') }]
-                        : selectedAgent?.id === "career"
-                        ? [
-                          { label: t('chat.github'), prompt: t('chat.github') },
-                          { label: t('chat.linkedin'), prompt: t('chat.linkedin') },
-                          { label: t('chat.cv'), prompt: t('chat.cv') },
-                          { label: t('chat.describeSelf'), prompt: t('chat.describeSelf') },
-                        ]
-                        : [
-                          { label: t('chat.publishedArticles'), prompt: t('chat.publishedArticles') },
-                          { label: t('chat.writingFolder'), prompt: t('chat.writingFolder') },
-                          { label: t('chat.describeStyle'), prompt: t('chat.describeStyle') },
-                        ]
-                      ).map((suggestion) => (
-                        <button type="button" key={suggestion.prompt} onClick={() => setChatInput(suggestion.prompt)}>{suggestion.label}</button>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <h1>{t('chat.confirmTitle')}</h1>
-                  <MemoryConfirmation
-                    fieldKey={onboardingStep.memory.fieldKey}
-                    value={onboardingStep.memory.value}
-                  />
-                  <div className="onboarding-suggestions">
-                    <button className="primary" type="button" onClick={() => sendChat("evet")}>{t('chat.confirmYes')}</button>
-                    <button type="button" onClick={() => sendChat("hayır")}>{t('chat.confirmNo')}</button>
-                  </div>
-                </>
-              )}
-            </section>
-          ) : null}
-          {history.length === 0 && !visiblePendingChat && !visibleChatFailure ? (
-            onboardingStep?.kind === "complete" ? <div className="chat-welcome">
-              <SpecialistAvatar agentId={selectedAgent?.id ?? "unknown"} name={selectedAgentName} large />
-              <h1>{t('chat.helpTitle', { name: selectedAgentName })}</h1>
-              <p>{selectedAgent?.description ?? t('chat.chooseContext')}</p>
-              <p>{t('chat.approvalNotice')}</p>
-              {proposalTally && proposalTally.total > 0 ? (
-                <p className="proposal-tally">
-                  {t('chat.proposalTally', {
-                    limit: String(proposalTally.total),
-                    approved: String(proposalTally.approved),
-                    rejected: String(proposalTally.rejected),
-                  })}
-                </p>
-              ) : null}
-            </div> : null
-          ) : history.map((exchange, i) => {
-            // The live onboarding card above already shows this turn's question or
-            // confirmation with proper localization; the raw backend-authored
-            // message (which onboarding renders in a fixed language regardless of
-            // the interface language) would otherwise duplicate it right below.
-            const isLiveOnboardingEcho = onboardingStep !== null && onboardingStep.kind !== "complete" && i === history.length - 1;
-            return (
-            <div className="exchange" key={`${exchange.userMessage}-${i}`}>
-              <div className="user-turn">
-                <div className="message user"><p>{exchange.userMessage}</p></div>
-                <PromptModeIcon mode={exchange.mode} />
-              </div>
-              {isLiveOnboardingEcho ? null : (
-              <div className="message assistant">
-                <span>{selectedAgentName}</span>
-                <MessageContent content={exchange.assistantMessage} />
-                {exchange.sourceReferences.length ? (
-                  <div className="chips">
-                    {exchange.sourceReferences.map((source, index) => (
-                      <span key={`${source.type}-${index}`}>{sourceLabel(source, t)}</span>
-                    ))}
-                  </div>
-                ) : null}
-                {exchange.route ? (
-                  <div
-                    className="model-status"
-                    aria-label={t('chat.modelUsed', { model: routeLabel(exchange.route, t) })}
-                    title={routeTooltip(exchange.route, t)}
-                  >
-                    <i aria-hidden="true" />
-                    <span>{routeLabel(exchange.route, t)}</span>
-                    {exchange.route.fallback ? <em>{t('chat.fallback')}</em> : null}
-                  </div>
-                ) : null}
-              </div>
-              )}
-            </div>
-            );
+    <ChatView
+      agent={selectedAgent}
+      agentName={selectedAgentName}
+      session={selectedChatSession}
+      history={history}
+      onboardingStep={onboardingStep}
+      proposalTally={proposalTally}
+      pending={visiblePendingChat}
+      activity={chatActivity}
+      failure={visibleChatFailure}
+      freshReply={freshReply}
+      draft={chatInput}
+      busy={busy === "chat"}
+      contextUsage={contextUsage}
+      connectPanel={!realEndpointReady && !demoSessionEnabled && endpoint.mode !== "mock" ? (
+        <ConnectPanel
+          providers={providerConnections}
+          localModelCount={localModels.filter((model) => model.location === "local" && model.toolCalling).length}
+          busy={busy === "endpoint" || modelDiscoveryBusy}
+          onUseProvider={connectProvider}
+          onUseLocal={connectLocalModels}
+          onRefresh={() => void task("endpoint", async () => {
+            await Promise.all([loadLocalModels(endpoint.baseUrl), loadProviderConnections()]);
           })}
-          {visibleChatFailure ? (
-            <div className="exchange failed-exchange">
-              <div className="user-turn">
-                <div className="message user"><p>{visibleChatFailure.prompt}</p></div>
-                <PromptModeIcon mode={visibleChatFailure.mode} />
-              </div>
-              <div className="message assistant error-message" role="alert">
-                <span>{selectedAgentName}</span>
-                <strong>{/HTTP\s+429/i.test(visibleChatFailure.message) ? t('chat.usageLimit') : t('chat.failed')}</strong>
-                <p>{visibleChatFailure.message}</p>
-                <small>{t('chat.notLost')}</small>
-                <button
-                  type="button"
-                  className="secondary retry-message"
-                  onClick={() => sendChat(visibleChatFailure.prompt, visibleChatFailure.mode)}
-                >
-                  Try again
-                </button>
-              </div>
-            </div>
-          ) : null}
-          {visiblePendingChat ? (
-            <div className="exchange pending-exchange">
-              <div className="user-turn">
-                <div className="message user"><p>{visiblePendingChat.prompt}</p></div>
-                <PromptModeIcon mode={visiblePendingChat.mode} />
-              </div>
-              <div className="message assistant thinking-message" role="status" aria-label={t('chat.thinking', { name: selectedAgentName })}>
-                <span>{selectedAgentName}</span>
-                <div className="thinking-dots" aria-hidden="true"><i /><i /><i /></div>
-                <div className="model-status choosing-model"><i aria-hidden="true" /><span>{t('chat.choosingModel')}</span></div>
-                <button type="button" className="secondary cancel-message" onClick={cancelChat}>Cancel</button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <div className="composer-dock">
-        <form className="composer" onSubmit={(event) => { event.preventDefault(); sendChat(); }}>
-          <textarea
-            aria-label={t('chat.message', { name: selectedAgentName })}
-            value={chatInput}
-            onChange={(event) => setChatInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                sendChat();
-              }
-            }}
-            placeholder={t('chat.message', { name: selectedAgentName })}
-          />
-          <div className="composer-footer">
-            <div className="composer-controls">
-              <details className="composer-popover" ref={addMenu} onKeyDown={(event) => { if (event.key === 'Escape') addMenu.current?.removeAttribute('open'); }}>
-                <summary className="composer-add" aria-label={t('chat.addContext')} title={t('chat.addContext')}>＋</summary>
-                <div className="composer-popover-content add-popover">
-                  <button type="button" onClick={addFolderFromChat}>{t('chat.addWorkspace')}</button>
-                  <button type="button" onClick={openMemoryFile}>{t('chat.editMemory')}</button>
-                  <button type="button" onClick={() => { addMenu.current?.removeAttribute('open'); go('sources'); }}>{t('chat.manageSources')}</button>
-                </div>
-              </details>
-              <details className="composer-popover" ref={modeMenu} onKeyDown={(event) => { if (event.key === 'Escape') modeMenu.current?.removeAttribute('open'); }}>
-                <summary className="composer-mode" aria-label={t('chat.mode')}>
-                  <span className="mode-mark" aria-hidden="true">{selectedChatSession?.mode === 'autopilot' ? '✧' : '◇'}</span>
-                  {selectedChatSession?.mode === 'autopilot' ? t('sidebar.autopilot') : t('sidebar.standard')}
-                  <span className="mode-chevron" aria-hidden="true">
-                    <svg viewBox="0 0 20 20" fill="none" focusable="false">
-                      <path d="m5 7 5 5 5-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                </summary>
-                <div className="composer-popover-content mode-popover" role="group" aria-label={t('chat.mode')}>
-                  {(['standard', 'autopilot'] as ChatMode[]).map((mode) => (
-                    <button type="button" key={mode} className={selectedChatSession?.mode === mode ? 'selected' : ''}
-                      aria-pressed={selectedChatSession?.mode === mode}
-                      disabled={!selectedChatSession || busy === 'chat'} onClick={() => changeChatMode(mode)}>
-                      <span className="mode-choice-mark" aria-hidden="true">{mode === 'autopilot' ? '✧' : '◇'}</span>
-                      <span><strong>{mode === 'standard' ? t('sidebar.standard') : t('sidebar.autopilot')}</strong>
-                        <small>{t(mode === 'standard' ? 'chat.standardDescription' : 'chat.autopilotDescription')}</small></span>
-                      {selectedChatSession?.mode === mode ? <span className="mode-selected" aria-hidden="true">✓</span> : null}
-                    </button>
-                  ))}
-                </div>
-              </details>
-            </div>
-            <div className="composer-controls">
-              <ContextUsageIndicator usage={contextUsage} />
-              <button className="primary send-icon" aria-label={t('chat.send')} disabled={!selectedChatSession || busy === "chat"}>
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
-                  <path d="M10 16V4m0 0L5 9m5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </div>
+          onMore={() => go("settings")}
+        />
+      ) : null}
+      onDraftChange={setChatInput}
+      onSend={sendChat}
+      onCancel={cancelChat}
+      onChangeMode={changeChatMode}
+      onAddFolder={addFolderFromChat}
+      onEditMemory={openMemoryFile}
+      onManageSources={() => go("sources")}
+      onRevealDone={() => setFreshReply(null)}
+    />
   );
 
   const Audit = (): JSX.Element => (
@@ -1684,56 +1490,150 @@ function App(): JSX.Element {
     status: Status,
     settings: Settings,
   };
+  const orderedAgents = [...agents].sort((left, right) => {
+    const priority = (id: string): number => ['career', 'blogger', 'accountant'].indexOf(id) >>> 0;
+    return priority(left.id) - priority(right.id) || left.name.localeCompare(right.name);
+  });
+  const primaryProvider = allowedProviderConnections[0];
+  const intelligenceSummary = realEndpointReady
+    ? [
+      cloudPathAllowed && primaryProvider ? primaryProvider.label : null,
+      localPathAllowed && automaticLocalModel ? t('shell.onDevice') : null,
+      ollamaCloudPathAllowed ? "Ollama Cloud" : null,
+    ].filter(Boolean).join(" + ") || t('home.ready')
+    : demoSessionEnabled ? t('home.simulated') : t('home.setupNeeded');
+  const pageTitle = view === "chat"
+    ? selectedChatSession?.name ?? t('chat.newChat')
+    : agentNavigation.find((item) => item.id === view)?.label
+      ?? (view === "settings" ? t('common.settings') : view === "status" ? t('shell.modelStatus') : selectedAgentName);
+
+  const cancelRef = useRef<() => void>(() => undefined);
+  cancelRef.current = cancelChat;
+  const shortcutState = useRef({ openAgent, createNewChat, go, orderedAgents, pending: Boolean(visiblePendingChat) });
+  shortcutState.current = { openAgent, createNewChat, go, orderedAgents, pending: Boolean(visiblePendingChat) };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      const mod = event.ctrlKey || event.metaKey;
+      const state = shortcutState.current;
+      if (event.key === "Escape" && state.pending && !document.querySelector(".palette")) {
+        cancelRef.current();
+        return;
+      }
+      if (!mod || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "k") { event.preventDefault(); setPaletteOpen((open) => !open); }
+      else if (key === "n" && !event.shiftKey) { event.preventDefault(); state.createNewChat(); }
+      else if (key === "b") { event.preventDefault(); setSidebarOpen((open) => !open); }
+      else if (key === ".") { event.preventDefault(); setInspectorOpen((open) => !open); }
+      else if (key === ",") { event.preventDefault(); state.go("settings"); }
+      else if (/^[1-9]$/.test(key)) {
+        const agent = state.orderedAgents[Number(key) - 1];
+        if (agent) { event.preventDefault(); state.openAgent(agent.id); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const themeLabel = t(theme.preference === "system" ? 'shell.themeSystem' : theme.preference === "light" ? 'shell.themeLight' : 'shell.themeDark');
+  const paletteItems: PaletteItem[] = paletteOpen ? [
+    {
+      id: "new-chat", group: t('shell.actions'), label: t('shell.newChatWith', { name: selectedAgentName }),
+      icon: "pencil", shortcut: shortcutLabel("N"), run: () => createNewChat(),
+    },
+    ...agentNavigation.filter((item) => item.id !== "chat").map((item): PaletteItem => ({
+      id: `page-${item.id}`, group: t('shell.actions'), label: item.label, hint: item.hint,
+      icon: item.id === "audit" ? "audit" : item.id === "changes" ? "review" : item.id === "publication" ? "globe" : "folder",
+      run: () => go(item.id),
+    })),
+    { id: "settings", group: t('shell.actions'), label: t('shell.openSettings'), icon: "settings", shortcut: shortcutLabel(","), run: () => go("settings") },
+    { id: "status", group: t('shell.actions'), label: t('shell.openStatus'), icon: "bolt", run: () => go("status") },
+    { id: "theme", group: t('shell.actions'), label: t('shell.cycleTheme', { theme: themeLabel }), icon: theme.resolved === "dark" ? "moon" : "sun", run: theme.cycle },
+    { id: "sidebar", group: t('shell.actions'), label: t('shell.toggleSidebar'), icon: "sidebar", shortcut: shortcutLabel("B"), run: () => setSidebarOpen((open) => !open) },
+    { id: "context", group: t('shell.actions'), label: t('shell.toggleContext'), icon: "panel", shortcut: shortcutLabel("."), run: () => setInspectorOpen((open) => !open) },
+    ...orderedAgents.map((agent, index): PaletteItem => ({
+      id: `agent-${agent.id}`, group: t('shell.specialists'), label: t('shell.openSpecialist', { name: agent.name }),
+      hint: agent.description, keywords: agent.id,
+      leading: <SpecialistAvatar agentId={agent.id} name={agent.name} />,
+      ...(index < 9 ? { shortcut: shortcutLabel(String(index + 1)) } : {}),
+      run: () => openAgent(agent.id),
+    })),
+    ...[...sessions].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map((session): PaletteItem => {
+      const agent = agents.find((candidate) => candidate.id === session.agentId);
+      return {
+        id: `session-${session.id}`, group: t('shell.conversations'), label: session.name,
+        hint: [agent?.name ?? session.agentId, session.workspaceId].filter(Boolean).join(", "),
+        leading: <SpecialistAvatar agentId={session.agentId} name={agent?.name ?? session.agentId} />,
+        run: () => openSession(session.id),
+      };
+    }),
+  ] : [];
+
   return (
-    <div className={`shell agent-tone-${selectedAgent?.id ?? "default"} ${sidebarOpen ? "" : "sidebar-collapsed"} ${inspectorOpen ? "" : "inspector-collapsed"}`}>
+    <div
+      className={`shell agent-tone-${selectedAgent?.id ?? "default"} ${sidebarOpen ? "" : "sidebar-collapsed"} ${inspectorOpen ? "" : "inspector-collapsed"}`}
+      data-platform={detectPlatform()}
+    >
       <SessionsSidebar
         view={view}
         navigation={agentNavigation}
-        agents={agents}
+        agents={orderedAgents}
         activeAgent={selectedAgent}
         workspaces={workspaces}
         sessions={sessions}
         pendingActionCount={actions.length}
         busy={busy === "chat"}
-        intelligenceSummary={realEndpointReady
-          ? `${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed)} path${Number(localPathAllowed) + Number(ollamaCloudPathAllowed) + Number(cloudPathAllowed) === 1 ? "" : "s"} allowed`
-          : demoSessionEnabled ? "Simulated demo · no AI" : "Setup required"}
+        intelligenceReady={realEndpointReady}
+        intelligenceSummary={intelligenceSummary}
         cloudPermitted={ollamaCloudPathAllowed || cloudPathAllowed}
+        theme={theme.preference}
+        onCycleTheme={theme.cycle}
         onOpenAgent={openAgent}
         onRenameAgent={saveAgentName}
         onNavigate={go}
         onNewSession={() => createNewChat(selectedAgent?.id)}
+        onSearch={() => setPaletteOpen(true)}
         onOpenSession={openSession}
         onRenameSession={saveChatName}
         onDeleteSession={deleteChat}
       />
       <main className={view === "chat" ? "chat-main" : ""}>
-        <header>
-          <div>
+        <header className="titlebar">
+          <div className="titlebar-leading">
             <button
               type="button"
-              className="shell-toggle"
+              className="shell-toggle icon-button"
               aria-label={sidebarOpen ? t('chat.hideNavigation') : t('chat.showNavigation')}
               aria-expanded={sidebarOpen}
+              title={`${sidebarOpen ? t('chat.hideNavigation') : t('chat.showNavigation')} (${shortcutLabel("B")})`}
               onClick={() => setSidebarOpen((open) => !open)}
             >
-              ☰
+              <Icon name="sidebar" />
             </button>
-            <i className={realEndpointReady ? "connected" : ""} />
-            {view === "chat"
-              ? sessions.find((session) => session.selected)?.name ?? t('chat.newChat')
-              : realEndpointReady
-                ? `${selectedAgentName} ready`
-              : demoSessionEnabled
-                ? "Simulated demo · no AI model"
-                : "Intelligence setup required"}
+            {!sidebarOpen ? (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t('shell.newChatWith', { name: selectedAgentName })}
+                title={`${t('shell.newChatWith', { name: selectedAgentName })} (${shortcutLabel("N")})`}
+                onClick={() => createNewChat()}
+              >
+                <Icon name="pencil" />
+              </button>
+            ) : null}
+            <span className="titlebar-title">{pageTitle}</span>
+            {selectedAgent ? <span className="titlebar-agent">{selectedAgentName}</span> : null}
           </div>
           <div className="header-actions">
-            <button type="button" onClick={() => setInspectorOpen((open) => !open)} aria-expanded={inspectorOpen}>
-              {inspectorOpen ? t('chat.hideContext') : t('chat.showContext')}
-            </button>
-            <button className="settings-header-link" type="button" onClick={() => go("settings")}>
-              {t('common.settings')}
+            <button
+              type="button"
+              className={`icon-button ${inspectorOpen ? "active" : ""}`}
+              onClick={() => setInspectorOpen((open) => !open)}
+              aria-expanded={inspectorOpen}
+              aria-label={inspectorOpen ? t('chat.hideContext') : t('chat.showContext')}
+              title={`${inspectorOpen ? t('chat.hideContext') : t('chat.showContext')} (${shortcutLabel(".")})`}
+            >
+              <Icon name="panel" />
             </button>
           </div>
         </header>
@@ -1751,12 +1651,10 @@ function App(): JSX.Element {
             </span>
           </div>
         ) : null}
-        {error ? (
-          <Toast kind="error" text={error} close={() => setError(null)} />
-        ) : null}
-        {notice ? (
-          <Toast kind="success" text={notice} close={() => setNotice(null)} />
-        ) : null}
+        <div className="toast-stack">
+          {error ? <Toast kind="error" text={error} close={() => setError(null)} /> : null}
+          {notice ? <Toast kind="success" text={notice} close={() => setNotice(null)} /> : null}
+        </div>
         <div className="page">
           {pages[view]()}
         </div>
@@ -1777,6 +1675,7 @@ function App(): JSX.Element {
         onOpenReview={() => go("changes")}
         onError={setError}
       />
+      {paletteOpen ? <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} /> : null}
     </div>
   );
 }
@@ -1848,14 +1747,21 @@ function Toast({
   text: string;
   close: () => void;
 }): JSX.Element {
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (kind === "error") return undefined;
+    const timer = window.setTimeout(() => closeRef.current(), 5000);
+    return () => window.clearTimeout(timer);
+  }, [kind, text]);
   return (
     <div
       className={`toast ${kind}`}
       role={kind === "error" ? "alert" : "status"}
     >
       <span>{text}</span>
-      <button type="button" onClick={close}>
-        ×
+      <button type="button" aria-label="Dismiss" onClick={close}>
+        <Icon name="x" size={14} />
       </button>
     </div>
   );

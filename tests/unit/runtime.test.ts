@@ -3,6 +3,41 @@ import { AgentRuntime } from '../../src/application/intelligence';
 import { MockIntelligenceAdapter } from '../../src/infrastructure/mock/mockIntelligence';
 
 describe('agent runtime', () => {
+  it('reports progress events to an observer without changing the result', async () => {
+    const runtime = new AgentRuntime(
+      new MockIntelligenceAdapter([
+        { type: 'tool_call', call: { id: 'call-read', toolName: 'filesystem.read', input: { workspaceId: 'w', relativePath: 'README.md' } } },
+        { type: 'tool_call', call: { id: 'call-fail', toolName: 'git.log', input: {} } },
+        { type: 'text', content: 'done' },
+      ]),
+      {
+        execute: async (toolName) => {
+          if (toolName === 'git.log') throw new Error('no repo');
+          return { output: 'ok', sourceReferences: [] };
+        },
+        getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }),
+      },
+      { decide: () => 'allow' },
+      { maxSteps: 4, maxToolCalls: 4, maxToolResultBytes: 1024, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
+    );
+    const events: unknown[] = [];
+    const result = await runtime.runWithTrace(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' },
+      new AbortController().signal,
+      (event) => { events.push(event); if (event.type === 'thinking' && event.step === 2) throw new Error('observer bug'); },
+    );
+    expect(result.content).toBe('done');
+    expect(events).toEqual([
+      { type: 'thinking', step: 0 },
+      { type: 'tool', step: 0, toolName: 'filesystem.read', target: 'README.md' },
+      { type: 'thinking', step: 1 },
+      { type: 'tool', step: 1, toolName: 'git.log' },
+      { type: 'tool_failed', step: 1, toolName: 'git.log' },
+      { type: 'thinking', step: 2 },
+    ]);
+  });
+
   it('returns final text', async () => {
     const runtime = new AgentRuntime(
       new MockIntelligenceAdapter([{ type: 'text', content: 'done' }]),

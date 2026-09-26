@@ -297,6 +297,13 @@ export type CreateChatSessionInput = {
   isolationMode: 'read_only';
 };
 
+/** Live progress for an in-flight chat request, pushed from the main process. */
+export type ChatActivity = { requestId: string } & (
+  | { type: 'thinking'; step: number }
+  | { type: 'tool'; step: number; toolName: string; target?: string }
+  | { type: 'tool_failed'; step: number; toolName: string }
+);
+
 export type AgentWorkstationApi = {
   getDemoAudit: () => Promise<DemoAudit>;
   pickWorkspaceDirectory: () => Promise<string | null>;
@@ -352,4 +359,6 @@ export type AgentWorkstationApi = {
   proposeProfileUpdate: (input: ProposalRequest) => Promise<PendingAction>;
   approvePendingAction: (actionId: string) => Promise<PendingAction>;
   rejectPendingAction: (actionId: string, reason: string) => Promise<PendingAction>;
+  setWindowTheme: (theme: 'light' | 'dark') => Promise<void>;
+  onChatActivity: (listener: (activity: ChatActivity) => void) => () => void;
 };

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, screen, session, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { EditableAgentMemoryStore } from '../../../src/infrastructure/persistence/EditableAgentMemoryStore';
@@ -12,7 +12,7 @@ import {
 } from '../../../src/application/chatContextUsage';
 import { buildChatModeInstructions } from '../../../src/application/chatMode';
 import { ContextBuilder } from '../../../src/application/context';
-import { AgentRuntime } from '../../../src/application/intelligence';
+import { AgentRuntime, type AgentRunObserver } from '../../../src/application/intelligence';
 import type { AgentDefinition } from '../../../src/application/agents/types';
 import { AgentOnboardingService, renderOnboardingStep } from '../../../src/application/onboarding/AgentOnboardingService';
 import { AgentDisplayNameService } from '../../../src/application/agents/AgentDisplayNameService';
@@ -62,6 +62,7 @@ import { NodePkce } from '../../../src/infrastructure/linkedin/NodePkce';
 import type { PublicationWorkflow } from '../../../src/domain/publication/workflow';
 import {
   IPC_CHANNELS,
+  IPC_EVENTS,
   cancelChatRequest,
   parseApprovePendingActionInput,
   parseAgentOnboardingInput,
@@ -85,6 +86,7 @@ import {
   parseSetChatSessionModeInput,
   parseRejectPendingActionInput,
   parseWorkspaceIdInput,
+  parseWindowThemeInput,
   registerChatRequest,
   releaseChatRequest,
 } from './ipcContract';
@@ -963,7 +965,12 @@ async function getChatHistory(): Promise<Array<{
   return exchanges;
 }
 
-async function prepareChatMessage(message: string, sessionId: string, signal: AbortSignal): Promise<{
+async function prepareChatMessage(
+  message: string,
+  sessionId: string,
+  signal: AbortSignal,
+  observe?: AgentRunObserver,
+): Promise<{
   sessionId: string;
   exchange: {
     userMessage: string;
@@ -1036,6 +1043,7 @@ async function prepareChatMessage(message: string, sessionId: string, signal: Ab
       taskKind: 'chat',
     },
     signal,
+    observe,
   );
   signal.throwIfAborted();
   const route = router?.getLastDecision() ?? simulatedRoute();
@@ -1653,11 +1661,15 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.getChatContextUsage, async () => getChatContextUsage());
 
-  ipcMain.handle(IPC_CHANNELS.sendChatMessage, async (_event, payload: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.sendChatMessage, async (event, payload: unknown) => {
     const { message, requestId, sessionId } = parseChatMessageInput(payload);
     const controller = registerChatRequest(chatRequestControllers, requestId);
+    const sender = event.sender;
+    const observe: AgentRunObserver = (activity) => {
+      if (!sender.isDestroyed()) sender.send(IPC_EVENTS.chatActivity, { requestId, ...activity });
+    };
     try {
-      const prepared = await prepareChatMessage(message, sessionId, controller.signal);
+      const prepared = await prepareChatMessage(message, sessionId, controller.signal, observe);
       releaseChatRequest(chatRequestControllers, requestId, controller);
       await appendChatPair(
         prepared.sessionId,
@@ -1719,17 +1731,90 @@ function registerIpcHandlers(): void {
     const { service } = await approvals();
     return service.rejectAction(actionId, reason);
   });
+
+  ipcMain.handle(IPC_CHANNELS.setWindowTheme, async (event, payload: unknown) => {
+    const { theme } = parseWindowThemeInput(payload);
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    const palette = WINDOW_PALETTES[theme];
+    win.setBackgroundColor(palette.background);
+    if (process.platform !== 'darwin') {
+      win.setTitleBarOverlay({ color: palette.chrome, symbolColor: palette.symbol, height: TITLE_BAR_HEIGHT });
+    }
+  });
 }
 
-function createWindow(): void {
+// Keep in sync with --chrome / --ink in renderer styles.css so the native caption
+// buttons blend into the custom title bar.
+const TITLE_BAR_HEIGHT = 44;
+const WINDOW_PALETTES = {
+  light: { background: '#fafafb', chrome: '#fafafb', symbol: '#2b2f36' },
+  dark: { background: '#18191c', chrome: '#18191c', symbol: '#d9dce1' },
+} as const;
+const windowBoundsSettingKey = 'window.bounds';
+
+type WindowBounds = { x?: number; y?: number; width: number; height: number; maximized?: boolean };
+
+async function readWindowBounds(): Promise<WindowBounds> {
+  const fallback: WindowBounds = { width: 1320, height: 880 };
+  try {
+    const raw = await getPersistence().getSetting(windowBoundsSettingKey);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<WindowBounds>;
+    if (typeof parsed.width !== 'number' || typeof parsed.height !== 'number') return fallback;
+    const bounds: WindowBounds = {
+      width: Math.max(960, Math.round(parsed.width)),
+      height: Math.max(640, Math.round(parsed.height)),
+      maximized: parsed.maximized === true,
+    };
+    const visible = typeof parsed.x === 'number' && typeof parsed.y === 'number'
+      && screen.getAllDisplays().some(({ workArea }) => parsed.x! >= workArea.x - 40
+        && parsed.y! >= workArea.y - 40
+        && parsed.x! < workArea.x + workArea.width - 120
+        && parsed.y! < workArea.y + workArea.height - 80);
+    return visible ? { ...bounds, x: Math.round(parsed.x!), y: Math.round(parsed.y!) } : bounds;
+  } catch {
+    return fallback;
+  }
+}
+
+function persistWindowBounds(win: BrowserWindow): void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const save = (): void => {
+    if (win.isDestroyed()) return;
+    const maximized = win.isMaximized();
+    const bounds = maximized ? win.getNormalBounds() : win.getBounds();
+    void getPersistence().setSetting(windowBoundsSettingKey, JSON.stringify({ ...bounds, maximized }))
+      .catch(() => undefined);
+  };
+  const schedule = (): void => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(save, 400);
+  };
+  win.on('resize', schedule);
+  win.on('move', schedule);
+  win.on('maximize', save);
+  win.on('unmaximize', save);
+  win.on('close', save);
+}
+
+async function createWindow(): Promise<void> {
   const isDev = !app.isPackaged;
   const forceFileMode = process.env.AW_RENDERER_MODE === 'file';
   const preloadPath = join(__dirname, '../preload/preload.js');
+  const bounds = await readWindowBounds();
+  const palette = WINDOW_PALETTES[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'];
   const win = new BrowserWindow({
-    width: 1280,
-    height: 900,
-    minWidth: 1080,
-    minHeight: 680,
+    ...bounds,
+    minWidth: 960,
+    minHeight: 640,
+    show: false,
+    title: 'Agent Workstation',
+    backgroundColor: palette.background,
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 16, y: 15 } }
+      : { titleBarOverlay: { color: palette.chrome, symbolColor: palette.symbol, height: TITLE_BAR_HEIGHT } }),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -1751,6 +1836,12 @@ function createWindow(): void {
     process.stderr.write(`Renderer failed to load (${code}): ${description} at ${failingUrl}\n`);
   });
 
+  win.once('ready-to-show', () => {
+    if (bounds.maximized) win.maximize();
+    win.show();
+  });
+  persistWindowBounds(win);
+
   if (isDev && !forceFileMode) {
     void win.loadURL('http://localhost:5173');
   } else {
@@ -1770,7 +1861,7 @@ app.whenReady().then(() => {
       },
     });
   });
-  createWindow();
+  void createWindow();
 });
 
 app.on('window-all-closed', () => {

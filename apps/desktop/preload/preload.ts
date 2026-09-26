@@ -53,7 +53,10 @@ const IPC_CHANNELS = {
   proposeProfileUpdate: 'agentWorkstation:proposeProfileUpdate',
   approvePendingAction: 'agentWorkstation:approvePendingAction',
   rejectPendingAction: 'agentWorkstation:rejectPendingAction',
+  setWindowTheme: 'agentWorkstation:setWindowTheme',
 } as const;
+
+const CHAT_ACTIVITY_EVENT = 'agentWorkstation:chatActivity';
 
 declare global {
   interface Window {
@@ -137,6 +140,12 @@ const api: AgentWorkstationApi = {
     ipcRenderer.invoke(IPC_CHANNELS.approvePendingAction, { actionId }),
   rejectPendingAction: async (actionId, reason) =>
     ipcRenderer.invoke(IPC_CHANNELS.rejectPendingAction, { actionId, reason }),
+  setWindowTheme: async (theme) => ipcRenderer.invoke(IPC_CHANNELS.setWindowTheme, { theme }),
+  onChatActivity: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, activity: Parameters<typeof listener>[0]): void => listener(activity);
+    ipcRenderer.on(CHAT_ACTIVITY_EVENT, handler);
+    return () => { ipcRenderer.removeListener(CHAT_ACTIVITY_EVENT, handler); };
+  },
 };
 
 contextBridge.exposeInMainWorld('agentWorkstation', api);

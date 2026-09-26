@@ -14,6 +14,24 @@ export type AgentRunResult = {
   sourceReferences: SourceReference[];
 };
 
+/** Progress signals a caller can surface while a run is in flight. */
+export type AgentRunEvent =
+  | { type: 'thinking'; step: number }
+  | { type: 'tool'; step: number; toolName: string; target?: string }
+  | { type: 'tool_failed'; step: number; toolName: string };
+
+export type AgentRunObserver = (event: AgentRunEvent) => void;
+
+const toolTarget = (input: unknown): string | undefined => {
+  if (input === null || typeof input !== 'object') return undefined;
+  const record = input as Record<string, unknown>;
+  for (const key of ['relativePath', 'path', 'url', 'targetPath']) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 160);
+  }
+  return undefined;
+};
+
 export class AgentRuntime {
   constructor(
     private readonly intelligence: IntelligencePort,
@@ -29,11 +47,20 @@ export class AgentRuntime {
     return (await this.runWithTrace(request, context, signal)).content;
   }
 
-  async runWithTrace(request: ModelRequest, context: { modelId: string; executionMode: ExecutionMode; workspaceId?: string; taskKind?: TaskKind }, signal: AbortSignal): Promise<AgentRunResult> {
+  async runWithTrace(
+    request: ModelRequest,
+    context: { modelId: string; executionMode: ExecutionMode; workspaceId?: string; taskKind?: TaskKind },
+    signal: AbortSignal,
+    observe?: AgentRunObserver,
+  ): Promise<AgentRunResult> {
     let toolCalls = 0;
     const sourceReferences: SourceReference[] = [];
+    const emit = (event: AgentRunEvent): void => {
+      try { observe?.(event); } catch { /* observers never change the run outcome */ }
+    };
     for (let step = 0; step < this.limits.maxSteps; step += 1) {
       signal.throwIfAborted();
+      emit({ type: 'thinking', step });
       const modelAbort = new AbortController();
       const response = await this.withTimeout(
         () => this.intelligence.execute(request, {
@@ -82,6 +109,8 @@ export class AgentRuntime {
       if (policy === 'require_approval' && metadata.sideEffect !== 'propose') {
         throw new Error('Tool not allowed');
       }
+      const target = toolTarget(response.call.input);
+      emit({ type: 'tool', step, toolName: response.call.toolName, ...(target ? { target } : {}) });
       const toolAbort = new AbortController();
       let result: { output: unknown; sourceReferences: SourceReference[] };
       try {
@@ -92,6 +121,7 @@ export class AgentRuntime {
           'Tool timeout exceeded',
         );
       } catch (error) {
+        emit({ type: 'tool_failed', step, toolName: response.call.toolName });
         const message = error instanceof Error ? error.message : String(error);
         request = {
           messages: [

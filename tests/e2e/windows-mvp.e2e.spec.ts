@@ -111,7 +111,7 @@ test('continues normal conversation without requiring a workspace', async () => 
 
     await expect(page.getByText('Mock response: Let us continue without local files.', { exact: true })).toBeVisible();
     await expect(page.getByText('No workspace configured', { exact: true })).toHaveCount(0);
-    await expect(page.locator('.message.user').last()).toHaveCSS('background-color', 'rgb(243, 243, 244)');
+    await expect(page.locator('.message.user').last()).toHaveCSS('background-color', 'rgb(236, 238, 241)');
   } finally {
     await app.close();
     fs.rmSync(appDataRoot, { recursive: true, force: true });
@@ -451,6 +451,8 @@ test('provider usage limits are shown inside the chat transcript', async () => {
     await expect(transcriptError).toBeVisible();
     await expect(transcriptError).toContainText('HTTP 429: you (asozyurt) have reached your session usage limit');
     await expect(page.getByText('Review my profile.', { exact: true })).toBeVisible();
+    await expect(sendButton).toBeDisabled();
+    await page.getByLabel('Message Career').fill('Review my profile again.');
     await expect(sendButton).toBeEnabled();
     await expect(page.locator('.toast.error')).toHaveCount(0);
   } finally {
