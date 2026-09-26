@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, screen, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, Notification, safeStorage, screen, session, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { EditableAgentMemoryStore } from '../../../src/infrastructure/persistence/EditableAgentMemoryStore';
@@ -1689,6 +1689,7 @@ function registerIpcHandlers(): void {
         prepared.exchange.sourceReferences,
         prepared.exchange.route,
       );
+      notifyReplyIfUnfocused(BrowserWindow.fromWebContents(sender), sessionId, prepared.exchange.assistantMessage);
       return prepared.exchange;
     } finally {
       releaseChatRequest(chatRequestControllers, requestId, controller);
@@ -1752,6 +1753,32 @@ function registerIpcHandlers(): void {
       win.setTitleBarOverlay({ color: palette.chrome, symbolColor: palette.symbol, height: TITLE_BAR_HEIGHT });
     }
   });
+}
+
+/** Long agent runs finish while the user works elsewhere; tell them, like native chat apps do. */
+function notifyReplyIfUnfocused(win: BrowserWindow | null, sessionId: string, reply: string): void {
+  if (!win || win.isDestroyed() || win.isFocused() || !Notification.isSupported()) return;
+  void (async () => {
+    const chatSession = (await getPersistence().listChatSessions()).find((candidate) => candidate.id === sessionId);
+    const agentName = chatSession
+      ? await getAgentDisplayNameService().resolve(chatSession.agentId, getAgentCatalog().get(chatSession.agentId).name)
+      : 'Agent Workstation';
+    const body = reply.replace(/[#*_`>]/g, '').replace(/\s+/g, ' ').trim();
+    const notification = new Notification({
+      title: `${agentName} replied`,
+      body: body.length > 140 ? `${body.slice(0, 137)}...` : body,
+      silent: false,
+    });
+    notification.on('click', () => focusWindow(win));
+    notification.show();
+  })().catch(() => undefined);
+}
+
+function focusWindow(win: BrowserWindow | null | undefined): void {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
+  win.focus();
 }
 
 // Keep in sync with --chrome / --ink in renderer styles.css so the native caption
@@ -1859,9 +1886,27 @@ async function createWindow(): Promise<void> {
   }
 }
 
+// A second launch (Start menu, taskbar, shortcut) focuses the running window
+// instead of opening another copy against the same database.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => focusWindow(BrowserWindow.getAllWindows()[0]));
+}
+
+const QUICK_OPEN_SHORTCUT = 'CommandOrControl+Alt+Space';
+
 app.whenReady().then(() => {
   const isDev = !app.isPackaged;
+  if (process.platform === 'win32') app.setAppUserModelId('com.edgeetech.agentworkstation');
   Menu.setApplicationMenu(null);
+  // Bring the workstation forward from anywhere. Registration fails quietly when
+  // another app already owns the shortcut.
+  globalShortcut.register(QUICK_OPEN_SHORTCUT, () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win?.isFocused()) win.minimize();
+    else focusWindow(win);
+  });
   registerIpcHandlers();
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -1873,6 +1918,8 @@ app.whenReady().then(() => {
   });
   void createWindow();
 });
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
