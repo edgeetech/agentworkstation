@@ -22,7 +22,8 @@
     "check:architecture": "vitest run tests/architecture",
     "test:e2e": "npm run electron:prepare && playwright test",
     "e2e": "npm run electron:prepare && playwright test",
-    "export:plugins": "tsx scripts/plugin-export/export-plugins.ts"
+    "export:plugins": "tsx scripts/plugin-export/export-plugins.ts",
+    "version": "npm run export:plugins && git add plugins .claude-plugin"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.141",
