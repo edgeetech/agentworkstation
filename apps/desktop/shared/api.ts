@@ -304,6 +304,10 @@ export type UsageLedgerSettings = {
   path: string;
 };
 
+export type ReminderSettings = {
+  accountantDeadlines: boolean;
+};
+
 /** Live progress for an in-flight chat request, pushed from the main process. */
 export type ChatActivity = { requestId: string } & (
   | { type: 'thinking'; step: number }
@@ -371,5 +375,8 @@ export type AgentWorkstationApi = {
   getUsageLedgerSettings: () => Promise<UsageLedgerSettings>;
   setUsageLedgerEnabled: (enabled: boolean) => Promise<UsageLedgerSettings>;
   openUsageLedgerFolder: () => Promise<void>;
+  getReminderSettings: () => Promise<ReminderSettings>;
+  setReminderSettings: (settings: ReminderSettings) => Promise<void>;
   onChatActivity: (listener: (activity: ChatActivity) => void) => () => void;
+  onOpenAgent: (listener: (payload: { agentId: string }) => void) => () => void;
 };

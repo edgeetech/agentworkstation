@@ -56,11 +56,14 @@ export const IPC_CHANNELS = {
   getUsageLedgerSettings: 'agentWorkstation:getUsageLedgerSettings',
   setUsageLedgerEnabled: 'agentWorkstation:setUsageLedgerEnabled',
   openUsageLedgerFolder: 'agentWorkstation:openUsageLedgerFolder',
+  getReminderSettings: 'agentWorkstation:getReminderSettings',
+  setReminderSettings: 'agentWorkstation:setReminderSettings',
 } as const;
 
 /** Main-to-renderer push events (sent with webContents.send, never invoked). */
 export const IPC_EVENTS = {
   chatActivity: 'agentWorkstation:chatActivity',
+  openAgent: 'agentWorkstation:openAgent',
 } as const;
 
 const windowThemeSchema = z.object({
@@ -258,6 +261,14 @@ const rejectSchema = z.object({
   actionId: z.string().min(1),
   reason: z.string().min(1),
 });
+
+const reminderSettingsSchema = z.object({
+  accountantDeadlines: z.boolean(),
+}).strict();
+
+export function parseReminderSettingsInput(value: unknown): { accountantDeadlines: boolean } {
+  return reminderSettingsSchema.parse(value);
+}
 
 export function parseApprovePendingActionInput(value: unknown): { actionId: string } {
   return approveSchema.parse(value);

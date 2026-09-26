@@ -15,6 +15,7 @@ import type {
   OnboardingStep,
   ProposalTally,
   UsageLedgerSettings,
+  ReminderSettings,
   WorkspaceRecord,
 } from "../shared/api";
 import {
@@ -183,6 +184,7 @@ function App(): JSX.Element {
   const [modelDiscoveryError, setModelDiscoveryError] = useState<string | null>(null);
   const [demoSessionEnabled, setDemoSessionEnabled] = useState(false);
   const [usageLedgerSettings, setUsageLedgerSettings] = useState<UsageLedgerSettings>({ enabled: true, path: "" });
+  const [reminderSettings, setReminderSettings] = useState<ReminderSettings>({ accountantDeadlines: true });
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 900);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const automaticLocalModel = chooseAutomaticLocalModel(localModels);
@@ -393,6 +395,7 @@ function App(): JSX.Element {
     }
     void loadProviderConnections()
       .catch(() => setProviderConnections([]));
+    void api.getReminderSettings().then(setReminderSettings).catch(() => undefined);
   }, [api, loadChatContextUsage, loadLocalModels, loadProviderConnections]);
   useEffect(() => {
     if (typeof api.onChatActivity !== "function") return undefined;
@@ -445,6 +448,13 @@ function App(): JSX.Element {
     }
     createNewChat(agentId);
   };
+
+  const openAgentRef = useRef(openAgent);
+  openAgentRef.current = openAgent;
+  useEffect(() => {
+    if (typeof api.onOpenAgent !== "function") return undefined;
+    return api.onOpenAgent(({ agentId }) => openAgentRef.current(agentId));
+  }, [api]);
 
   const openSession = (sessionId: string): void => {
     void task("chat", async () => {
@@ -1432,6 +1442,30 @@ function App(): JSX.Element {
                   {demoSessionEnabled ? t('settings.demoEnabled') : t('settings.enableDemo')}
                 </button>
               ) : null}
+            </div>
+          </details>
+          <details className="settings-details" open>
+            <summary>{t('settings.notifications')}</summary>
+            <div className="details-content">
+              <button
+                type="button"
+                className={`permission-card ${reminderSettings.accountantDeadlines ? "allowed" : ""}`}
+                aria-label={t('settings.remindDeadlines')}
+                aria-pressed={reminderSettings.accountantDeadlines}
+                onClick={() => {
+                  const next = { accountantDeadlines: !reminderSettings.accountantDeadlines };
+                  setReminderSettings(next);
+                  void api.setReminderSettings(next);
+                }}
+              >
+                <span className="permission-copy">
+                  <strong>{t('settings.remindDeadlines')}</strong>
+                  <small>{t('settings.remindDeadlinesHelp')}</small>
+                </span>
+                <span className="permission-state">
+                  <span className="toggle-switch" aria-hidden="true"><span /></span>
+                </span>
+              </button>
             </div>
           </details>
           <details className="settings-details">

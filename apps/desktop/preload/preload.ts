@@ -57,9 +57,12 @@ const IPC_CHANNELS = {
   getUsageLedgerSettings: 'agentWorkstation:getUsageLedgerSettings',
   setUsageLedgerEnabled: 'agentWorkstation:setUsageLedgerEnabled',
   openUsageLedgerFolder: 'agentWorkstation:openUsageLedgerFolder',
+  getReminderSettings: 'agentWorkstation:getReminderSettings',
+  setReminderSettings: 'agentWorkstation:setReminderSettings',
 } as const;
 
 const CHAT_ACTIVITY_EVENT = 'agentWorkstation:chatActivity';
+const OPEN_AGENT_EVENT = 'agentWorkstation:openAgent';
 
 declare global {
   interface Window {
@@ -147,10 +150,17 @@ const api: AgentWorkstationApi = {
   getUsageLedgerSettings: async () => ipcRenderer.invoke(IPC_CHANNELS.getUsageLedgerSettings),
   setUsageLedgerEnabled: async (enabled) => ipcRenderer.invoke(IPC_CHANNELS.setUsageLedgerEnabled, { enabled }),
   openUsageLedgerFolder: async () => ipcRenderer.invoke(IPC_CHANNELS.openUsageLedgerFolder),
+  getReminderSettings: async () => ipcRenderer.invoke(IPC_CHANNELS.getReminderSettings),
+  setReminderSettings: async (settings) => ipcRenderer.invoke(IPC_CHANNELS.setReminderSettings, settings),
   onChatActivity: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, activity: Parameters<typeof listener>[0]): void => listener(activity);
     ipcRenderer.on(CHAT_ACTIVITY_EVENT, handler);
     return () => { ipcRenderer.removeListener(CHAT_ACTIVITY_EVENT, handler); };
+  },
+  onOpenAgent: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]): void => listener(payload);
+    ipcRenderer.on(OPEN_AGENT_EVENT, handler);
+    return () => { ipcRenderer.removeListener(OPEN_AGENT_EVENT, handler); };
   },
 };
 
