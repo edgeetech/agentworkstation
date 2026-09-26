@@ -23,6 +23,7 @@ import {
   parseRejectPendingActionInput,
   parseWorkspacePathInput,
   parseReminderSettingsInput,
+  parseInstallUpdateInput,
   registerChatRequest,
   releaseChatRequest,
 } from '../../apps/desktop/main/ipcContract';
@@ -216,6 +217,13 @@ describe('ipc contract', () => {
     })).toThrow();
     expect(parsePublicationNoPayloadInput(undefined)).toBeUndefined();
     expect(() => parsePublicationNoPayloadInput({})).toThrow();
+  });
+
+  it('exposes the update channels and rejects a payload on the install-update call', () => {
+    expect(IPC_CHANNELS.getAppVersion).toBe('agentWorkstation:getAppVersion');
+    expect(IPC_CHANNELS.installUpdateNow).toBe('agentWorkstation:installUpdateNow');
+    expect(parseInstallUpdateInput(undefined)).toBeUndefined();
+    expect(() => parseInstallUpdateInput({})).toThrow();
   });
 
   it('cancels only the matching running chat request and releases it safely', () => {

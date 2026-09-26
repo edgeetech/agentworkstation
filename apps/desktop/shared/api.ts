@@ -300,6 +300,7 @@ export type CreateChatSessionInput = {
 export type ReminderSettings = {
   accountantDeadlines: boolean;
 };
+export type UpdateReadyInfo = { version: string };
 
 /** Live progress for an in-flight chat request, pushed from the main process. */
 export type ChatActivity = { requestId: string } & (
@@ -369,4 +370,7 @@ export type AgentWorkstationApi = {
   setReminderSettings: (settings: ReminderSettings) => Promise<void>;
   onChatActivity: (listener: (activity: ChatActivity) => void) => () => void;
   onOpenAgent: (listener: (payload: { agentId: string }) => void) => () => void;
+  getAppVersion: () => Promise<string>;
+  installUpdateNow: () => Promise<void>;
+  onUpdateReady: (listener: (info: UpdateReadyInfo) => void) => () => void;
 };

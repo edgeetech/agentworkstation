@@ -55,12 +55,15 @@ export const IPC_CHANNELS = {
   setWindowTheme: 'agentWorkstation:setWindowTheme',
   getReminderSettings: 'agentWorkstation:getReminderSettings',
   setReminderSettings: 'agentWorkstation:setReminderSettings',
+  getAppVersion: 'agentWorkstation:getAppVersion',
+  installUpdateNow: 'agentWorkstation:installUpdateNow',
 } as const;
 
 /** Main-to-renderer push events (sent with webContents.send, never invoked). */
 export const IPC_EVENTS = {
   chatActivity: 'agentWorkstation:chatActivity',
   openAgent: 'agentWorkstation:openAgent',
+  updateReady: 'agentWorkstation:updateReady',
 } as const;
 
 const windowThemeSchema = z.object({
@@ -221,6 +224,7 @@ const startPublicationCandidateSchema = z.object({
   primaryLanguage: z.enum(['tr', 'en']),
 }).strict();
 const publicationNoPayloadSchema = z.undefined();
+const installUpdateSchema = z.undefined();
 
 const renameChatSessionSchema = z.object({
   id: z.string().min(1),
@@ -414,4 +418,8 @@ export function parseModelDiscoveryInput(value: unknown): { baseUrl: string } {
 
 export function parseRejectPendingActionInput(value: unknown): { actionId: string; reason: string } {
   return rejectSchema.parse(value);
+}
+
+export function parseInstallUpdateInput(value: unknown): undefined {
+  return installUpdateSchema.parse(value);
 }

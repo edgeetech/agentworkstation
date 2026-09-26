@@ -14,6 +14,7 @@
     "electron:start": "npm run electron:build-main && electron .",
     "electron:prepare": "npm run build && npm run electron:build-main",
     "electron:pack": "npm run electron:prepare && electron-builder --win nsis --publish never",
+    "electron:release": "npm run electron:prepare && electron-builder --win nsis --publish always",
     "test": "vitest run --environment node",
     "test:watch": "vitest --environment node",
     "lint": "eslint .",
@@ -29,6 +30,7 @@
     "@fontsource-variable/instrument-sans": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "better-sqlite3": "^11.9.1",
+    "electron-updater": "^6.8.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
@@ -68,6 +70,13 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "edgeetech",
+        "repo": "agentworkstation"
+      }
+    ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",

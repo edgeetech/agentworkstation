@@ -41,8 +41,8 @@ requires approval before any file is changed.
 > is implemented but disabled (the installed `copilot` CLI reports an older
 > JSON-RPC protocol than the SDK expects, so Copilot still runs through the
 > plain CLI adapter — see [`WHATS_LEFT.md`](./WHATS_LEFT.md)); the packaged
-> Windows installer is ~118 MB, unsigned (expect an unsigned-publisher
-> warning), and has no auto-update.
+> Windows installer is ~118 MB and unsigned (expect an unsigned-publisher
+> warning); installed copies update themselves afterwards from GitHub Releases.
 >
 > **Privacy** — prompts, model replies, and proposed diffs are stored in
 > plaintext in the local SQLite database under Electron's per-user
@@ -317,6 +317,13 @@ directory; editable, non-secret setup memory is stored separately as per-agent J
 
 ## 🚀 Install and run
 
+Once installed, Agent Workstation keeps itself up to date automatically: a
+packaged build checks GitHub Releases for this repository in the background
+and installs a downloaded update the next time you restart the app (or
+immediately, from the "Restart now" prompt it shows when one is ready). The
+installer itself stays unsigned — there is no code-signing certificate — so
+you still click through Windows' unsigned-publisher warning on first install.
+
 ### Requirements
 
 - Windows 11 for the supported Release 0.1 desktop target
@@ -362,6 +369,22 @@ npm run electron:pack
 
 The NSIS installer is written to `release/` and publishing is intentionally
 disabled by the package command.
+
+### Cutting a release (maintainers)
+
+`npm run electron:pack` never publishes. A release is cut by bumping the
+version and pushing the resulting tag:
+
+```powershell
+npm version <major|minor|patch>
+git push --follow-tags
+```
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the
+Windows installer and publishes the `.exe`, `.blockmap`, and `latest.yml` to
+a GitHub Release using `electron-builder --publish always`
+(`npm run electron:release`, CI-only). Every packaged install already
+polling GitHub Releases picks up the new version automatically.
 
 ---
 

@@ -1,6 +1,8 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, Notification, safeStorage, screen, session, shell } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { wireUpdateNotifications } from '../../../src/infrastructure/updates/updateNotifier';
 import { EditableAgentMemoryStore } from '../../../src/infrastructure/persistence/EditableAgentMemoryStore';
 import { createSharedPathReadTool } from '../../../src/infrastructure/filesystem/sharedPathReadTool';
 import { ApprovalService } from '../../../src/application/approvals';
@@ -91,6 +93,7 @@ import {
   parseWorkspaceIdInput,
   parseWindowThemeInput,
   parseReminderSettingsInput,
+  parseInstallUpdateInput,
   registerChatRequest,
   releaseChatRequest,
 } from './ipcContract';
@@ -1841,6 +1844,13 @@ function registerIpcHandlers(): void {
     const settings = parseReminderSettingsInput(payload);
     await saveReminderSettings(settings);
   });
+
+  ipcMain.handle(IPC_CHANNELS.getAppVersion, async () => app.getVersion());
+
+  ipcMain.handle(IPC_CHANNELS.installUpdateNow, async (_event, payload: unknown) => {
+    parseInstallUpdateInput(payload);
+    autoUpdater.quitAndInstall();
+  });
 }
 
 /** Long agent runs finish while the user works elsewhere; tell them, like native chat apps do. */
@@ -1923,6 +1933,23 @@ function persistWindowBounds(win: BrowserWindow): void {
   win.on('close', save);
 }
 
+// Installed copies update themselves from GitHub Releases; there is no code-signing
+// certificate, so this only runs against packaged builds (an unpackaged dev run has
+// no update feed to check) and can be turned off for e2e/dev with AW_DISABLE_UPDATES.
+function setupAutoUpdates(win: BrowserWindow): void {
+  if (!app.isPackaged || process.env.AW_DISABLE_UPDATES === '1') return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  wireUpdateNotifications(autoUpdater, () => (win.isDestroyed() ? null : win.webContents));
+  const checkForUpdates = (): void => {
+    autoUpdater.checkForUpdates().catch((error: unknown) => {
+      process.stderr.write(`Auto-update check failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    });
+  };
+  setTimeout(checkForUpdates, 10_000).unref();
+  setInterval(checkForUpdates, 6 * 60 * 60 * 1000).unref();
+}
+
 async function createWindow(): Promise<void> {
   const isDev = !app.isPackaged;
   const forceFileMode = process.env.AW_RENDERER_MODE === 'file';
@@ -1966,6 +1993,7 @@ async function createWindow(): Promise<void> {
     win.show();
   });
   persistWindowBounds(win);
+  setupAutoUpdates(win);
 
   if (isDev && !forceFileMode) {
     void win.loadURL('http://localhost:5173');
