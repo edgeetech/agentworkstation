@@ -11,6 +11,7 @@ const shortTarget = (target: string): string => {
 };
 
 export function describeActivity(activity: ChatActivity, t: Translator): Step | null {
+  if (activity.type === 'text_delta') return null;
   if (activity.type === 'thinking') {
     return {
       key: `thinking-${activity.step}`,

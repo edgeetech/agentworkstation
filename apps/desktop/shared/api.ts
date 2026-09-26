@@ -302,6 +302,7 @@ export type ChatActivity = { requestId: string } & (
   | { type: 'thinking'; step: number }
   | { type: 'tool'; step: number; toolName: string; target?: string }
   | { type: 'tool_failed'; step: number; toolName: string }
+  | { type: 'text_delta'; step: number; delta: string }
 );
 
 export type AgentWorkstationApi = {

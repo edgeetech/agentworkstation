@@ -10,3 +10,5 @@ test-results/
 Thumbs.db
 *.log
 .vite/
+
+.claude/worktrees/

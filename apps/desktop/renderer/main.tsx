@@ -161,6 +161,8 @@ function App(): JSX.Element {
   const [pendingChatInput, setPendingChatInput] = useState<PendingChat | null>(null);
   const [chatFailure, setChatFailure] = useState<FailedChat | null>(null);
   const [chatActivity, setChatActivity] = useState<ChatActivity[]>([]);
+  const [streamedReply, setStreamedReply] = useState("");
+  const streamedReplyRef = useRef("");
   const [freshReply, setFreshReply] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const pendingRequestId = useRef<string | null>(null);
@@ -390,6 +392,15 @@ function App(): JSX.Element {
     if (typeof api.onChatActivity !== "function") return undefined;
     return api.onChatActivity((activity) => {
       if (activity.requestId !== pendingRequestId.current) return;
+      if (activity.type === "text_delta") {
+        streamedReplyRef.current += activity.delta;
+        setStreamedReply(streamedReplyRef.current);
+        return;
+      }
+      if (activity.type === "thinking") {
+        streamedReplyRef.current = "";
+        setStreamedReply("");
+      }
       setChatActivity((current) => [...current, activity].slice(-24));
     });
   }, [api]);
@@ -529,6 +540,8 @@ function App(): JSX.Element {
     setChatFailure((current) => current?.sessionId === sessionId ? null : current);
     pendingRequestId.current = requestId;
     setChatActivity([]);
+    streamedReplyRef.current = "";
+    setStreamedReply("");
     setFreshReply(null);
     setPendingChatInput({ sessionId, requestId, prompt, mode, startedAt: Date.now() });
     void task("chat", async () => {
@@ -536,11 +549,13 @@ function App(): JSX.Element {
         const exchange = await api.sendChatMessage(prompt, requestId, sessionId);
         if (selectedSessionIdRef.current === sessionId) {
           setHistory((current) => [...current, exchange]);
-          setFreshReply(exchange.assistantMessage);
+          // A reply that already streamed in needs no reveal animation.
+          setFreshReply(streamedReplyRef.current ? null : exchange.assistantMessage);
         }
         pendingRequestId.current = null;
         setPendingChatInput((current) => current?.requestId === requestId ? null : current);
-        await loadChat();
+        // Refresh in the background so the composer is usable the moment the reply lands.
+        void loadChat().catch((value: unknown) => setError(messageOf(value)));
       } catch (value) {
         const message = chatErrorMessage(value);
         if (/abort|cancel/i.test(message)) {
@@ -738,6 +753,7 @@ function App(): JSX.Element {
       proposalTally={proposalTally}
       pending={visiblePendingChat}
       activity={chatActivity}
+      streamedReply={streamedReply}
       failure={visibleChatFailure}
       freshReply={freshReply}
       draft={chatInput}

@@ -1,5 +1,6 @@
 import { Children, isValidElement, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Icon } from '../shell/icons';
 
 const textOf = (node: ReactNode): string => {
@@ -53,6 +54,7 @@ export function MessageContent({ content }: { content: string }): JSX.Element {
   return (
     <div className="markdown-content">
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children }) => {
             if (!href || href.startsWith('source:')) return <span>{children}</span>;

@@ -18,7 +18,8 @@ export type AgentRunResult = {
 export type AgentRunEvent =
   | { type: 'thinking'; step: number }
   | { type: 'tool'; step: number; toolName: string; target?: string }
-  | { type: 'tool_failed'; step: number; toolName: string };
+  | { type: 'tool_failed'; step: number; toolName: string }
+  | { type: 'text_delta'; step: number; delta: string };
 
 export type AgentRunObserver = (event: AgentRunEvent) => void;
 
@@ -67,6 +68,7 @@ export class AgentRuntime {
           modelId: context.modelId,
           executionMode: context.executionMode,
           taskKind: context.taskKind,
+          ...(observe ? { onTextDelta: (delta: string) => emit({ type: 'text_delta', step, delta }) } : {}),
         }, AbortSignal.any([signal, modelAbort.signal])),
         this.limits.modelTimeoutMs,
         modelAbort,
