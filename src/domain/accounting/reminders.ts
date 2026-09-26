@@ -156,11 +156,16 @@ export function deriveDeadlineInput(companyMemory: unknown, today: string): Dead
  * notifications (an unresolved filing should keep nagging). Upcoming items inside
  * the window are reported once each, tracked by `alreadyNotified`.
  */
-export function dueReminders(deadlines: UkDeadline[], alreadyNotified: string[], windowDays = 14): UkDeadline[] {
+/** Due-soon items notify once; overdue items notify once per day until 30 days late. */
+export function reminderKey(item: UkDeadline, today: string): string {
+  return item.status === 'overdue' ? `${item.id}@${today}` : item.id;
+}
+
+export function dueReminders(deadlines: UkDeadline[], alreadyNotified: string[], today: string, windowDays = 14): UkDeadline[] {
   const notified = new Set(alreadyNotified);
   return deadlines.filter((item) => {
+    if (notified.has(reminderKey(item, today))) return false;
     if (item.status === 'overdue') return item.daysUntil >= -30;
-    if (notified.has(item.id)) return false;
     return item.daysUntil >= 0 && item.daysUntil <= windowDays;
   });
 }

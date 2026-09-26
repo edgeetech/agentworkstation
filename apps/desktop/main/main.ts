@@ -36,7 +36,7 @@ import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/
 import { gitDiffTool, gitLogTool, gitStatusTool } from '../../../src/infrastructure/git/gitTools';
 import { createUkDeadlinesTool, ledgerSummaryTool } from '../../../src/infrastructure/accounting/accountingTools';
 import { ukCompanyDeadlines } from '../../../src/domain/accounting/ukDeadlines';
-import { deriveDeadlineInput, dueReminders } from '../../../src/domain/accounting/reminders';
+import { deriveDeadlineInput, dueReminders, reminderKey } from '../../../src/domain/accounting/reminders';
 import { OpenAICompatibleLocalAdapter } from '../../../src/infrastructure/intelligence/openaiCompatibleLocalAdapter';
 import { DeterministicMemoryExtractionAdapter } from '../../../src/infrastructure/intelligence/deterministicMemoryExtractionAdapter';
 import {
@@ -586,9 +586,10 @@ async function checkDeadlineReminders(): Promise<void> {
   if (!entry || entry.confirmationStatus !== 'confirmed') return;
   const input = deriveDeadlineInput(entry.value, todayIso());
   if (!input) return;
-  const deadlines = ukCompanyDeadlines({ ...input, today: todayIso() });
+  const today = todayIso();
+  const deadlines = ukCompanyDeadlines({ ...input, today });
   const notifiedIds = await readNotifiedReminderIds();
-  const due = dueReminders(deadlines, notifiedIds).slice(0, 3);
+  const due = dueReminders(deadlines, notifiedIds, today).slice(0, 3);
   if (due.length === 0) return;
   const win = BrowserWindow.getAllWindows()[0];
   for (const item of due) {
@@ -602,7 +603,7 @@ async function checkDeadlineReminders(): Promise<void> {
     });
     notification.show();
   }
-  await recordNotifiedReminderIds(due.map((item) => item.id));
+  await recordNotifiedReminderIds(due.map((item) => reminderKey(item, today)));
 }
 
 function scheduleDeadlineReminders(): void {

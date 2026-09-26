@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveDeadlineInput, dueReminders } from '../../src/domain/accounting/reminders';
+import { deriveDeadlineInput, dueReminders, reminderKey } from '../../src/domain/accounting/reminders';
 import type { UkDeadline } from '../../src/domain/accounting/ukDeadlines';
 
 describe('deriveDeadlineInput', () => {
@@ -87,22 +87,24 @@ describe('dueReminders', () => {
       deadline({ id: 'soon', daysUntil: 7, status: 'due_soon' }),
       deadline({ id: 'far', daysUntil: 60, status: 'upcoming' }),
     ];
-    expect(dueReminders(items, [], 14).map((item) => item.id)).toEqual(['soon']);
+    expect(dueReminders(items, [], '2026-09-26', 14).map((item) => item.id)).toEqual(['soon']);
   });
 
-  it('keeps reporting overdue items within 30 days regardless of prior notification', () => {
+  it('reports an overdue item once per day while it stays within 30 days late', () => {
     const items = [deadline({ id: 'overdue-recent', daysUntil: -3, status: 'overdue' })];
-    expect(dueReminders(items, ['overdue-recent'], 14).map((item) => item.id)).toEqual(['overdue-recent']);
+    expect(dueReminders(items, ['overdue-recent@2026-09-25'], '2026-09-26', 14).map((item) => item.id)).toEqual(['overdue-recent']);
+    expect(reminderKey(items[0]!, '2026-09-26')).toBe('overdue-recent@2026-09-26');
+    expect(dueReminders(items, ['overdue-recent@2026-09-26'], '2026-09-26', 14)).toEqual([]);
   });
 
   it('drops overdue items more than 30 days late', () => {
     const items = [deadline({ id: 'overdue-old', daysUntil: -31, status: 'overdue' })];
-    expect(dueReminders(items, [], 14)).toEqual([]);
+    expect(dueReminders(items, [], '2026-09-26', 14)).toEqual([]);
   });
 
   it('de-duplicates upcoming items already notified', () => {
     const items = [deadline({ id: 'soon', daysUntil: 7, status: 'due_soon' })];
-    expect(dueReminders(items, ['soon'], 14)).toEqual([]);
-    expect(dueReminders(items, [], 14).map((item) => item.id)).toEqual(['soon']);
+    expect(dueReminders(items, ['soon'], '2026-09-26', 14)).toEqual([]);
+    expect(dueReminders(items, [], '2026-09-26', 14).map((item) => item.id)).toEqual(['soon']);
   });
 });
