@@ -24,6 +24,7 @@ test('keeps a separate unsent draft for every agent conversation', async () => {
       AW_DISABLE_REMINDERS: '1',
       AW_RENDERER_MODE: 'file',
       AW_USER_DATA_PATH: appDataRoot,
+      AW_DISABLE_UPDATES: '1',
     },
   });
   try {
@@ -51,7 +52,13 @@ test('keeps chat controls compact while exposing mode and context actions', asyn
   const appDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-e2e-composer-'));
   const app = await electron.launch({
     args: ['.'], cwd: path.resolve('.'),
-    env: { ...process.env, AW_DISABLE_REMINDERS: '1', AW_RENDERER_MODE: 'file', AW_USER_DATA_PATH: appDataRoot },
+    env: {
+      ...process.env,
+      AW_DISABLE_REMINDERS: '1',
+      AW_RENDERER_MODE: 'file',
+      AW_USER_DATA_PATH: appDataRoot,
+      AW_DISABLE_UPDATES: '1',
+    },
   });
   try {
     const page = await app.firstWindow();
@@ -80,6 +87,7 @@ test('continues normal conversation without requiring a workspace', async () => 
       AW_RENDERER_MODE: 'file',
       AW_USER_DATA_PATH: appDataRoot,
       AW_MOCK_RESPONSE_DELAY_MS: '1800',
+      AW_DISABLE_UPDATES: '1',
     },
   });
   try {
@@ -134,6 +142,7 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
       AW_MOCK_RESPONSE_DELAY_MS: '1200',
       AW_LINKEDIN_MOCK: '1',
       AW_E2E_FAKE_PROVIDERS: '1',
+      AW_DISABLE_UPDATES: '1',
     },
   });
 
@@ -419,6 +428,7 @@ test('provider usage limits are shown inside the chat transcript', async () => {
       AW_USER_DATA_PATH: appDataRoot,
       AW_MOCK_RESPONSE_DELAY_MS: '150',
       AW_MOCK_RESPONSE_ERROR: 'HTTP 429: you (asozyurt) have reached your session usage limit',
+      AW_DISABLE_UPDATES: '1',
     },
   });
 
@@ -469,7 +479,13 @@ test('interface language persists without changing conversation data', async () 
   const launch = async () => electron.launch({
     args: ['.'],
     cwd: path.resolve('.'),
-    env: { ...process.env, AW_DISABLE_REMINDERS: '1', AW_RENDERER_MODE: 'file', AW_USER_DATA_PATH: appDataRoot },
+    env: {
+      ...process.env,
+      AW_DISABLE_REMINDERS: '1',
+      AW_RENDERER_MODE: 'file',
+      AW_USER_DATA_PATH: appDataRoot,
+      AW_DISABLE_UPDATES: '1',
+    },
   });
 
   const firstRun = await launch();

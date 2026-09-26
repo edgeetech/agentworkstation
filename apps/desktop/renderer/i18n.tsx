@@ -521,6 +521,9 @@ const en = {
   'chat.isThisRight': 'Is this right?',
   'chat.setupDone': 'Setup is done. What would you like to work on?',
   'chat.setupDoneAction': 'I have what I need for this.',
+  'update.ready': 'Agent Workstation {version} is ready. Restart to update.',
+  'update.restartNow': 'Restart now',
+  'settings.appVersion': 'Agent Workstation {version}',
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1043,6 +1046,9 @@ const tr: Record<MessageKey, string> = {
   'chat.isThisRight': 'Doğru mu?',
   'chat.setupDone': 'Kurulum tamam. Ne üzerinde çalışalım?',
   'chat.setupDoneAction': 'Bu iş için gerekenler hazır.',
+  'update.ready': 'Agent Workstation {version} hazır. Güncellemek için yeniden başlatın.',
+  'update.restartNow': 'Şimdi yeniden başlat',
+  'settings.appVersion': 'Agent Workstation {version}',
 };
 
 const catalogs: Record<UiLocale, Record<MessageKey, string>> = { en, tr };

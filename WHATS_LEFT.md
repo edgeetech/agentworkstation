@@ -1,6 +1,6 @@
 # What's Left
 
-Last updated: 2026-09-20. This file is a short, current punch list, not a
+Last updated: 2026-09-26. This file is a short, current punch list, not a
 changelog — history lives in `git log`, not here.
 
 ## Known gaps (honest, not blocking personal use)
@@ -19,9 +19,11 @@ changelog — history lives in `git log`, not here.
   Copilot provider currently runs through the plain CLI adapter instead.
   `@github/copilot-sdk` lives in `devDependencies` so it does not ship in the
   installer.
-- **Windows installer** — ~118 MB, unsigned, no auto-update. Built via
-  `npm run electron:pack`; users must click through the unsigned-publisher
-  warning.
+- **Windows installer** — ~118 MB, unsigned. Built via `npm run electron:pack`;
+  users must click through the unsigned-publisher warning on first install.
+  Installed copies then update themselves from GitHub Releases automatically
+  (`electron-updater`, wired in `apps/desktop/main/main.ts`); a maintainer cuts
+  a release with `npm version <x>` and `git push --follow-tags`.
 - **macOS** — CI only builds the renderer/Electron main process on macOS; there
   is no packaged macOS installer or manual runtime validation.
 - **No drag-resizable side rails, per-request network ledger, or telemetry** —

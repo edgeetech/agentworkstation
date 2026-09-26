@@ -16,6 +16,7 @@ import type {
   ProposalTally,
   UsageLedgerSettings,
   ReminderSettings,
+  UpdateReadyInfo,
   WorkspaceRecord,
 } from "../shared/api";
 import {
@@ -185,6 +186,8 @@ function App(): JSX.Element {
   const [demoSessionEnabled, setDemoSessionEnabled] = useState(false);
   const [usageLedgerSettings, setUsageLedgerSettings] = useState<UsageLedgerSettings>({ enabled: true, path: "" });
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>({ accountantDeadlines: true });
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [updateReady, setUpdateReady] = useState<UpdateReadyInfo | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 900);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const automaticLocalModel = chooseAutomaticLocalModel(localModels);
@@ -396,7 +399,14 @@ function App(): JSX.Element {
     void loadProviderConnections()
       .catch(() => setProviderConnections([]));
     void api.getReminderSettings().then(setReminderSettings).catch(() => undefined);
+    if (typeof api.getAppVersion === "function") {
+      void api.getAppVersion().then(setAppVersion).catch(() => setAppVersion(null));
+    }
   }, [api, loadChatContextUsage, loadLocalModels, loadProviderConnections]);
+  useEffect(() => {
+    if (typeof api.onUpdateReady !== "function") return undefined;
+    return api.onUpdateReady((info) => setUpdateReady(info));
+  }, [api]);
   useEffect(() => {
     if (typeof api.onChatActivity !== "function") return undefined;
     return api.onChatActivity((activity) => {
@@ -1518,6 +1528,7 @@ function App(): JSX.Element {
               })}>{busy === "endpoint" ? t('settings.working') : t('settings.save')}</button>
           </div>
         </section>
+        {appVersion ? <p className="app-version">{t('settings.appVersion', { version: appVersion })}</p> : null}
       </div>
     );
   };
@@ -1745,6 +1756,23 @@ function App(): JSX.Element {
         <div className="toast-stack">
           {error ? <Toast kind="error" text={error} close={() => setError(null)} /> : null}
           {notice ? <Toast kind="success" text={notice} close={() => setNotice(null)} /> : null}
+          {updateReady ? (
+            <div className="toast update-ready" role="status">
+              <span>{t('update.ready', { version: updateReady.version })}</span>
+              <div className="toast-actions">
+                <button
+                  type="button"
+                  className="text"
+                  onClick={() => void api.installUpdateNow().catch((value: unknown) => setError(messageOf(value)))}
+                >
+                  {t('update.restartNow')}
+                </button>
+                <button type="button" aria-label="Dismiss" onClick={() => setUpdateReady(null)}>
+                  <Icon name="x" size={14} />
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
         <div className="page">
           {pages[view]()}

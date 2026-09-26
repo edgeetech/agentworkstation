@@ -59,10 +59,13 @@ const IPC_CHANNELS = {
   openUsageLedgerFolder: 'agentWorkstation:openUsageLedgerFolder',
   getReminderSettings: 'agentWorkstation:getReminderSettings',
   setReminderSettings: 'agentWorkstation:setReminderSettings',
+  getAppVersion: 'agentWorkstation:getAppVersion',
+  installUpdateNow: 'agentWorkstation:installUpdateNow',
 } as const;
 
 const CHAT_ACTIVITY_EVENT = 'agentWorkstation:chatActivity';
 const OPEN_AGENT_EVENT = 'agentWorkstation:openAgent';
+const UPDATE_READY_EVENT = 'agentWorkstation:updateReady';
 
 declare global {
   interface Window {
@@ -161,6 +164,13 @@ const api: AgentWorkstationApi = {
     const handler = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]): void => listener(payload);
     ipcRenderer.on(OPEN_AGENT_EVENT, handler);
     return () => { ipcRenderer.removeListener(OPEN_AGENT_EVENT, handler); };
+  },
+  getAppVersion: async () => ipcRenderer.invoke(IPC_CHANNELS.getAppVersion),
+  installUpdateNow: async () => ipcRenderer.invoke(IPC_CHANNELS.installUpdateNow),
+  onUpdateReady: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, info: Parameters<typeof listener>[0]): void => listener(info);
+    ipcRenderer.on(UPDATE_READY_EVENT, handler);
+    return () => { ipcRenderer.removeListener(UPDATE_READY_EVENT, handler); };
   },
 };
 
