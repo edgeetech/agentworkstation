@@ -137,8 +137,8 @@ const api: AgentWorkstationApi = {
   selectChatSession: async (id) => ipcRenderer.invoke(IPC_CHANNELS.selectChatSession, { id }),
   getChatHistory: async () => ipcRenderer.invoke(IPC_CHANNELS.getChatHistory),
   getChatContextUsage: async () => ipcRenderer.invoke(IPC_CHANNELS.getChatContextUsage),
-  sendChatMessage: async (message, requestId, sessionId) =>
-    ipcRenderer.invoke(IPC_CHANNELS.sendChatMessage, { message, requestId, sessionId }),
+  sendChatMessage: async (message, requestId, sessionId, options) =>
+    ipcRenderer.invoke(IPC_CHANNELS.sendChatMessage, { message, requestId, sessionId, ...(options?.resume ? { resume: true } : {}) }),
   cancelChatMessage: async (requestId) =>
     ipcRenderer.invoke(IPC_CHANNELS.cancelChatMessage, { requestId }),
   openExternalLink: async (url) => ipcRenderer.invoke(IPC_CHANNELS.openExternalLink, { url }),

@@ -32,5 +32,7 @@ export type ChatMessage = {
   sourceReferencesJson: string;
   routingJson?: string | null;
   mode?: ChatMode | null;
+  /** Set on an assistant reply that stopped at its step budget and can be resumed. */
+  pausedJson?: string | null;
   createdAt: string;
 };

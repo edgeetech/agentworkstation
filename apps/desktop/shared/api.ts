@@ -118,12 +118,20 @@ export type ProposalRequest = {
   recommendation: string;
 };
 
+/** A reply that stopped at its step budget; the user decides whether the agent continues. */
+export type ChatPause = {
+  reason: 'steps' | 'tool_calls';
+  stepsUsed: number;
+  toolCallsUsed: number;
+};
+
 export type ChatExchange = {
   userMessage: string;
   assistantMessage: string;
   sourceReferences: SourceReference[];
   route?: RoutingDecision;
   mode: ChatMode;
+  paused?: ChatPause;
 };
 
 export type ChatContextUsage = {
@@ -364,7 +372,7 @@ export type AgentWorkstationApi = {
   selectChatSession: (id: string) => Promise<void>;
   getChatHistory: () => Promise<ChatExchange[]>;
   getChatContextUsage: () => Promise<ChatContextUsage>;
-  sendChatMessage: (message: string, requestId: string, sessionId: string) => Promise<ChatExchange>;
+  sendChatMessage: (message: string, requestId: string, sessionId: string, options?: { resume?: boolean }) => Promise<ChatExchange>;
   cancelChatMessage: (requestId: string) => Promise<boolean>;
   openExternalLink: (url: string) => Promise<void>;
   listPendingActions: () => Promise<PendingAction[]>;

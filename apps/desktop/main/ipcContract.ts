@@ -165,6 +165,7 @@ const chatMessageSchema = z.object({
   message: z.string().min(1),
   requestId: requestIdSchema,
   sessionId: z.string().min(1),
+  resume: z.boolean().optional(),
 });
 
 const cancelChatMessageSchema = z.object({
@@ -304,7 +305,7 @@ export function parseEndpointConfigInput(value: unknown): {
   return endpointConfigSchema.parse(value);
 }
 
-export function parseChatMessageInput(value: unknown): { message: string; requestId: string; sessionId: string } {
+export function parseChatMessageInput(value: unknown): { message: string; requestId: string; sessionId: string; resume?: boolean } {
   return chatMessageSchema.parse(value);
 }
 

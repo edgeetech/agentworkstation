@@ -551,7 +551,7 @@ function App(): JSX.Element {
     void api.openAgentMemoryFile(selectedAgent.id).catch((value: unknown) => setError(messageOf(value)));
   };
 
-  const sendChat = (promptOverride?: string, modeOverride?: ChatMode): void => {
+  const sendChat = (promptOverride?: string, modeOverride?: ChatMode, options?: { resume?: boolean }): void => {
     const prompt = (promptOverride ?? chatInput).trim();
     if (!prompt || busy === "chat" || !selectedChatSession) return;
     if (endpoint.mode === "mock" && !demoSessionEnabled) {
@@ -572,7 +572,7 @@ function App(): JSX.Element {
     setPendingChatInput({ sessionId, requestId, prompt, mode, startedAt: Date.now() });
     void task("chat", async () => {
       try {
-        const exchange = await api.sendChatMessage(prompt, requestId, sessionId);
+        const exchange = await api.sendChatMessage(prompt, requestId, sessionId, options);
         if (selectedSessionIdRef.current === sessionId) {
           setHistory((current) => [...current, exchange]);
           // A reply that already streamed in needs no reveal animation.
@@ -800,6 +800,7 @@ function App(): JSX.Element {
       ) : null}
       onDraftChange={setChatInput}
       onSend={sendChat}
+      onContinue={() => sendChat(t('chat.continueCommand'), undefined, { resume: true })}
       onCancel={cancelChat}
       onChangeMode={changeChatMode}
       onAddFolder={addFolderFromChat}

@@ -685,6 +685,21 @@ label small, .form small { color: var(--ink-3); font-size: 12px; }
 .error-message small { color: var(--ink-3); }
 .retry-message { justify-self: start; }
 
+.budget-pause {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-l);
+  border: 1px solid color-mix(in srgb, var(--agent) 28%, transparent);
+  background: var(--agent-soft);
+}
+.budget-pause strong { font-size: 13.5px; }
+.budget-pause p { margin-top: 2px; font-size: 13px; color: var(--ink-2); }
+.budget-pause button { flex: none; }
+
 .chat-welcome { display: grid; justify-items: center; text-align: center; gap: 14px; }
 .chat-welcome h1 {
   margin-top: 6px;

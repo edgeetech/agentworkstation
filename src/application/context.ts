@@ -29,6 +29,9 @@ export type ContextBuildResult = {
   truncated: Array<'instructions' | 'memory' | 'conversation' | 'toolResults'>;
 };
 
+const TRUNCATION_MARKER = '\n\n[... truncated to fit the context budget]';
+const MIN_PARTIAL_MESSAGE_BYTES = 1024;
+
 function truncateUtf8(content: string, maxBytes: number): string {
   const encoded = Buffer.from(content, 'utf8');
   if (encoded.byteLength <= maxBytes) return content;
@@ -139,14 +142,22 @@ export class ContextBuilder {
       if (bytes <= remaining[group.kind]) {
         selectedGroups.unshift(group);
         remaining[group.kind] -= bytes;
-      } else if (group.kind === 'conversation' && group.messages.length === 1 && selectedGroups.length === 0) {
+      } else if (group.kind === 'conversation') {
+        // Keep the head of an oversized message (a pasted article, say) rather than
+        // dropping it, then stop: skipping it to reach older turns would leave a gap
+        // the model cannot see.
         const message = group.messages[0];
-        selectedGroups.unshift({
-          kind: group.kind,
-          messages: [{ ...message, content: truncateUtf8(message.content, remaining.conversation) }],
-        });
+        const room = remaining.conversation - Buffer.byteLength(TRUNCATION_MARKER, 'utf8');
+        const minimum = selectedGroups.length === 0 ? 1 : MIN_PARTIAL_MESSAGE_BYTES;
+        if (group.messages.length === 1 && message && room >= minimum) {
+          selectedGroups.unshift({
+            kind: group.kind,
+            messages: [{ ...message, content: `${truncateUtf8(message.content, room)}${TRUNCATION_MARKER}` }],
+          });
+        }
         remaining.conversation = 0;
         if (!truncated.includes('conversation')) truncated.push('conversation');
+        break;
       } else if (!truncated.includes(group.kind)) {
         truncated.push(group.kind);
       }

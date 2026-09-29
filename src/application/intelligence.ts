@@ -7,12 +7,32 @@ export type ExecutionLimits = {
   maxToolResultBytes: number;
   modelTimeoutMs: number;
   toolTimeoutMs: number;
+  /**
+   * When set, running out of steps or tool calls pauses the run instead of failing it:
+   * the model summarizes its progress and the caller can resume from the checkpoint.
+   */
+  pauseWhenBudgetExhausted?: boolean;
+};
+
+export type RunBudgetPause = {
+  reason: 'steps' | 'tool_calls';
+  stepsUsed: number;
+  toolCallsUsed: number;
+  /** The request as it stood when the budget ran out; pass it back to resume. */
+  checkpoint: ModelRequest;
 };
 
 export type AgentRunResult = {
   content: string;
   sourceReferences: SourceReference[];
+  paused?: RunBudgetPause;
 };
+
+const BUDGET_SUMMARY_INSTRUCTION = [
+  "You have used this turn's step budget and cannot call more tools right now.",
+  "Reply in the user's language with plain text only: summarize what you found so far,",
+  'then list briefly what is still left to do. The user will be asked whether you should continue.',
+].join(' ');
 
 /** Progress signals a caller can surface while a run is in flight. */
 export type AgentRunEvent =
@@ -55,12 +75,14 @@ export class AgentRuntime {
     observe?: AgentRunObserver,
   ): Promise<AgentRunResult> {
     let toolCalls = 0;
+    let steps = 0;
     const sourceReferences: SourceReference[] = [];
     const emit = (event: AgentRunEvent): void => {
       try { observe?.(event); } catch { /* observers never change the run outcome */ }
     };
     for (let step = 0; step < this.limits.maxSteps; step += 1) {
       signal.throwIfAborted();
+      steps = step + 1;
       emit({ type: 'thinking', step });
       const modelAbort = new AbortController();
       const response = await this.withTimeout(
@@ -76,8 +98,11 @@ export class AgentRuntime {
       );
       if (response.type === 'text') return { content: response.content, sourceReferences };
       if (response.type === 'error') throw new Error(response.error);
+      if (toolCalls >= this.limits.maxToolCalls) {
+        if (!this.limits.pauseWhenBudgetExhausted) throw new Error('Max tool calls exceeded');
+        return this.pause('tool_calls', request, context, signal, emit, steps, toolCalls, sourceReferences);
+      }
       toolCalls += 1;
-      if (toolCalls > this.limits.maxToolCalls) throw new Error('Max tool calls exceeded');
       const metadata = this.toolExecutor.getMetadata(response.call.toolName);
       const workspaceId = context.workspaceId;
       if (metadata.requiresWorkspace && !workspaceId) {
@@ -154,13 +179,19 @@ export class AgentRuntime {
       const references = result !== null && typeof result === 'object' && Array.isArray((result as { sourceReferences?: unknown }).sourceReferences)
         ? (result as { sourceReferences: SourceReference[] }).sourceReferences
         : [];
-      for (const source of references) {
+      let toolResult = JSON.stringify(output);
+      const oversized = new TextEncoder().encode(toolResult).byteLength > this.limits.maxToolResultBytes;
+      if (oversized) {
+        emit({ type: 'tool_failed', step, toolName: response.call.toolName });
+        toolResult = JSON.stringify({
+          error: `Tool result exceeded ${this.limits.maxToolResultBytes} bytes. Request a smaller slice (for example a lower limit or a narrower path) and try again.`,
+        });
+      }
+      for (const source of oversized ? [] : references) {
         const key = JSON.stringify(source);
         if (!sourceReferences.some((existing) => JSON.stringify(existing) === key)) sourceReferences.push(source);
       }
-      const toolResult = JSON.stringify(output);
-      if (new TextEncoder().encode(toolResult).byteLength > this.limits.maxToolResultBytes) throw new Error('Tool result too large');
-      const provenanceNote = references.length > 0
+      const provenanceNote = !oversized && references.length > 0
         ? `\n[source: ${references.map(r => r.type + (r.relativePath ? ':' + r.relativePath : '') + (r.label ? ':' + r.label : '')).join(', ')}]`
         : '';
       request = {
@@ -185,7 +216,45 @@ export class AgentRuntime {
         tools: request.tools,
       };
     }
-    throw new Error('Max steps exceeded');
+    if (!this.limits.pauseWhenBudgetExhausted) throw new Error('Max steps exceeded');
+    return this.pause('steps', request, context, signal, emit, steps, toolCalls, sourceReferences);
+  }
+
+  private async pause(
+    reason: RunBudgetPause['reason'],
+    checkpoint: ModelRequest,
+    context: { modelId: string; executionMode: ExecutionMode; taskKind?: TaskKind },
+    signal: AbortSignal,
+    emit: (event: AgentRunEvent) => void,
+    stepsUsed: number,
+    toolCallsUsed: number,
+    sourceReferences: SourceReference[],
+  ): Promise<AgentRunResult> {
+    const paused: RunBudgetPause = { reason, stepsUsed, toolCallsUsed, checkpoint };
+    let content = '';
+    try {
+      const summaryAbort = new AbortController();
+      const response = await this.withTimeout(
+        () => this.intelligence.execute(
+          { messages: [...checkpoint.messages, { role: 'user', content: BUDGET_SUMMARY_INSTRUCTION }], tools: [] },
+          {
+            modelId: context.modelId,
+            executionMode: context.executionMode,
+            taskKind: context.taskKind,
+            onTextDelta: (delta: string) => emit({ type: 'text_delta', step: stepsUsed, delta }),
+          },
+          AbortSignal.any([signal, summaryAbort.signal]),
+        ),
+        this.limits.modelTimeoutMs,
+        summaryAbort,
+        'Model timeout exceeded',
+      );
+      if (response.type === 'text') content = response.content;
+    } catch {
+      // The pause itself is the outcome; a failed summary only loses the progress note.
+      signal.throwIfAborted();
+    }
+    return { content, sourceReferences, paused };
   }
 
   private async withTimeout<T>(

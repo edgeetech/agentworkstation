@@ -428,8 +428,8 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   async appendChatMessage(input: Omit<ChatMessage, 'id'>): Promise<ChatMessage> {
     const result = this.db.prepare(`
-      insert into chat_messages (sessionId, sequence, role, content, sourceReferencesJson, routingJson, mode, createdAt)
-      values (?, ?, ?, ?, ?, ?, ?, ?)
+      insert into chat_messages (sessionId, sequence, role, content, sourceReferencesJson, routingJson, mode, pausedJson, createdAt)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.sessionId,
       input.sequence,
@@ -438,6 +438,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
       input.sourceReferencesJson,
       input.routingJson ?? null,
       input.mode ?? null,
+      input.pausedJson ?? null,
       input.createdAt,
     );
     this.db.prepare('update chat_sessions set updatedAt = ? where id = ?').run(input.createdAt, input.sessionId);
@@ -449,7 +450,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   async listChatMessages(sessionId: string): Promise<ChatMessage[]> {
     return this.db.prepare(`
-      select id, sessionId, sequence, role, content, sourceReferencesJson, routingJson, mode, createdAt
+      select id, sessionId, sequence, role, content, sourceReferencesJson, routingJson, mode, pausedJson, createdAt
       from chat_messages
       where sessionId = ?
       order by sequence asc, id asc
@@ -499,6 +500,9 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
     }
     if (!columns.some((column) => column.name === 'mode')) {
       this.db.exec('alter table chat_messages add column mode text');
+    }
+    if (!columns.some((column) => column.name === 'pausedJson')) {
+      this.db.exec('alter table chat_messages add column pausedJson text');
     }
   }
 }

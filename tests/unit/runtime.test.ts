@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ModelRequest, ModelResponse } from '../../src/domain/intelligence';
 import { AgentRuntime } from '../../src/application/intelligence';
 import { MockIntelligenceAdapter } from '../../src/infrastructure/mock/mockIntelligence';
 
@@ -79,14 +80,61 @@ describe('agent runtime', () => {
     await expect(runtime.run({ messages: [{ role: 'user', content: 'hi' }] }, { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' }, new AbortController().signal)).rejects.toThrow('Tool not allowed');
   });
 
-  it('enforces tool result size limits', async () => {
+  it('returns oversized tool results to the model as an error instead of failing the run', async () => {
+    const requests: ModelRequest[] = [];
+    const responses: ModelResponse[] = [
+      { type: 'tool_call', call: { id: 'call-echo', toolName: 'echo', input: {} } },
+      { type: 'text', content: 'narrowed' },
+    ];
     const runtime = new AgentRuntime(
-      new MockIntelligenceAdapter([{ type: 'tool_call', call: { id: 'call-echo', toolName: 'echo', input: {} } }]),
-      { execute: async () => ({ output: 'this result is too large', sourceReferences: [] }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
+      { execute: async (request) => { requests.push(request); return responses.shift() ?? { type: 'text', content: '' }; } },
+      { execute: async () => ({ output: 'this result is too large', sourceReferences: [{ type: 'web', url: 'https://example.com' }] }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
       { decide: () => 'allow' },
-      { maxSteps: 1, maxToolCalls: 1, maxToolResultBytes: 5, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
+      { maxSteps: 2, maxToolCalls: 1, maxToolResultBytes: 5, modelTimeoutMs: 1000, toolTimeoutMs: 1000 },
     );
-    await expect(runtime.run({ messages: [{ role: 'user', content: 'hi' }] }, { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' }, new AbortController().signal)).rejects.toThrow('Tool result too large');
+    const result = await runtime.runWithTrace({ messages: [{ role: 'user', content: 'hi' }] }, { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' }, new AbortController().signal);
+    expect(result).toEqual({ content: 'narrowed', sourceReferences: [] });
+    expect(requests[1]?.messages.at(-1)?.content).toContain('exceeded 5 bytes');
+  });
+
+  it('pauses with a progress summary and a resumable checkpoint when the step budget runs out', async () => {
+    const requests: ModelRequest[] = [];
+    const responses: ModelResponse[] = [
+      { type: 'tool_call', call: { id: 'call-1', toolName: 'git.log', input: {} } },
+      { type: 'tool_call', call: { id: 'call-2', toolName: 'git.log', input: { skip: 30 } } },
+      { type: 'text', content: 'Read 60 commits so far; 2020-2023 still left.' },
+    ];
+    const runtime = new AgentRuntime(
+      { execute: async (request) => { requests.push(request); return responses.shift() ?? { type: 'text', content: '' }; } },
+      { execute: async () => ({ output: 'commits', sourceReferences: [] }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
+      { decide: () => 'allow' },
+      { maxSteps: 2, maxToolCalls: 10, maxToolResultBytes: 1024, modelTimeoutMs: 1000, toolTimeoutMs: 1000, pauseWhenBudgetExhausted: true },
+    );
+    const result = await runtime.runWithTrace({ messages: [{ role: 'user', content: 'scan my history' }] }, { modelId: 'mock', executionMode: 'local_only', workspaceId: 'w' }, new AbortController().signal);
+    expect(result.content).toBe('Read 60 commits so far; 2020-2023 still left.');
+    expect(result.paused).toMatchObject({ reason: 'steps', stepsUsed: 2, toolCallsUsed: 2 });
+    expect(result.paused?.checkpoint.messages).toHaveLength(5);
+    expect(requests[2]?.tools).toEqual([]);
+    expect(requests[2]?.messages.at(-1)?.content).toContain('step budget');
+  });
+
+  it('pauses before exceeding the tool call budget and still fails fast when pausing is off', async () => {
+    const makeRuntime = (pauseWhenBudgetExhausted: boolean) => new AgentRuntime(
+      new MockIntelligenceAdapter([
+        { type: 'tool_call', call: { id: 'call-1', toolName: 'echo', input: {} } },
+        { type: 'tool_call', call: { id: 'call-2', toolName: 'echo', input: {} } },
+        { type: 'text', content: 'progress' },
+      ]),
+      { execute: async () => ({ output: 'ok', sourceReferences: [] }), getMetadata: () => ({ readOnly: true, sideEffect: 'none', sensitive: false }) },
+      { decide: () => 'allow' },
+      { maxSteps: 5, maxToolCalls: 1, maxToolResultBytes: 1024, modelTimeoutMs: 1000, toolTimeoutMs: 1000, pauseWhenBudgetExhausted },
+    );
+    const request = { messages: [{ role: 'user' as const, content: 'hi' }] };
+    const context = { modelId: 'mock', executionMode: 'local_only' as const, workspaceId: 'w' };
+    const paused = await makeRuntime(true).runWithTrace(request, context, new AbortController().signal);
+    expect(paused.paused).toMatchObject({ reason: 'tool_calls', toolCallsUsed: 1 });
+    expect(paused.content).toBe('progress');
+    await expect(makeRuntime(false).run(request, context, new AbortController().signal)).rejects.toThrow('Max tool calls exceeded');
   });
 
   it('enforces model timeout limits', async () => {
