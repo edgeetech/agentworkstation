@@ -57,6 +57,7 @@ function buildAllowedTools(toolPolicies: Record<string, string>): string {
   const tools: string[] = [];
   if (present.has('filesystem.read') || present.has('filesystem.readSharedPath')) tools.push('Read', 'Grep', 'Glob');
   if (present.has('web.read')) tools.push('WebFetch');
+  if (present.has('web.search')) tools.push('WebSearch');
   if (present.has('git.log')) tools.push('Bash(git log *)');
   if (present.has('git.status')) tools.push('Bash(git status *)');
   if (present.has('git.diff')) tools.push('Bash(git diff *)');
@@ -85,6 +86,9 @@ function buildToolsSection(toolPolicies: Record<string, string>): string {
   }
   if (present.has('web.read')) {
     lines.push('- `web.read` -> WebFetch.');
+  }
+  if (present.has('web.search')) {
+    lines.push('- `web.search` -> WebSearch.');
   }
   if (present.has('filesystem.read') || present.has('filesystem.readSharedPath')) {
     lines.push('- `filesystem.read` / `filesystem.readSharedPath` -> Read.');

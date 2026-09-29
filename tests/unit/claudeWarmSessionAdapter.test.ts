@@ -68,6 +68,12 @@ describe('ClaudeWarmSessionAdapter', () => {
     expect(adapter.getLastUsage()?.totalCostUsd).toBeCloseTo(0.01);
   });
 
+  it('treats prose that carries a tool call envelope as the tool call', async () => {
+    const { queryFn } = fakeSdk([[text('Correction, returning the required JSON object only: {"type":"tool_call","call":{"id":"s1","toolName":"web.search","input":{"query":"dots"}}}'), result()]]);
+    await expect(new ClaudeWarmSessionAdapter('/tmp', queryFn).execute({ messages: [{ role: 'user', content: 'write about dots' }] }, allowed, signal()))
+      .resolves.toEqual({ type: 'tool_call', call: { id: 's1', toolName: 'web.search', input: { query: 'dots' } } });
+  });
+
   it('starts a new session when the conversation no longer extends what it sent', async () => {
     const { queryFn, calls } = fakeSdk([
       [text('{"type":"text","content":"a"}'), result()],

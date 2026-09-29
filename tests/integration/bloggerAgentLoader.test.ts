@@ -41,6 +41,7 @@ describe('Blogger Agent loader integration', () => {
 
     expect(agent.toolPolicies).toEqual({
       'web.read': 'allow',
+      'web.search': 'allow',
       'filesystem.read': 'allow',
       'filesystem.readSharedPath': 'allow',
       'git.log': 'allow',

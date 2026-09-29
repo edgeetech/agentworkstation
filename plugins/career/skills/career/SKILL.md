@@ -1,7 +1,7 @@
 ---
 name: career
 description: "Keeps professional profile information accurate and current. Use for: Audit my profile; Review recent project work; Find missing CV evidence; Review career memory."
-allowed-tools: Read Grep Glob WebFetch Bash(git log *) Bash(git status *) Bash(git diff *)
+allowed-tools: Read Grep Glob WebFetch WebSearch Bash(git log *) Bash(git status *) Bash(git diff *)
 ---
 
 # Career
@@ -52,6 +52,7 @@ Create a proposed Markdown diff; do not write directly.
 ## Tools
 
 - `web.read` -> WebFetch.
+- `web.search` -> WebSearch.
 - `filesystem.read` / `filesystem.readSharedPath` -> Read.
 - `git.log` / `git.status` / `git.diff` -> Bash (`git log`, `git status`, `git diff`).
 - `filesystem.proposeWrite` -> show the exact diff and ask before editing any file.

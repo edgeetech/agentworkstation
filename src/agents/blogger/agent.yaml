@@ -68,6 +68,7 @@ onboarding:
     extractionHint: Extract only the public LinkedIn profile URL or public account identifier. Never extract authentication data.
 toolPolicies:
   web.read: allow
+  web.search: allow
   filesystem.read: allow
   filesystem.readSharedPath: allow
   git.log: allow
