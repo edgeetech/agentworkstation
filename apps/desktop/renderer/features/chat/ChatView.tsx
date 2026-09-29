@@ -177,6 +177,7 @@ export function ChatView({
   connectPanel,
   onDraftChange,
   onSend,
+  onContinue,
   onCancel,
   onChangeMode,
   onAddFolder,
@@ -201,6 +202,7 @@ export function ChatView({
   connectPanel?: ReactNode;
   onDraftChange: (value: string) => void;
   onSend: (prompt?: string, mode?: ChatMode) => void;
+  onContinue: () => void;
   onCancel: () => void;
   onChangeMode: (mode: ChatMode) => void;
   onAddFolder: () => void;
@@ -387,6 +389,15 @@ export function ChatView({
                       ) : null}
                       <CopyButton text={exchange.assistantMessage} />
                     </div>
+                    {exchange.paused && index === history.length - 1 && !pending && !failure ? (
+                      <div className="budget-pause" role="group" aria-label={t('chat.budgetPausedTitle')}>
+                        <div>
+                          <strong>{t('chat.budgetPausedTitle')}</strong>
+                          <p>{t('chat.budgetPausedBody', { steps: String(exchange.paused.stepsUsed), tools: String(exchange.paused.toolCallsUsed) })}</p>
+                        </div>
+                        <button type="button" className="primary" onClick={onContinue}>{t('chat.continueRun')}</button>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>

@@ -9,13 +9,13 @@ import { createSharedPathReadTool } from '../../../src/infrastructure/filesystem
 import { ApprovalService } from '../../../src/application/approvals';
 import { CareerAuditService } from '../../../src/application/careerAudit';
 import {
-  chatContextBudget,
+  chatContextBudgetFor,
   summarizeChatContextUsage,
   type ChatContextUsage,
 } from '../../../src/application/chatContextUsage';
 import { buildChatModeInstructions } from '../../../src/application/chatMode';
 import { ContextBuilder } from '../../../src/application/context';
-import { AgentRuntime, type AgentRunObserver } from '../../../src/application/intelligence';
+import { AgentRuntime, type AgentRunObserver, type RunBudgetPause } from '../../../src/application/intelligence';
 import type { AgentDefinition } from '../../../src/application/agents/types';
 import { AgentOnboardingService, renderOnboardingStep } from '../../../src/application/onboarding/AgentOnboardingService';
 import { AgentDisplayNameService } from '../../../src/application/agents/AgentDisplayNameService';
@@ -23,6 +23,7 @@ import { AdaptiveRoutingIntelligenceAdapter, type RoutingAttempt } from '../../.
 import { AgentPolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
 import { buildWorkspaceAccessInstructions, type WorkspaceRegistration } from '../../../src/application/workspaces';
 import type {
+  ExecutionMode,
   IntelligencePort,
   ModelExecutionContext,
   ModelMessage,
@@ -100,7 +101,7 @@ import {
   releaseChatRequest,
 } from './ipcContract';
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
-import type { AgentSummary, PublicationSetup, ReminderSettings } from '../shared/api';
+import type { AgentSummary, ChatPause, PublicationSetup, ReminderSettings } from '../shared/api';
 import { discoverOllamaModels, inspectOllamaModel, isOllamaCloudModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
 import { buildApprovalRecord, buildModelTurnRecord, classifyErrorKind } from '../../../src/application/usage/usageLedger';
 import { JsonlUsageLedger, hashSessionKey } from '../../../src/infrastructure/usage/JsonlUsageLedger';
@@ -114,6 +115,10 @@ const intelligenceHealth = new Map<string, {
   checkedAt: string;
 }>();
 const chatRequestControllers = new Map<string, AbortController>();
+// Where a chat run stopped at its step budget, keyed by session, so "Continue" resumes
+// with the full tool transcript instead of starting over. Lost on restart by design:
+// the persisted progress summary still lets the agent pick up from the conversation.
+const chatRunCheckpoints = new Map<string, ModelRequest>();
 const endpointSettingKey = 'endpoint-config';
 const usageLedgerEnabledSettingKey = 'usageLedger.enabled';
 const reminderEnabledSettingKey = 'reminders.accountant.enabled';
@@ -1061,6 +1066,7 @@ async function buildAgentChatContext(
   registrations: WorkspaceRegistration[],
   selectedWorkspaceId?: string,
   tools?: ReturnType<ToolRegistry['getModelTools']>,
+  executionMode: ExecutionMode = 'provider_allowed',
 ) {
   const agent = getAgentCatalog().get(chatSession.agentId);
   const confirmedMemory = (await getAgentMemoryStore().getAgentMemory(chatSession.agentId))
@@ -1089,13 +1095,14 @@ async function buildAgentChatContext(
       conversation,
       ...(tools ? { tools } : {}),
     },
-    chatContextBudget,
+    chatContextBudgetFor(executionMode),
   );
 }
 
 async function getChatContextUsage(): Promise<ChatContextUsage> {
   const db = getPersistence();
   const chatSession = await ensureChatSession();
+  const executionMode = chatExecutionMode(await getEndpointConfig());
   const [persistedMessages, conversation, registrations, selectedWorkspace] = await Promise.all([
     db.listChatMessages(chatSession.id),
     getChatConversation(chatSession.id),
@@ -1107,7 +1114,9 @@ async function getChatContextUsage(): Promise<ChatContextUsage> {
     conversation,
     registrations,
     selectedWorkspace?.id,
-  ), { hasUserContext: persistedMessages.some((message) => message.role === 'user') });
+    undefined,
+    executionMode,
+  ), chatContextBudgetFor(executionMode), { hasUserContext: persistedMessages.some((message) => message.role === 'user') });
 }
 
 async function appendChatPair(
@@ -1117,6 +1126,7 @@ async function appendChatPair(
   assistantMessage: string,
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>,
   route?: RoutingDecision,
+  paused?: ChatPause,
 ): Promise<void> {
   const now = new Date().toISOString();
   const existing = await getPersistence().listChatMessages(sessionIdValue);
@@ -1140,6 +1150,7 @@ async function appendChatPair(
     sourceReferencesJson: JSON.stringify(sourceReferences),
     routingJson: route ? JSON.stringify(route) : null,
     mode: null,
+    pausedJson: paused ? JSON.stringify(paused) : null,
     createdAt: now,
   });
 }
@@ -1150,6 +1161,7 @@ async function getChatHistory(): Promise<Array<{
   sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
   route?: RoutingDecision;
   mode: ChatMode;
+  paused?: ChatPause;
 }>> {
   const sessionValue = await ensureChatSession();
   const messages = await getPersistence().listChatMessages(sessionValue.id);
@@ -1159,6 +1171,7 @@ async function getChatHistory(): Promise<Array<{
     sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
     route?: RoutingDecision;
     mode: ChatMode;
+    paused?: ChatPause;
   }> = [];
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
@@ -1171,6 +1184,7 @@ async function getChatHistory(): Promise<Array<{
       sourceReferences: JSON.parse(assistant.sourceReferencesJson) as Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>,
       mode: message.mode ?? 'standard',
       ...(assistant.routingJson ? { route: JSON.parse(assistant.routingJson) as RoutingDecision } : {}),
+      ...(assistant.pausedJson ? { paused: JSON.parse(assistant.pausedJson) as ChatPause } : {}),
     });
   }
   return exchanges;
@@ -1181,6 +1195,7 @@ async function prepareChatMessage(
   sessionId: string,
   signal: AbortSignal,
   observe?: AgentRunObserver,
+  resume = false,
 ): Promise<{
   sessionId: string;
   agentId: string;
@@ -1192,6 +1207,7 @@ async function prepareChatMessage(
     sourceReferences: Array<{ type: string; workspaceId?: string; relativePath?: string; commitSha?: string; label?: string }>;
     route?: RoutingDecision;
     mode: ChatMode;
+    paused?: ChatPause;
   };
 }> {
   signal.throwIfAborted();
@@ -1199,7 +1215,8 @@ async function prepareChatMessage(
     .find((sessionValue) => sessionValue.id === sessionId);
   if (!chatSession) throw new Error(`Unknown chat session: ${sessionId}`);
   const endpoint = await getEndpointConfig();
-  const onboarding = await createOnboardingService(endpoint).handleMessage(chatSession.agentId, message, signal);
+  const checkpoint = resume ? chatRunCheckpoints.get(chatSession.id) : undefined;
+  const onboarding = checkpoint ? null : await createOnboardingService(endpoint).handleMessage(chatSession.agentId, message, signal);
   if (onboarding) {
     return {
       sessionId: chatSession.id,
@@ -1244,20 +1261,22 @@ async function prepareChatMessage(
   }
 
   const toolExecutor = new ToolExecutor(toolRegistry);
-  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceGateway, agent.toolPolicies);
+  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceGateway, agent.toolPolicies, { pauseWhenBudgetExhausted: true });
+  const executionMode = chatExecutionMode(endpoint);
 
-  const built = await buildAgentChatContext(
+  const request = checkpoint ?? (await buildAgentChatContext(
     chatSession,
     nextConversation,
     registrations,
     selectedWorkspace?.id,
     toolRegistry.getModelTools(),
-  );
+    executionMode,
+  )).request;
   const result = await runtime.runWithTrace(
-    built.request,
+    request,
     {
       modelId: endpoint.modelId,
-      executionMode: effectiveRoutingPolicy(endpoint) === 'local_only' ? 'local_only' : 'provider_allowed',
+      executionMode,
       workspaceId: selectedWorkspace?.id,
       taskKind: 'chat',
     },
@@ -1265,6 +1284,9 @@ async function prepareChatMessage(
     observe,
   );
   signal.throwIfAborted();
+  if (result.paused) chatRunCheckpoints.set(chatSession.id, result.paused.checkpoint);
+  else chatRunCheckpoints.delete(chatSession.id);
+  const paused = result.paused ? toChatPause(result.paused) : undefined;
   const route = router?.getLastDecision() ?? simulatedRoute();
   return {
     sessionId: chatSession.id,
@@ -1272,12 +1294,23 @@ async function prepareChatMessage(
     recordUsage: true,
     exchange: {
       userMessage: message,
-      assistantMessage: result.content,
+      assistantMessage: result.content.trim() || (paused ? PAUSED_WITHOUT_SUMMARY : result.content),
       sourceReferences: result.sourceReferences,
       route,
       mode: chatSession.mode,
+      ...(paused ? { paused } : {}),
     },
   };
+}
+
+const PAUSED_WITHOUT_SUMMARY = 'I reached the step budget for this turn before finishing.';
+
+function toChatPause(paused: RunBudgetPause): ChatPause {
+  return { reason: paused.reason, stepsUsed: paused.stepsUsed, toolCallsUsed: paused.toolCallsUsed };
+}
+
+function chatExecutionMode(endpoint: EndpointConfig): ExecutionMode {
+  return effectiveRoutingPolicy(endpoint) === 'local_only' ? 'local_only' : 'provider_allowed';
 }
 
 function createRuntime(
@@ -1285,6 +1318,7 @@ function createRuntime(
   toolExecutor: ToolExecutor,
   workspaceGateway: DefaultWorkspaceGateway | undefined,
   toolPolicies: Readonly<Record<string, 'allow' | 'require_approval' | 'deny'>>,
+  options: { pauseWhenBudgetExhausted?: boolean } = {},
 ): { runtime: AgentRuntime; router: AdaptiveRoutingIntelligenceAdapter | null } {
   const { intelligence, router } = createRoutingIntelligence(endpoint);
   const runtime = new AgentRuntime(
@@ -1299,11 +1333,14 @@ function createRuntime(
     },
     new AgentPolicyGate(toolPolicies),
     {
-      maxSteps: 6,
-      maxToolCalls: 8,
+      // Sized for real research (paging git history, reading several pages). Chat runs
+      // pause here and ask the user before spending another budget.
+      maxSteps: 24,
+      maxToolCalls: 40,
       maxToolResultBytes: 64 * 1024,
       modelTimeoutMs: effectiveRoutingPolicy(endpoint) === 'local_only' ? 90_000 : 120_000,
-      toolTimeoutMs: 10_000,
+      toolTimeoutMs: 30_000,
+      ...(options.pauseWhenBudgetExhausted ? { pauseWhenBudgetExhausted: true } : {}),
     },
   );
   return { runtime, router };
@@ -1344,7 +1381,7 @@ async function runCareerAudit(): Promise<{
     const evidenceRequests = workspace.kind === 'profile' || workspace.kind === 'cv'
       ? [{ toolName: 'filesystem.read', input: { workspaceId: workspace.id, relativePath: 'README.md' } }]
       : [
-        { toolName: 'git.log', input: { workspaceId: workspace.id, maxCount: 10 } },
+        { toolName: 'git.log', input: { workspaceId: workspace.id, limit: 50 } },
         { toolName: 'git.status', input: { workspaceId: workspace.id } },
       ];
     for (const request of evidenceRequests) {
@@ -1883,7 +1920,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.getChatContextUsage, async () => getChatContextUsage());
 
   ipcMain.handle(IPC_CHANNELS.sendChatMessage, async (event, payload: unknown) => {
-    const { message, requestId, sessionId } = parseChatMessageInput(payload);
+    const { message, requestId, sessionId, resume } = parseChatMessageInput(payload);
     const controller = registerChatRequest(chatRequestControllers, requestId);
     const sender = event.sender;
     const startedAt = Date.now();
@@ -1895,7 +1932,7 @@ function registerIpcHandlers(): void {
       if (!sender.isDestroyed()) sender.send(IPC_EVENTS.chatActivity, { requestId, ...activity });
     };
     try {
-      const prepared = await prepareChatMessage(message, sessionId, controller.signal, observe);
+      const prepared = await prepareChatMessage(message, sessionId, controller.signal, observe, resume === true);
       releaseChatRequest(chatRequestControllers, requestId, controller);
       await appendChatPair(
         prepared.sessionId,
@@ -1904,6 +1941,7 @@ function registerIpcHandlers(): void {
         prepared.exchange.assistantMessage,
         prepared.exchange.sourceReferences,
         prepared.exchange.route,
+        prepared.exchange.paused,
       );
       notifyReplyIfUnfocused(BrowserWindow.fromWebContents(sender), sessionId, prepared.exchange.assistantMessage);
       if (prepared.recordUsage && prepared.exchange.route) {

@@ -154,15 +154,24 @@ export const gitStatusTool: AgentTool<{ workspaceId: string }, ToolResult> = {
   },
 };
 
-export const gitLogTool: AgentTool<{ workspaceId: string; limit?: number }, ToolResult> = {
+const GIT_LOG_MAX_COMMITS = 200;
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const gitLogTool: AgentTool<{ workspaceId: string; limit?: number; skip?: number; since?: string }, ToolResult> = {
   id: 'git.log',
-  description: 'Read recent git history',
-  inputSchema: workspaceInput.extend({ limit: z.number().int().positive().default(10) }),
+  description: 'Read git history as "<sha> <date> <author> <subject>" lines. Page older history with skip, or bound it with since (YYYY-MM-DD).',
+  inputSchema: workspaceInput.extend({
+    limit: z.number().int().positive().default(30),
+    skip: z.number().int().nonnegative().optional(),
+    since: isoDate.optional(),
+  }),
   inputJsonSchema: {
     type: 'object',
     properties: {
       workspaceId: { type: 'string', minLength: 1 },
-      limit: { type: 'integer', minimum: 1, default: 10 },
+      limit: { type: 'integer', minimum: 1, maximum: GIT_LOG_MAX_COMMITS, default: 30 },
+      skip: { type: 'integer', minimum: 0 },
+      since: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
     },
     required: ['workspaceId'],
     additionalProperties: false,
@@ -170,8 +179,11 @@ export const gitLogTool: AgentTool<{ workspaceId: string; limit?: number }, Tool
   metadata: { readOnly: true, sideEffect: 'none', sensitive: false, requiresWorkspace: true },
   async execute(input, context): Promise<ToolResult> {
     const workspacePath = requireWorkspaceRoot(context, input.workspaceId);
-    const limit = Math.min(input.limit ?? 10, 20);
-    const stdout = await runGit(workspacePath, ['log', `-${limit}`, '--oneline'], context.signal);
+    const limit = Math.min(input.limit ?? 30, GIT_LOG_MAX_COMMITS);
+    const args = ['log', `-${limit}`, '--date=short', '--format=%h %ad %an %s'];
+    if (input.skip) args.push(`--skip=${input.skip}`);
+    if (input.since) args.push(`--since=${input.since}`);
+    const stdout = await runGit(workspacePath, args, context.signal);
     const sourceRef: SourceReference = {
       type: 'git_commit',
       workspaceId: input.workspaceId,

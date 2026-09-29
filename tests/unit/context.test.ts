@@ -97,4 +97,32 @@ describe('ContextBuilder', () => {
       maxTotalContentBytes: 3,
     })).toThrow('category budgets exceed');
   });
+
+  it('keeps the head of an oversized older message and never skips past it to older turns', () => {
+    const article = 'A'.repeat(4000);
+    const result = new ContextBuilder().buildRequest({
+      systemPrompt: '',
+      memoryContext: { content: '', byteLength: 0, truncated: false, sourceReferences: [] },
+      conversation: [
+        { role: 'user', content: 'oldest short turn' },
+        { role: 'user', content: article },
+        { role: 'assistant', content: 'Which option?' },
+        { role: 'user', content: '1' },
+      ],
+    }, {
+      maxInstructionsBytes: 0,
+      maxMemoryBytes: 0,
+      maxConversationBytes: 2048,
+      maxToolResultBytes: 0,
+      maxTotalContentBytes: 2048,
+    });
+
+    const contents = result.request.messages.map((message) => message.content);
+    expect(contents.at(-1)).toBe('1');
+    expect(contents[0]?.startsWith('AAAA')).toBe(true);
+    expect(contents[0]).toContain('[... truncated to fit the context budget]');
+    expect(contents).not.toContain('oldest short turn');
+    expect(result.usage.conversationBytes).toBeLessThanOrEqual(2048);
+    expect(result.truncated).toContain('conversation');
+  });
 });
