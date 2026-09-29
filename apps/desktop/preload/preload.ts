@@ -17,6 +17,12 @@ const IPC_CHANNELS = {
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
   listAgents: 'agentWorkstation:listAgents',
   renameAgentDisplayName: 'agentWorkstation:renameAgentDisplayName',
+  getCustomAgentSetup: 'agentWorkstation:getCustomAgentSetup',
+  draftCustomAgent: 'agentWorkstation:draftCustomAgent',
+  getCustomAgent: 'agentWorkstation:getCustomAgent',
+  createCustomAgent: 'agentWorkstation:createCustomAgent',
+  updateCustomAgent: 'agentWorkstation:updateCustomAgent',
+  deleteCustomAgent: 'agentWorkstation:deleteCustomAgent',
   getAgentOnboarding: 'agentWorkstation:getAgentOnboarding',
   getAgentMemory: 'agentWorkstation:getAgentMemory',
   openAgentMemoryFile: 'agentWorkstation:openAgentMemoryFile',
@@ -93,6 +99,12 @@ const api: AgentWorkstationApi = {
   listAgents: async () => ipcRenderer.invoke(IPC_CHANNELS.listAgents),
   renameAgentDisplayName: async (agentId, displayName) =>
     ipcRenderer.invoke(IPC_CHANNELS.renameAgentDisplayName, { agentId, displayName }),
+  getCustomAgentSetup: async () => ipcRenderer.invoke(IPC_CHANNELS.getCustomAgentSetup),
+  draftCustomAgent: async (input) => ipcRenderer.invoke(IPC_CHANNELS.draftCustomAgent, input),
+  getCustomAgent: async (agentId) => ipcRenderer.invoke(IPC_CHANNELS.getCustomAgent, { agentId }),
+  createCustomAgent: async (input) => ipcRenderer.invoke(IPC_CHANNELS.createCustomAgent, input),
+  updateCustomAgent: async (agentId, input) => ipcRenderer.invoke(IPC_CHANNELS.updateCustomAgent, { agentId, input }),
+  deleteCustomAgent: async (agentId) => ipcRenderer.invoke(IPC_CHANNELS.deleteCustomAgent, { agentId }),
   getAgentOnboarding: async (agentId, intent = 'initial') =>
     ipcRenderer.invoke(IPC_CHANNELS.getAgentOnboarding, { agentId, intent }),
   getAgentMemory: async (agentId) =>

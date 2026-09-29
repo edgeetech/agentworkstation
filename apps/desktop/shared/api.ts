@@ -170,7 +170,34 @@ export type AgentSummary = {
   description: string;
   quickActions: AgentQuickAction[];
   onboarding: OnboardingQuestion[];
+  /** Created by the user with the specialist wizard. */
+  custom?: boolean;
 };
+
+export type CustomAgentCapabilities = {
+  webResearch: boolean;
+  readFiles: boolean;
+  gitHistory: boolean;
+  proposeFileChanges: boolean;
+};
+
+export type CustomAgentInput = {
+  name: string;
+  description: string;
+  instructions: string;
+  rules: string;
+  starters: string[];
+  capabilities: CustomAgentCapabilities;
+  /** Intelligence option ids; empty means every intelligence allowed in Settings. */
+  intelligence: string[];
+};
+
+export type CustomAgentDraft = Pick<CustomAgentInput, 'description' | 'instructions' | 'rules' | 'starters'>;
+
+/** An intelligence the user currently allows in Settings, offered to custom agents. */
+export type IntelligenceOption = { id: string; label: string; location: 'local' | 'external' };
+
+export type CustomAgentSetup = { intelligenceOptions: IntelligenceOption[]; canDraft: boolean };
 
 export type OnboardingIntent = 'initial' | 'publish' | 'linkedin';
 export type OnboardingQuestion = {
@@ -341,6 +368,12 @@ export type AgentWorkstationApi = {
   testEndpointConnection: (config: EndpointConfig) => Promise<{ ok: true; message: string }>;
   listAgents: () => Promise<AgentSummary[]>;
   renameAgentDisplayName: (agentId: string, displayName: string | null) => Promise<AgentSummary>;
+  getCustomAgentSetup: () => Promise<CustomAgentSetup>;
+  draftCustomAgent: (input: { name: string; brief: string; language: 'tr' | 'en' }) => Promise<CustomAgentDraft>;
+  getCustomAgent: (agentId: string) => Promise<CustomAgentInput>;
+  createCustomAgent: (input: CustomAgentInput) => Promise<AgentSummary>;
+  updateCustomAgent: (agentId: string, input: CustomAgentInput) => Promise<AgentSummary>;
+  deleteCustomAgent: (agentId: string) => Promise<void>;
   getAgentOnboarding: (agentId: string, intent?: OnboardingIntent) => Promise<OnboardingStep>;
   getAgentMemory: (agentId: string) => Promise<AgentMemoryEntry[]>;
   openAgentMemoryFile: (agentId: string) => Promise<string>;

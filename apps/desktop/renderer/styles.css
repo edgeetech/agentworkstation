@@ -313,6 +313,11 @@ label small, .form small { color: var(--ink-3); font-size: 12px; }
 }
 .agent-roster-item:hover .agent-rename-trigger, .agent-rename-trigger:focus-visible { opacity: 1; }
 .agent-rename-trigger:hover:not(:disabled) { background: var(--press); border-color: transparent; }
+/* Custom specialists also get edit and delete triggers, laid out right to left. */
+.agent-roster-item > button.agent-rename-trigger:nth-of-type(3) { right: 34px; }
+.agent-roster-item > button.agent-rename-trigger:nth-of-type(4) { right: 62px; }
+.agent-delete-trigger:hover:not(:disabled) { color: var(--danger); }
+.sidebar-action.new-specialist { width: 100%; margin-top: 2px; color: var(--ink-3); }
 .agent-rename-form { flex: 1; display: flex; align-items: center; gap: 6px; padding: 5px 6px; }
 .agent-rename-form input { min-height: 30px; padding: 4px 8px; }
 .agent-rename-form button { width: 28px; min-height: 28px; padding: 0; }
@@ -1414,6 +1419,43 @@ label small, .form small { color: var(--ink-3); font-size: 12px; }
 .palette-copy strong { font-weight: 560; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-copy small { color: var(--ink-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-empty { padding: 24px; text-align: center; color: var(--ink-3); }
+
+.agent-wizard-backdrop { padding-top: 7vh; }
+.agent-wizard {
+  width: min(680px, 100% - 48px);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-l);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  animation: pop 160ms var(--ease);
+}
+.agent-wizard-header { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+.agent-wizard-header > div { flex: 1; min-width: 0; }
+.agent-wizard-header h2 { font-size: 16px; }
+.agent-wizard-steps { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--ink-3); }
+.agent-wizard-steps li.active { color: var(--ink); font-weight: 600; }
+.agent-wizard-body { display: grid; gap: 14px; padding: 16px 18px; overflow-y: auto; }
+.agent-wizard-body > label { display: grid; gap: 6px; }
+.agent-wizard-body > label > span, .agent-wizard-choices legend { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.agent-wizard-body small { color: var(--ink-3); font-size: 12px; }
+.agent-wizard-body textarea.mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; }
+.agent-wizard-choices { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.agent-wizard-choice { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-m); cursor: pointer; }
+.agent-wizard-choice:has(input:checked) { border-color: color-mix(in srgb, var(--agent) 45%, transparent); background: var(--agent-soft); }
+.agent-wizard-choice input { width: auto; min-height: 0; margin-top: 3px; }
+.agent-wizard-choice span { display: grid; gap: 2px; }
+.agent-wizard-choice strong { font-size: 13.5px; font-weight: 560; }
+.agent-wizard-options { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 4px; }
+.agent-wizard-options label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; cursor: pointer; }
+.agent-wizard-options input { width: auto; min-height: 0; }
+.agent-wizard-options em { font-style: normal; font-size: 11.5px; color: var(--ink-3); }
+.agent-wizard-error { padding: 10px 12px; border-radius: var(--radius-m); background: var(--danger-soft); color: var(--danger); font-size: 13px; }
+.agent-wizard-footer { display: flex; justify-content: space-between; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--line); }
+.agent-wizard-footer button { display: inline-flex; align-items: center; gap: 6px; }
 
 /* Motion ----------------------------------------------------------------- */
 

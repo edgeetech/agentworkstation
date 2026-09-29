@@ -7,6 +7,7 @@ import type {
   ChatMode,
   ChatSessionRecord,
   AgentSummary,
+  CustomAgentInput,
   DemoAudit,
   EndpointConfig,
   PendingAction,
@@ -29,6 +30,7 @@ import { SessionInspector } from "./features/inspector/SessionInspector";
 import { MessageContent } from "./features/chat/MessageContent";
 import { ChatView, type FailedChat, type PendingChat } from "./features/chat/ChatView";
 import { CommandPalette, type PaletteItem } from "./features/shell/CommandPalette";
+import { CustomAgentWizard } from "./features/agents/CustomAgentWizard";
 import { ConnectPanel } from "./features/intelligence/ConnectPanel";
 import { Icon } from "./features/shell/icons";
 import { detectPlatform, useTheme } from "./features/shell/theme";
@@ -165,6 +167,7 @@ function App(): JSX.Element {
   const [pendingChatInput, setPendingChatInput] = useState<PendingChat | null>(null);
   const [chatFailure, setChatFailure] = useState<FailedChat | null>(null);
   const [chatActivity, setChatActivity] = useState<ChatActivity[]>([]);
+  const [agentWizard, setAgentWizard] = useState<{ editing?: { agentId: string; input: CustomAgentInput } } | null>(null);
   const [streamedReply, setStreamedReply] = useState("");
   const streamedReplyRef = useRef("");
   const [freshReply, setFreshReply] = useState<string | null>(null);
@@ -494,6 +497,48 @@ function App(): JSX.Element {
       await api.renameAgentDisplayName(agentId, name);
       setAgents(await api.listAgents());
       setNotice(t('app.nameChanged', { name }));
+    });
+  };
+
+  const startChatWith = async (agent: AgentSummary): Promise<void> => {
+    await api.createChatSession({
+      name: `${agent.name} conversation`,
+      agentId: agent.id,
+      intelligencePreference: "auto",
+      permissionMode: "interactive",
+      isolationMode: "read_only",
+    });
+    setPreferredAgentId(agent.id);
+    await loadChat();
+    setView("chat");
+  };
+
+  const editAgent = (agentId: string): void => {
+    void task("chat", async () => {
+      const input = await api.getCustomAgent(agentId);
+      setAgentWizard({ editing: { agentId, input } });
+    });
+  };
+
+  const deleteAgent = (agentId: string): void => {
+    const agent = agents.find((candidate) => candidate.id === agentId);
+    if (!agent || !window.confirm(t('sidebar.deleteSpecialistConfirm', { name: agent.name }))) return;
+    void task("chat", async () => {
+      await api.deleteCustomAgent(agentId);
+      setAgents(await api.listAgents());
+      if (preferredAgentId === agentId) setPreferredAgentId(undefined);
+      await loadChat();
+      setNotice(t('app.specialistDeleted', { name: agent.name }));
+    });
+  };
+
+  const agentSaved = (agent: AgentSummary): void => {
+    const created = !agentWizard?.editing;
+    setAgentWizard(null);
+    void task("chat", async () => {
+      setAgents(await api.listAgents());
+      if (created) await startChatWith(agent);
+      setNotice(t(created ? 'app.specialistCreated' : 'app.specialistSaved', { name: agent.name }));
     });
   };
 
@@ -1693,6 +1738,9 @@ function App(): JSX.Element {
         onCycleTheme={theme.cycle}
         onOpenAgent={openAgent}
         onRenameAgent={saveAgentName}
+        onCreateAgent={() => setAgentWizard({})}
+        onEditAgent={editAgent}
+        onDeleteAgent={deleteAgent}
         onNavigate={go}
         onNewSession={() => createNewChat(selectedAgent?.id)}
         onSearch={() => setPaletteOpen(true)}
@@ -1797,6 +1845,13 @@ function App(): JSX.Element {
         onError={setError}
       />
       {paletteOpen ? <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} /> : null}
+      {agentWizard ? (
+        <CustomAgentWizard
+          {...(agentWizard.editing ? { editing: agentWizard.editing } : {})}
+          onClose={() => setAgentWizard(null)}
+          onSaved={agentSaved}
+        />
+      ) : null}
     </div>
   );
 }
