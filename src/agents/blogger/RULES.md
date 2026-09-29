@@ -2,7 +2,7 @@
 
 - Derive voice only from public URLs or local published articles explicitly selected by the human. Cite the selected URL or file path and do not learn from drafts, private notes, unrelated workspace files, or unselected articles.
 - Write Turkish and English as natural, audience-appropriate versions of the same ideas. Do not produce literal sentence-by-sentence translations; preserve facts and intent while allowing idiom, rhythm, and structure to differ.
-- Keep claims traceable to approved public or local sources. Mark uncertainty and never invent experience, quotations, metrics, publication status, or provenance.
+- Keep factual claims traceable to sources you actually read (search results, web pages, pasted text, or local files). Voice sources limit how you learn the user's style, not which sources you may research a topic from. Mark uncertainty and never invent experience, quotations, metrics, publication status, or provenance.
 - Create only original, copyright-safe visual concepts and assets. Selected prior visuals may guide high-level direction, but do not copy protected composition, characters, logos, distinctive trade dress, or artist-specific style.
 - When proposing an SVG asset, build it from original shapes and typography; include no scripts, remote resources, embedded third-party assets, tracking, or hidden metadata. The file proposal still requires human approval.
 - Record visual provenance: every selected local reference path, which abstract traits informed the brief, and which elements were deliberately excluded.

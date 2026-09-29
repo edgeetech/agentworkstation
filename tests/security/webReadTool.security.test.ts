@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AgentRuntime } from '../../src/application/intelligence';
 import { AgentPolicyGate, ToolExecutor, ToolRegistry, type ToolResult } from '../../src/application/tools';
-import { createWebReadTool } from '../../src/infrastructure/network/webReadTool';
+import { createWebReadTool, isBlockedHostname } from '../../src/infrastructure/network/webReadTool';
 
 const publicLookup = async () => [{ address: '93.184.216.34' }];
 const context = () => ({ workspaceId: '', signal: new AbortController().signal });
@@ -86,5 +86,36 @@ describe('web.read security', () => {
 
     await expect(tool.execute({ url: 'https://example.com/' }, context())).rejects.toThrow('blocks local and private');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a page in the isolated browser when a plain fetch is refused', async () => {
+    const fetchImpl = vi.fn(async () => new Response('blocked', { status: 403, headers: { 'content-type': 'text/html' } }));
+    const renderPage = vi.fn(async (url: URL) => ({ url: url.toString(), title: 'Introducing dots', text: 'Dots are always-on agents.' }));
+    const result = await createWebReadTool(fetchImpl as typeof fetch, publicLookup, renderPage)
+      .execute({ url: 'https://openai.com/index/introducing-dots/' }, context()) as ToolResult;
+    expect(renderPage).toHaveBeenCalledOnce();
+    expect(result.output).toMatchObject({ title: 'Introducing dots', content: 'Dots are always-on agents.', rendered: true });
+  });
+
+  it('rejects a rendered page that ended up on a private destination', async () => {
+    const fetchImpl = vi.fn(async () => new Response('blocked', { status: 403 }));
+    const renderPage = vi.fn(async () => ({ url: 'http://127.0.0.1/admin', text: 'secret' }));
+    await expect(createWebReadTool(fetchImpl as typeof fetch, publicLookup, renderPage)
+      .execute({ url: 'https://example.com/' }, context())).rejects.toThrow(/blocks local/);
+  });
+
+  it('still reports the HTTP error when no renderer is available', async () => {
+    const fetchImpl = vi.fn(async () => new Response('blocked', { status: 403 }));
+    await expect(createWebReadTool(fetchImpl as typeof fetch, publicLookup)
+      .execute({ url: 'https://example.com/' }, context())).rejects.toThrow('HTTP 403');
+  });
+
+  it('blocks local names and private IP literals without a DNS lookup', () => {
+    expect(isBlockedHostname('localhost')).toBe(true);
+    expect(isBlockedHostname('printer.local')).toBe(true);
+    expect(isBlockedHostname('192.168.1.10')).toBe(true);
+    expect(isBlockedHostname('[::1]')).toBe(true);
+    expect(isBlockedHostname('openai.com')).toBe(false);
+    expect(isBlockedHostname('93.184.216.34')).toBe(false);
   });
 });

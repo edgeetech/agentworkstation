@@ -49,6 +49,7 @@ toolPolicies:
   accounting.ukDeadlines: allow
   accounting.summarizeLedger: allow
   web.read: allow
+  web.search: allow
   filesystem.read: allow
   filesystem.readSharedPath: allow
   git.log: allow

@@ -33,6 +33,16 @@ function isPrivateAddress(address: string): boolean {
   return mapped ? isPrivateIpv4(mapped) : false;
 }
 
+/**
+ * Synchronous check for hosts that are private without a DNS lookup: local names and
+ * private IP literals. Used where a lookup is not possible (a browser request filter).
+ */
+export function isBlockedHostname(rawHostname: string): boolean {
+  const hostname = rawHostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) return true;
+  return isIP(hostname) !== 0 && isPrivateAddress(hostname);
+}
+
 async function defaultLookup(hostname: string): Promise<Array<{ address: string }>> {
   return dnsLookup(hostname, { all: true, verbatim: true });
 }
@@ -78,6 +88,20 @@ function htmlToReadableText(html: string): { title?: string; content: string } {
   return { ...(title ? { title } : {}), content };
 }
 
+// Some publishers answer 403 to anything that does not look like a browser.
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,application/json;q=0.8,*/*;q=0.5',
+  'Accept-Language': 'en-US,en;q=0.9,tr;q=0.8',
+};
+const RENDER_FALLBACK_STATUSES = new Set([401, 403, 429, 503]);
+// Pages built client-side return a near-empty shell to a plain HTTP fetch.
+const MIN_READABLE_CHARACTERS = 400;
+
+export type RenderedPage = { url: string; title?: string; text: string };
+/** Loads a page in a real, isolated browser engine; used when a plain fetch is refused. */
+export type PageRenderer = (url: URL, signal: AbortSignal) => Promise<RenderedPage>;
+
 function truncateUtf8(value: string): { content: string; truncated: boolean } {
   const bytes = Buffer.from(value, 'utf8');
   if (bytes.byteLength <= MAX_CONTENT_BYTES) return { content: value, truncated: false };
@@ -87,7 +111,27 @@ function truncateUtf8(value: string): { content: string; truncated: boolean } {
 export function createWebReadTool(
   fetchImpl: typeof fetch = fetch,
   lookup: AddressLookup = defaultLookup,
+  renderPage?: PageRenderer,
 ): AgentTool<{ url: string }, ToolResult> {
+  const pageResult = (url: URL, title: string | undefined, text: string, rendered: boolean): ToolResult => {
+    const bounded = truncateUtf8(text);
+    return {
+      output: {
+        url: url.toString(),
+        ...(title ? { title } : {}),
+        content: bounded.content,
+        truncated: bounded.truncated,
+        ...(rendered ? { rendered: true } : {}),
+      },
+      sourceReferences: [{ type: 'web', url: url.toString(), label: title ?? url.hostname }],
+    };
+  };
+  const render = async (url: URL, signal: AbortSignal): Promise<ToolResult> => {
+    if (!renderPage) throw new Error('web.read cannot render pages in this environment');
+    const page = await renderPage(url, signal);
+    const finalUrl = await assertPublicHttpUrl(page.url, lookup);
+    return pageResult(finalUrl, page.title, page.text.trim(), true);
+  };
   return {
     id: 'web.read',
     description: 'Read a user-relevant public web page without authentication or side effects',
@@ -106,7 +150,7 @@ export function createWebReadTool(
         const response = await fetchImpl(current, {
           method: 'GET',
           redirect: 'manual',
-          headers: { Accept: 'text/html, text/plain, application/json;q=0.9' },
+          headers: BROWSER_HEADERS,
           signal: AbortSignal.any([context.signal, timeout]),
         });
         if (response.status >= 300 && response.status < 400) {
@@ -116,7 +160,10 @@ export function createWebReadTool(
           current = await assertPublicHttpUrl(new URL(location, current).toString(), lookup);
           continue;
         }
-        if (!response.ok) throw new Error(`web.read request failed with HTTP ${response.status}`);
+        if (!response.ok) {
+          if (renderPage && RENDER_FALLBACK_STATUSES.has(response.status)) return render(current, context.signal);
+          throw new Error(`web.read request failed with HTTP ${response.status}`);
+        }
         const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
         if (contentType && !contentType.includes('text/') && !contentType.includes('json')) {
           throw new Error(`web.read cannot process content type ${contentType}`);
@@ -126,17 +173,16 @@ export function createWebReadTool(
         const body = Buffer.from(await response.arrayBuffer());
         if (body.byteLength > MAX_RESPONSE_BYTES) throw new Error('web.read response is too large');
         const decoded = body.toString('utf8');
-        const readable = contentType.includes('html') ? htmlToReadableText(decoded) : { content: decoded.trim() };
-        const bounded = truncateUtf8(readable.content);
-        return {
-          output: {
-            url: current.toString(),
-            ...(readable.title ? { title: readable.title } : {}),
-            content: bounded.content,
-            truncated: bounded.truncated,
-          },
-          sourceReferences: [{ type: 'web', url: current.toString(), label: readable.title ?? current.hostname }],
-        };
+        const html = contentType.includes('html');
+        const readable = html ? htmlToReadableText(decoded) : { content: decoded.trim() };
+        if (html && renderPage && readable.content.length < MIN_READABLE_CHARACTERS) {
+          try {
+            return await render(current, context.signal);
+          } catch {
+            // The thin fetched text is still better than nothing.
+          }
+        }
+        return pageResult(current, readable.title, readable.content, false);
       }
       throw new Error('web.read could not resolve the requested page');
     },

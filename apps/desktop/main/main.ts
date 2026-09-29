@@ -53,7 +53,9 @@ import {
 import { ClaudeWarmSessionAdapter } from '../../../src/infrastructure/intelligence/claudeWarmSessionAdapter';
 import { MockIntelligenceAdapter } from '../../../src/infrastructure/mock/mockIntelligence';
 import { DefaultNetworkGateway } from '../../../src/infrastructure/network/DefaultNetworkGateway';
-import { webReadTool } from '../../../src/infrastructure/network/webReadTool';
+import { createWebReadTool } from '../../../src/infrastructure/network/webReadTool';
+import { webSearchTool } from '../../../src/infrastructure/network/webSearchTool';
+import { renderPublicPage } from './webPageRenderer';
 import { SqlitePersistence } from '../../../src/infrastructure/persistence/sqlite';
 import { SqlitePublicationPersistence } from '../../../src/infrastructure/publication/SqlitePublicationPersistence';
 import { PublicationCoordinator } from '../../../src/application/publication/PublicationCoordinator';
@@ -1245,7 +1247,8 @@ async function prepareChatMessage(
 
   const agent = getAgentCatalog().get(chatSession.agentId);
   const toolRegistry = new ToolRegistry();
-  toolRegistry.register(webReadTool);
+  toolRegistry.register(createWebReadTool(fetch, undefined, renderPublicPage));
+  toolRegistry.register(webSearchTool);
   // Specialist-only tools are offered only to agents whose policy names them.
   if (agent.toolPolicies['accounting.ukDeadlines']) toolRegistry.register(createUkDeadlinesTool());
   toolRegistry.register(createSharedPathReadTool(nextConversation

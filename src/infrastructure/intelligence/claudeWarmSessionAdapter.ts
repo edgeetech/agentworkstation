@@ -72,7 +72,20 @@ const key = (message: ModelMessage): string => JSON.stringify(message);
 /** In a long session the model sometimes drops the envelope for a final prose answer; accept that as text. */
 function parseReply(text: string): ModelResponse {
   const trimmed = text.trim();
-  if (trimmed && !trimmed.startsWith('{') && !trimmed.startsWith('`')) return { type: 'text', content: trimmed };
+  if (trimmed && !trimmed.startsWith('{') && !trimmed.startsWith('`')) {
+    // Prose that still carries a tool call envelope (for example after a self-correction)
+    // is a tool call, not an answer to show the user.
+    const embedded = trimmed.indexOf('{"type":"tool_call"');
+    if (embedded >= 0) {
+      try {
+        const response = parseDelegatedModelResponse(trimmed.slice(embedded));
+        if (response.type === 'tool_call') return response;
+      } catch {
+        // Not a well-formed envelope; fall through to plain text.
+      }
+    }
+    return { type: 'text', content: trimmed };
+  }
   return parseDelegatedModelResponse(text);
 }
 

@@ -1,7 +1,7 @@
 ---
 name: accountant
 description: "Keeps a small UK company's books, deadlines, and filings in order from your own exports. Use for: Build my filing calendar; Review last month's books; Check my VAT quarter; Review the director's loan account."
-allowed-tools: Read Grep Glob WebFetch Bash(git log *) Bash(git status *) Bash(git diff *) Bash(node *)
+allowed-tools: Read Grep Glob WebFetch WebSearch Bash(git log *) Bash(git status *) Bash(git diff *) Bash(node *)
 ---
 
 # Accountant
@@ -73,6 +73,7 @@ Explain like a careful bookkeeper: plain words, the working behind each number, 
 - `accounting.ukDeadlines` -> run `node "${CLAUDE_SKILL_DIR}/scripts/uk-deadlines.mjs" --period-end YYYY-MM-DD [--vat-stagger 1|2|3] [--confirmation YYYY-MM-DD] [--payroll] [--horizon N] [--today YYYY-MM-DD]`. Never calculate a statutory filing or payment date by hand.
 - `accounting.summarizeLedger` -> run `node "${CLAUDE_SKILL_DIR}/scripts/summarize-ledger.mjs" <file.csv> [--date-column X] [--amount-column X] [--debit-column X] [--credit-column X] [--group-by X]`. Never total a ledger export by hand.
 - `web.read` -> WebFetch.
+- `web.search` -> WebSearch.
 - `filesystem.read` / `filesystem.readSharedPath` -> Read.
 - `git.log` / `git.status` / `git.diff` -> Bash (`git log`, `git status`, `git diff`).
 - `filesystem.proposeWrite` -> show the exact diff and ask before editing any file.
