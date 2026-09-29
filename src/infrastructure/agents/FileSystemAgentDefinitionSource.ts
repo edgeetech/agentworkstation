@@ -29,6 +29,7 @@ const agentConfigSchema = z.object({
   })).default([]),
   memory: z.object({ directory: z.string().min(1) }).optional(),
   toolPolicies: z.record(z.enum(['allow', 'require_approval', 'deny'])),
+  intelligence: z.array(z.string().min(1)).optional(),
 });
 
 export class FileSystemAgentDefinitionSource implements AgentDefinitionSource {
@@ -55,6 +56,7 @@ export class FileSystemAgentDefinitionSource implements AgentDefinitionSource {
       quickActions: config.quickActions,
       onboarding: config.onboarding,
       toolPolicies: config.toolPolicies,
+      ...(config.intelligence?.length ? { intelligence: config.intelligence } : {}),
     };
   }
 

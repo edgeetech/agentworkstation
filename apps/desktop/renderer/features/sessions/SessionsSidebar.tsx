@@ -55,6 +55,9 @@ export function SessionsSidebar({
   onCycleTheme,
   onOpenAgent,
   onRenameAgent,
+  onCreateAgent,
+  onEditAgent,
+  onDeleteAgent,
   onNavigate,
   onNewSession,
   onSearch,
@@ -77,6 +80,9 @@ export function SessionsSidebar({
   onCycleTheme: () => void;
   onOpenAgent: (agentId: string) => void;
   onRenameAgent: (agentId: string, name: string) => void;
+  onCreateAgent: () => void;
+  onEditAgent: (agentId: string) => void;
+  onDeleteAgent: (agentId: string) => void;
   onNavigate: (view: AgentView) => void;
   onNewSession: () => void;
   onSearch: () => void;
@@ -207,12 +213,34 @@ export function SessionsSidebar({
                         title={t('sidebar.rename', { name: agent.name })}
                         onClick={() => { setAgentRenameId(agent.id); setAgentRenameValue(agent.name); }}
                       ><Icon name="pencil" size={14} /></button>
+                      {agent.custom ? (
+                        <>
+                          <button
+                            type="button"
+                            className="agent-rename-trigger"
+                            aria-label={t('sidebar.editSpecialist', { name: agent.name })}
+                            title={t('sidebar.editSpecialist', { name: agent.name })}
+                            onClick={() => onEditAgent(agent.id)}
+                          ><Icon name="settings" size={14} /></button>
+                          <button
+                            type="button"
+                            className="agent-rename-trigger agent-delete-trigger"
+                            aria-label={t('sidebar.deleteSpecialist', { name: agent.name })}
+                            title={t('sidebar.deleteSpecialist', { name: agent.name })}
+                            onClick={() => onDeleteAgent(agent.id)}
+                          ><Icon name="x" size={14} /></button>
+                        </>
+                      ) : null}
                     </>
                   )}
                 </li>
               );
             })}
           </ul>
+          <button type="button" className="sidebar-action new-specialist" onClick={onCreateAgent} disabled={busy}>
+            <Icon name="plus" size={16} />
+            <span>{t('sidebar.newSpecialist')}</span>
+          </button>
         </section>
         <nav className="agent-navigation" aria-label={t('sidebar.areas', { name: activeName })}>
           {navigation.map((item) => (

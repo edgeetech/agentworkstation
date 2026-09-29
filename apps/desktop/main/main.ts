@@ -56,6 +56,8 @@ import { DefaultNetworkGateway } from '../../../src/infrastructure/network/Defau
 import { createWebReadTool } from '../../../src/infrastructure/network/webReadTool';
 import { webSearchTool } from '../../../src/infrastructure/network/webSearchTool';
 import { renderPublicPage } from './webPageRenderer';
+import { FileSystemCustomAgentStore } from '../../../src/infrastructure/agents/FileSystemCustomAgentStore';
+import { buildCustomAgentDraftRequest, parseCustomAgentDraft } from '../../../src/application/agents/customAgents';
 import { SqlitePersistence } from '../../../src/infrastructure/persistence/sqlite';
 import { SqlitePublicationPersistence } from '../../../src/infrastructure/publication/SqlitePublicationPersistence';
 import { PublicationCoordinator } from '../../../src/application/publication/PublicationCoordinator';
@@ -76,6 +78,9 @@ import {
   parseApprovePendingActionInput,
   parseAgentOnboardingInput,
   parseRenameAgentDisplayNameInput,
+  parseCustomAgentIdInput,
+  parseDraftCustomAgentInput,
+  parseUpdateCustomAgentInput,
   parseCancelChatMessageInput,
   parseChatMessageInput,
   parseCreateChatSessionInput,
@@ -103,7 +108,7 @@ import {
   releaseChatRequest,
 } from './ipcContract';
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
-import type { AgentSummary, ChatPause, PublicationSetup, ReminderSettings } from '../shared/api';
+import type { AgentSummary, ChatPause, CustomAgentDraft, CustomAgentSetup, IntelligenceOption, PublicationSetup, ReminderSettings } from '../shared/api';
 import { discoverOllamaModels, inspectOllamaModel, isOllamaCloudModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
 import { buildApprovalRecord, buildModelTurnRecord, classifyErrorKind } from '../../../src/application/usage/usageLedger';
 import { JsonlUsageLedger, hashSessionKey } from '../../../src/infrastructure/usage/JsonlUsageLedger';
@@ -299,6 +304,7 @@ async function toAgentSummary(agent: AgentDefinition): Promise<AgentSummary> {
     description: agent.description,
     quickActions: agent.quickActions,
     onboarding: agent.onboarding,
+    ...(agent.custom ? { custom: true } : {}),
   };
 }
 
@@ -479,8 +485,60 @@ function getAgentsDirectory(): string {
     : join(process.cwd(), 'src', 'agents');
 }
 
+function getCustomAgentsDirectory(): string {
+  return join(app.getPath('userData'), 'custom-agents');
+}
+
 function getAgentCatalog(): FileSystemAgentCatalog {
-  return new FileSystemAgentCatalog(getAgentsDirectory());
+  return new FileSystemAgentCatalog(getAgentsDirectory(), undefined, getCustomAgentsDirectory());
+}
+
+function getCustomAgentStore(): FileSystemCustomAgentStore {
+  return new FileSystemCustomAgentStore(getCustomAgentsDirectory());
+}
+
+function assertCustomAgent(agentId: string): void {
+  if (!getAgentCatalog().get(agentId).custom) throw new Error(`Only specialists you created can be changed: ${agentId}`);
+}
+
+/** The intelligences Settings currently allows, as a custom specialist may choose from them. */
+function intelligenceOptions(endpoint: EndpointConfig): IntelligenceOption[] {
+  if (endpoint.mode === 'mock') return [];
+  const ollamaIds = configuredOllamaModelIds(endpoint);
+  const options: IntelligenceOption[] = [];
+  if (localModelsAllowed(endpoint) && ollamaIds.some((id) => !isOllamaCloudModel(id))) {
+    options.push({ id: 'ollama', label: 'Ollama on-device', location: 'local' });
+  }
+  if (ollamaCloudModelsAllowed(endpoint) && ollamaIds.some(isOllamaCloudModel)) {
+    options.push({ id: 'ollama-cloud', label: 'Ollama Cloud', location: 'external' });
+  }
+  if (cloudProvidersAllowed(endpoint)) {
+    const providerIds = endpoint.providerIds?.length ? endpoint.providerIds : endpoint.providerId ? [endpoint.providerId] : [];
+    for (const providerId of providerIds) {
+      options.push({ id: providerId, label: getDelegatedProvider(providerId).label, location: 'external' });
+    }
+  }
+  return options;
+}
+
+async function draftCustomAgent(input: { name: string; brief: string; language: 'tr' | 'en' }): Promise<CustomAgentDraft> {
+  const endpoint = await getEndpointConfig();
+  if (endpoint.mode === 'mock' || endpoint.configured !== true) throw new Error('Connect an intelligence in Settings to draft a specialist.');
+  const { intelligence } = createRoutingIntelligence(endpoint);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120_000);
+  try {
+    const response = await intelligence.execute(buildCustomAgentDraftRequest(input), {
+      modelId: endpoint.modelId,
+      executionMode: chatExecutionMode(endpoint),
+      taskKind: 'chat',
+    }, controller.signal);
+    if (response.type === 'error') throw new Error(response.error);
+    if (response.type !== 'text') throw new Error('The model did not return an agent draft');
+    return parseCustomAgentDraft(response.content);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function createOnboardingService(endpoint: EndpointConfig): AgentOnboardingService {
@@ -780,29 +838,30 @@ function claudeAuthDisclosure(providerId: string): string | undefined {
     + 'Set ANTHROPIC_API_KEY to route this provider through metered API billing instead.';
 }
 
-function createRoutingIntelligence(endpoint: EndpointConfig): {
+function createRoutingIntelligence(endpoint: EndpointConfig, onlyCandidateIds: readonly string[] = []): {
   intelligence: IntelligencePort;
   router: AdaptiveRoutingIntelligenceAdapter | null;
 } {
   if (endpoint.mode === 'mock') return { intelligence: new DesktopMockIntelligenceAdapter(), router: null };
+  const chosen = (candidate: { id: string }): boolean => onlyCandidateIds.length === 0 || onlyCandidateIds.includes(candidate.id);
   const ollamaIds = configuredOllamaModelIds(endpoint);
   const local = localModelsAllowed(endpoint)
     ? ollamaIds.filter((id) => !isOllamaCloudModel(id)).map((modelId) => ({
       id: 'ollama', label: 'Ollama on-device', location: 'local' as const, modelId,
       intelligence: new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway()),
-    })).filter(routeCandidateReady)
+    })).filter(chosen).filter(routeCandidateReady)
     : [];
   const ollamaCloud = ollamaCloudModelsAllowed(endpoint)
     ? ollamaIds.filter(isOllamaCloudModel).map((modelId) => ({
       id: 'ollama-cloud', label: 'Ollama Cloud', location: 'external' as const, modelId,
       intelligence: new OpenAICompatibleLocalAdapter(endpoint.baseUrl, new DefaultNetworkGateway()),
-    })).filter(routeCandidateReady)
+    })).filter(chosen).filter(routeCandidateReady)
     : [];
   const providerIds = endpoint.providerIds?.length
     ? endpoint.providerIds
     : endpoint.providerId ? [endpoint.providerId] : [];
   const providers = cloudProvidersAllowed(endpoint)
-    ? providerIds.map((providerId) => {
+    ? providerIds.filter((providerId) => chosen({ id: providerId })).map((providerId) => {
       const provider = getDelegatedProvider(providerId);
       return {
         id: providerId,
@@ -816,6 +875,9 @@ function createRoutingIntelligence(endpoint: EndpointConfig): {
       };
     }).filter(routeCandidateReady)
     : [];
+  if (onlyCandidateIds.length > 0 && !intelligenceOptions(endpoint).some(chosen)) {
+    throw new Error(`None of the intelligences chosen for this specialist (${onlyCandidateIds.join(', ')}) is allowed in Settings. Edit the specialist or allow one of them.`);
+  }
   const router = new AdaptiveRoutingIntelligenceAdapter(
     effectiveRoutingPolicy(endpoint), local, [...providers, ...ollamaCloud],
     { localMs: 90_000, externalMs: 120_000 }, recordRoutingAttempt,
@@ -1247,8 +1309,8 @@ async function prepareChatMessage(
 
   const agent = getAgentCatalog().get(chatSession.agentId);
   const toolRegistry = new ToolRegistry();
-  toolRegistry.register(createWebReadTool(fetch, undefined, renderPublicPage));
-  toolRegistry.register(webSearchTool);
+  if (agent.toolPolicies['web.read']) toolRegistry.register(createWebReadTool(fetch, undefined, renderPublicPage));
+  if (agent.toolPolicies['web.search']) toolRegistry.register(webSearchTool);
   // Specialist-only tools are offered only to agents whose policy names them.
   if (agent.toolPolicies['accounting.ukDeadlines']) toolRegistry.register(createUkDeadlinesTool());
   toolRegistry.register(createSharedPathReadTool(nextConversation
@@ -1264,7 +1326,10 @@ async function prepareChatMessage(
   }
 
   const toolExecutor = new ToolExecutor(toolRegistry);
-  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceGateway, agent.toolPolicies, { pauseWhenBudgetExhausted: true });
+  const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceGateway, agent.toolPolicies, {
+    pauseWhenBudgetExhausted: true,
+    ...(agent.intelligence ? { intelligence: agent.intelligence } : {}),
+  });
   const executionMode = chatExecutionMode(endpoint);
 
   const request = checkpoint ?? (await buildAgentChatContext(
@@ -1321,9 +1386,9 @@ function createRuntime(
   toolExecutor: ToolExecutor,
   workspaceGateway: DefaultWorkspaceGateway | undefined,
   toolPolicies: Readonly<Record<string, 'allow' | 'require_approval' | 'deny'>>,
-  options: { pauseWhenBudgetExhausted?: boolean } = {},
+  options: { pauseWhenBudgetExhausted?: boolean; intelligence?: readonly string[] } = {},
 ): { runtime: AgentRuntime; router: AdaptiveRoutingIntelligenceAdapter | null } {
-  const { intelligence, router } = createRoutingIntelligence(endpoint);
+  const { intelligence, router } = createRoutingIntelligence(endpoint, options.intelligence);
   const runtime = new AgentRuntime(
     intelligence,
     {
@@ -1816,6 +1881,44 @@ function registerIpcHandlers(): void {
     const agent = getAgentCatalog().get(agentId);
     await getAgentDisplayNameService().save(agentId, displayName);
     return toAgentSummary(agent);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getCustomAgentSetup, async (): Promise<CustomAgentSetup> => {
+    const endpoint = await getEndpointConfig();
+    return { intelligenceOptions: intelligenceOptions(endpoint), canDraft: endpoint.mode !== 'mock' && endpoint.configured === true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.draftCustomAgent, async (_event, payload: unknown) => draftCustomAgent(parseDraftCustomAgentInput(payload)));
+
+  ipcMain.handle(IPC_CHANNELS.getCustomAgent, async (_event, payload: unknown) => {
+    const { agentId } = parseCustomAgentIdInput(payload);
+    assertCustomAgent(agentId);
+    return getCustomAgentStore().read(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.createCustomAgent, async (_event, payload: unknown) => {
+    const catalog = getAgentCatalog();
+    const id = getCustomAgentStore().create(payload, catalog.list().map((agent) => agent.id));
+    return toAgentSummary(getAgentCatalog().get(id));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.updateCustomAgent, async (_event, payload: unknown) => {
+    const { agentId, input } = parseUpdateCustomAgentInput(payload);
+    assertCustomAgent(agentId);
+    getCustomAgentStore().update(agentId, input);
+    return toAgentSummary(getAgentCatalog().get(agentId));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.deleteCustomAgent, async (_event, payload: unknown) => {
+    const { agentId } = parseCustomAgentIdInput(payload);
+    assertCustomAgent(agentId);
+    const db = getPersistence();
+    for (const chatSession of (await db.listChatSessions()).filter((candidate) => candidate.agentId === agentId)) {
+      chatRunCheckpoints.delete(chatSession.id);
+      await db.deleteChatSession(chatSession.id);
+    }
+    getCustomAgentStore().delete(agentId);
+    await ensureChatSession();
   });
 
   ipcMain.handle(IPC_CHANNELS.getAgentOnboarding, async (_event, payload: unknown) => {

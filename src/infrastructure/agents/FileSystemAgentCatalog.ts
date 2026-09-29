@@ -12,59 +12,76 @@ function compareIds(left: AgentDefinition, right: AgentDefinition): number {
   return 0;
 }
 
+type AgentDirectory = { directory: string; custom: boolean };
+
 export class FileSystemAgentCatalog {
   private readonly root: string;
+  private readonly customRoot: string | undefined;
 
+  /**
+   * @param rootDirectory specialists shipped with the app.
+   * @param customRootDirectory specialists the user created; a built-in id always wins
+   *   over a custom agent with the same id.
+   */
   constructor(
     rootDirectory: string,
     private readonly maxMemoryBytes = 64 * 1024,
+    customRootDirectory?: string,
   ) {
     this.root = fs.realpathSync(rootDirectory);
     if (!fs.statSync(this.root).isDirectory()) {
       throw new Error(`Agent catalog root is not a directory: ${rootDirectory}`);
     }
+    this.customRoot = customRootDirectory && fs.existsSync(customRootDirectory)
+      ? fs.realpathSync(customRootDirectory)
+      : undefined;
   }
 
   list(): AgentDefinition[] {
-    const agents = this.agentDirectories()
-      .flatMap((agentDirectory) => {
-        try {
-          return [this.loadDefinition(agentDirectory)];
-        } catch {
-          return [];
-        }
-      })
-      .sort(compareIds);
-
+    const builtIn = this.loadAll(this.directoriesIn(this.root, false));
     const ids = new Set<string>();
-    for (const agent of agents) {
+    for (const agent of builtIn) {
       if (ids.has(agent.id)) throw new Error(`Duplicate agent id: ${agent.id}`);
       ids.add(agent.id);
     }
-
-    return agents;
+    const custom = this.loadAll(this.customRoot ? this.directoriesIn(this.customRoot, true) : [])
+      .filter((agent) => {
+        if (ids.has(agent.id)) return false;
+        ids.add(agent.id);
+        return true;
+      });
+    return [...builtIn, ...custom].sort(compareIds);
   }
 
   get(id: string): AgentDefinition {
     if (!validAgentId.test(id)) throw new Error(`Invalid agent id: ${id}`);
-    const matches = this.agentDirectories().flatMap((agentDirectory) => {
+    const builtIn = this.loadAll(this.directoriesIn(this.root, false)).filter((agent) => agent.id === id);
+    if (builtIn.length > 1) throw new Error(`Duplicate agent id: ${id}`);
+    if (builtIn[0]) return builtIn[0];
+    const custom = this.customRoot
+      ? this.loadAll(this.directoriesIn(this.customRoot, true)).find((agent) => agent.id === id)
+      : undefined;
+    if (!custom) throw new Error(`Unknown agent id: ${id}`);
+    return custom;
+  }
+
+  private loadAll(directories: AgentDirectory[]): AgentDefinition[] {
+    return directories.flatMap(({ directory, custom }) => {
       try {
-        const agent = this.loadDefinition(agentDirectory);
-        return agent.id === id ? [agent] : [];
+        const agent = this.loadDefinition(directory);
+        return [custom ? { ...agent, custom: true } : agent];
       } catch {
         return [];
       }
     });
-    if (matches.length > 1) throw new Error(`Duplicate agent id: ${id}`);
-    if (!matches[0]) throw new Error(`Unknown agent id: ${id}`);
-    return matches[0];
   }
 
-  private agentDirectories(): string[] {
-    return fs.readdirSync(this.root, { withFileTypes: true })
+  private directoriesIn(root: string, custom: boolean): AgentDirectory[] {
+    return fs.readdirSync(root, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(this.root, entry.name))
-      .filter((agentDirectory) => this.hasDefinition(agentDirectory));
+      .map((entry) => path.join(root, entry.name))
+      .filter((agentDirectory) => this.hasDefinition(agentDirectory))
+      .map((directory) => ({ directory, custom }));
   }
 
   private loadDefinition(agentDirectory: string): AgentDefinition {

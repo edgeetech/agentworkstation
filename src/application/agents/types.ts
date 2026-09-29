@@ -25,10 +25,14 @@ export type AgentDefinitionMaterials = {
   quickActions: AgentQuickAction[];
   onboarding?: OnboardingQuestion[];
   toolPolicies: Record<string, AgentToolPolicy>;
+  /** Intelligence candidates (for example "claude", "ollama") this agent may use; all allowed ones when absent. */
+  intelligence?: string[];
 };
 
 export type AgentDefinition = Omit<AgentDefinitionMaterials, 'onboarding'> & {
   onboarding: OnboardingQuestion[];
+  /** Created by the user in the app rather than shipped with it. */
+  custom?: boolean;
   systemPrompt: string;
   memoryContext: {
     content: string;

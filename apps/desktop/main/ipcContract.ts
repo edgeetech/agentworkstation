@@ -16,6 +16,12 @@ export const IPC_CHANNELS = {
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
   listAgents: 'agentWorkstation:listAgents',
   renameAgentDisplayName: 'agentWorkstation:renameAgentDisplayName',
+  getCustomAgentSetup: 'agentWorkstation:getCustomAgentSetup',
+  draftCustomAgent: 'agentWorkstation:draftCustomAgent',
+  getCustomAgent: 'agentWorkstation:getCustomAgent',
+  createCustomAgent: 'agentWorkstation:createCustomAgent',
+  updateCustomAgent: 'agentWorkstation:updateCustomAgent',
+  deleteCustomAgent: 'agentWorkstation:deleteCustomAgent',
   getAgentOnboarding: 'agentWorkstation:getAgentOnboarding',
   getAgentMemory: 'agentWorkstation:getAgentMemory',
   openAgentMemoryFile: 'agentWorkstation:openAgentMemoryFile',
@@ -132,6 +138,29 @@ const agentOnboardingSchema = z.object({
   agentId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
   intent: z.enum(['initial', 'publish', 'linkedin']).default('initial'),
 });
+
+const agentIdInputSchema = z.object({ agentId: z.string().regex(/^[a-z0-9][a-z0-9-]*$/) });
+
+const draftCustomAgentSchema = z.object({
+  name: z.string().trim().min(1).max(48),
+  brief: z.string().trim().min(1).max(4_000),
+  language: z.enum(['tr', 'en']),
+});
+
+const updateCustomAgentSchema = agentIdInputSchema.extend({ input: z.unknown() });
+
+export function parseCustomAgentIdInput(value: unknown): { agentId: string } {
+  return agentIdInputSchema.parse(value);
+}
+
+export function parseDraftCustomAgentInput(value: unknown): { name: string; brief: string; language: 'tr' | 'en' } {
+  return draftCustomAgentSchema.parse(value);
+}
+
+export function parseUpdateCustomAgentInput(value: unknown): { agentId: string; input: unknown } {
+  const { agentId, input } = updateCustomAgentSchema.parse(value);
+  return { agentId, input };
+}
 
 const renameAgentDisplayNameSchema = z.object({
   agentId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
