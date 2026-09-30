@@ -179,6 +179,7 @@ export type CustomAgentCapabilities = {
   readFiles: boolean;
   gitHistory: boolean;
   proposeFileChanges: boolean;
+  consultSpecialists: boolean;
 };
 
 export type CustomAgentInput = {

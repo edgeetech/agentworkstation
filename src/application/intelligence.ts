@@ -46,7 +46,7 @@ export type AgentRunObserver = (event: AgentRunEvent) => void;
 const toolTarget = (input: unknown): string | undefined => {
   if (input === null || typeof input !== 'object') return undefined;
   const record = input as Record<string, unknown>;
-  for (const key of ['relativePath', 'path', 'url', 'targetPath']) {
+  for (const key of ['relativePath', 'path', 'url', 'targetPath', 'agent', 'query']) {
     const value = record[key];
     if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 160);
   }
@@ -143,7 +143,7 @@ export class AgentRuntime {
       try {
         result = await this.withTimeout(
           () => this.toolExecutor.execute(response.call.toolName, response.call.input, { workspaceId: workspaceId ?? '', signal: AbortSignal.any([signal, toolAbort.signal]) }),
-          this.limits.toolTimeoutMs,
+          metadata.timeoutMs ?? this.limits.toolTimeoutMs,
           toolAbort,
           'Tool timeout exceeded',
         );
