@@ -21,7 +21,14 @@ export function describeActivity(activity: ChatActivity, t: Translator): Step | 
   }
   const tool = activity.toolName;
   if (activity.type === 'tool_failed') {
-    return { key: `failed-${activity.step}`, label: t('chat.activityFailed', { tool }), icon: 'x', failed: true };
+    // Name the real cause: "not available" read like a permission problem when a page was merely unreachable.
+    const reason = (activity.reason ?? '').replace(/^web\.read:?\s*/i, '').slice(0, 90);
+    return {
+      key: `failed-${activity.step}`,
+      label: reason ? t('chat.activityFailedReason', { tool, reason }) : t('chat.activityFailed', { tool }),
+      icon: 'x',
+      failed: true,
+    };
   }
   const target = activity.target ? shortTarget(activity.target) : undefined;
   const key = `tool-${activity.step}`;

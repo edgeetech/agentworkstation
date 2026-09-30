@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AgentRuntime } from '../../src/application/intelligence';
 import { AgentPolicyGate, ToolExecutor, ToolRegistry, type ToolResult } from '../../src/application/tools';
 import { createWebReadTool, isBlockedHostname } from '../../src/infrastructure/network/webReadTool';
+import fs from 'node:fs';
 
 const publicLookup = async () => [{ address: '93.184.216.34' }];
 const context = () => ({ workspaceId: '', signal: new AbortController().signal });
@@ -127,5 +128,22 @@ describe('web.read security', () => {
     const result = await createWebReadTool(fetchImpl as typeof fetch, publicLookup)
       .execute({ url: 'https://www.legislation.gov.uk/ukpga/2006/46/section/853L' }, context()) as ToolResult;
     expect(result.output).toMatchObject({ title: 'Companies Act 2006', content: expect.stringContaining('853L') });
+  });
+
+  it('reads the text of a published PDF such as an ombudsman decision', async () => {
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(fs.readFileSync('node_modules/pdf-parse/test/data/05-versions-space.pdf')), {
+      status: 200, headers: { 'content-type': 'application/pdf' },
+    }));
+    const result = await createWebReadTool(fetchImpl as typeof fetch, publicLookup)
+      .execute({ url: 'https://www.financial-ombudsman.org.uk/decision/DRN-1234567.pdf' }, context()) as ToolResult;
+    expect(result.output).toMatchObject({ content: expect.stringContaining('Dadfrtfjh') });
+  });
+
+  it('still refuses binary downloads that are not documents', async () => {
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), {
+      status: 200, headers: { 'content-type': 'application/zip' },
+    }));
+    await expect(createWebReadTool(fetchImpl as typeof fetch, publicLookup)
+      .execute({ url: 'https://example.com/a.zip' }, context())).rejects.toThrow('cannot process content type');
   });
 });

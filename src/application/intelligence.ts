@@ -38,7 +38,7 @@ const BUDGET_SUMMARY_INSTRUCTION = [
 export type AgentRunEvent =
   | { type: 'thinking'; step: number }
   | { type: 'tool'; step: number; toolName: string; target?: string }
-  | { type: 'tool_failed'; step: number; toolName: string }
+  | { type: 'tool_failed'; step: number; toolName: string; reason?: string }
   | { type: 'text_delta'; step: number; delta: string };
 
 export type AgentRunObserver = (event: AgentRunEvent) => void;
@@ -148,8 +148,8 @@ export class AgentRuntime {
           'Tool timeout exceeded',
         );
       } catch (error) {
-        emit({ type: 'tool_failed', step, toolName: response.call.toolName });
         const message = error instanceof Error ? error.message : String(error);
+        emit({ type: 'tool_failed', step, toolName: response.call.toolName, reason: message });
         request = {
           messages: [
             ...request.messages,
@@ -182,7 +182,7 @@ export class AgentRuntime {
       let toolResult = JSON.stringify(output);
       const oversized = new TextEncoder().encode(toolResult).byteLength > this.limits.maxToolResultBytes;
       if (oversized) {
-        emit({ type: 'tool_failed', step, toolName: response.call.toolName });
+        emit({ type: 'tool_failed', step, toolName: response.call.toolName, reason: 'result too large' });
         toolResult = JSON.stringify({
           error: `Tool result exceeded ${this.limits.maxToolResultBytes} bytes. Request a smaller slice (for example a lower limit or a narrower path) and try again.`,
         });

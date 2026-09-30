@@ -34,7 +34,7 @@ describe('agent runtime', () => {
       { type: 'tool', step: 0, toolName: 'filesystem.read', target: 'README.md' },
       { type: 'thinking', step: 1 },
       { type: 'tool', step: 1, toolName: 'git.log' },
-      { type: 'tool_failed', step: 1, toolName: 'git.log' },
+      { type: 'tool_failed', step: 1, toolName: 'git.log', reason: expect.any(String) },
       { type: 'thinking', step: 2 },
     ]);
   });
