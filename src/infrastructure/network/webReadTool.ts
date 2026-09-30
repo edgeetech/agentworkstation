@@ -2,11 +2,14 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { z } from 'zod';
 import type { AgentTool, ToolResult } from '@application/tools';
+import { extractPdfText } from '../filesystem/documentText';
 
 type AddressLookup = (hostname: string) => Promise<Array<{ address: string }>>;
 
 const MAX_REDIRECTS = 5;
-const MAX_RESPONSE_BYTES = 512 * 1024;
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+// Ombudsman decisions, HMRC manuals and court judgments are often published as PDFs.
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
 const MAX_CONTENT_BYTES = 48 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -134,7 +137,7 @@ export function createWebReadTool(
   };
   return {
     id: 'web.read',
-    description: 'Read a user-relevant public web page without authentication or side effects',
+    description: 'Read a user-relevant public web page or PDF without authentication or side effects',
     inputSchema: z.object({ url: z.string().url().max(2_048) }),
     inputJsonSchema: {
       type: 'object',
@@ -142,7 +145,7 @@ export function createWebReadTool(
       required: ['url'],
       additionalProperties: false,
     },
-    metadata: { readOnly: true, sideEffect: 'none', sensitive: false },
+    metadata: { readOnly: true, sideEffect: 'none', sensitive: false, timeoutMs: 60_000 },
     async execute({ url: rawUrl }, context): Promise<ToolResult> {
       let current = await assertPublicHttpUrl(rawUrl, lookup);
       for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect += 1) {
@@ -165,6 +168,14 @@ export function createWebReadTool(
           throw new Error(`web.read request failed with HTTP ${response.status}`);
         }
         const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+        if (contentType.includes('application/pdf') || (!contentType.includes('html') && current.pathname.toLowerCase().endsWith('.pdf'))) {
+          if (Number(response.headers.get('content-length') ?? 0) > MAX_PDF_BYTES) throw new Error('web.read PDF is too large');
+          const pdf = Buffer.from(await response.arrayBuffer());
+          if (pdf.byteLength > MAX_PDF_BYTES) throw new Error('web.read PDF is too large');
+          const document = await extractPdfText(pdf);
+          if (document.note) throw new Error(`web.read: ${document.note}`);
+          return pageResult(current, undefined, document.text, false);
+        }
         // legislation.gov.uk and similar sites serve pages as application/xhtml+xml.
         if (contentType && !contentType.includes('text/') && !contentType.includes('json') && !contentType.includes('xml')) {
           throw new Error(`web.read cannot process content type ${contentType}`);

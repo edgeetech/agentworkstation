@@ -6,27 +6,8 @@ import { filesystemListTool, filesystemReadTool, filesystemSearchTool } from '..
 import { documentFormatFor } from '../../src/infrastructure/filesystem/documentText';
 import { DefaultWorkspaceGateway } from '../../src/infrastructure/filesystem/workspaceGateway';
 
-/** A one-page PDF whose only text is the given line. */
-function minimalPdf(line: string): Buffer {
-  const stream = `BT /F1 12 Tf 72 720 Td (${line}) Tj ET`;
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
-    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-  ];
-  let body = '%PDF-1.4\n';
-  const offsets: number[] = [];
-  objects.forEach((object, index) => {
-    offsets.push(body.length);
-    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const xref = body.length;
-  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}`;
-  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return Buffer.from(body, 'latin1');
-}
+// A real one-page PDF shipped with pdf-parse; hand-built PDFs trip pdf.js's standard-font cache.
+const samplePdf = path.resolve('node_modules/pdf-parse/test/data/05-versions-space.pdf');
 
 let root: string;
 let context: { workspaceId: string; signal: AbortSignal; workspaceGateway: DefaultWorkspaceGateway };
@@ -37,7 +18,7 @@ beforeEach(() => {
   fs.mkdirSync(path.join(root, 'node_modules', 'x'), { recursive: true });
   fs.writeFileSync(path.join(root, '_index.csv'), 'file,category\nFY2025-26/Bank/statement.pdf,bank\n');
   fs.writeFileSync(path.join(root, 'FY2025-26', 'Bank', 'ledger.csv'), 'date,amount\n2026-01-05,-70.00 PIYA ACCOUNTANCY\n');
-  fs.writeFileSync(path.join(root, 'FY2025-26', 'Bank', 'statement.pdf'), minimalPdf('HSBC Business Statement January 2026'));
+  fs.copyFileSync(samplePdf, path.join(root, 'FY2025-26', 'Bank', 'statement.pdf'));
   fs.writeFileSync(path.join(root, 'FY2025-26', 'receipt.jpg'), Buffer.from([0xff, 0xd8, 0xff]));
   fs.writeFileSync(path.join(root, 'node_modules', 'x', 'noise.txt'), 'PIYA');
   fs.writeFileSync(path.join(root, '.env'), 'SECRET=1');
@@ -61,7 +42,7 @@ describe('filesystem toolkit', () => {
 
   it('reads the text inside a PDF', async () => {
     const result = await filesystemReadTool.execute({ workspaceId: 'books', relativePath: 'FY2025-26/Bank/statement.pdf' }, context);
-    expect(result.output).toMatchObject({ format: 'pdf', pages: 1, text: expect.stringContaining('HSBC Business Statement January 2026') });
+    expect(result.output).toMatchObject({ format: 'pdf', pages: 1, text: expect.stringContaining('Dadfrtfjh') });
   });
 
   it('keeps plain text files as plain strings and pages long files', async () => {
@@ -82,9 +63,9 @@ describe('filesystem toolkit', () => {
   it('finds files by wildcard name and by text, including text inside PDFs', async () => {
     const byName = await filesystemSearchTool.execute({ workspaceId: 'books', name: '*.pdf' }, context);
     expect(byName.output).toEqual({ results: [{ path: 'FY2025-26/Bank/statement.pdf' }] });
-    const byText = await filesystemSearchTool.execute({ workspaceId: 'books', text: 'january 2026' }, context);
+    const byText = await filesystemSearchTool.execute({ workspaceId: 'books', text: 'dadfrtfjh' }, context);
     expect((byText.output as { results: Array<{ path: string; snippet: string }> }).results).toEqual([
-      { path: 'FY2025-26/Bank/statement.pdf', snippet: expect.stringContaining('January 2026') },
+      { path: 'FY2025-26/Bank/statement.pdf', snippet: expect.stringContaining('Dadfrtfjh') },
     ]);
     const csvOnly = await filesystemSearchTool.execute({ workspaceId: 'books', name: '*.csv', text: 'piya' }, context);
     expect((csvOnly.output as { results: Array<{ path: string }> }).results.map((result) => result.path)).toEqual(['FY2025-26/Bank/ledger.csv']);

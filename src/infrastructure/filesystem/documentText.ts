@@ -39,6 +39,21 @@ function cellText(value: unknown): string {
 
 type SheetData = Array<{ sheet: string; data: unknown[][] }>;
 
+/** Extracts the text layer of a PDF held in memory. */
+export async function extractPdfText(data: Buffer): Promise<DocumentText> {
+  // The library entry point, not the package index, which runs a self-test on import.
+  const parse = require('pdf-parse/lib/pdf-parse.js') as (data: Buffer) => Promise<{ text: string; numpages: number }>;
+  // pdf.js reads the whole underlying ArrayBuffer, so a pooled Buffer slice must be copied out first.
+  const result = await parse(Buffer.from(new Uint8Array(data).buffer));
+  const text = result.text.replace(/\n{3,}/g, '\n\n').trim();
+  return {
+    format: 'pdf',
+    text,
+    pages: result.numpages,
+    ...(text.length < 20 ? { note: 'No text layer: this PDF is probably a scanned image, so its contents cannot be read.' } : {}),
+  };
+}
+
 /** Reads the text of a local file, including PDF, Word (.docx) and Excel (.xlsx) documents. */
 export async function extractDocumentText(filePath: string): Promise<DocumentText> {
   const format = documentFormatFor(filePath);
@@ -55,18 +70,7 @@ export async function extractDocumentText(filePath: string): Promise<DocumentTex
     return { format, text };
   }
   if (stat.size > MAX_DOCUMENT_BYTES) throw new Error('Document too large');
-  if (format === 'pdf') {
-    // The library entry point, not the package index, which runs a self-test on import.
-    const parse = require('pdf-parse/lib/pdf-parse.js') as (data: Buffer) => Promise<{ text: string; numpages: number }>;
-    const result = await parse(await fs.readFile(filePath));
-    const text = result.text.replace(/\n{3,}/g, '\n\n').trim();
-    return {
-      format,
-      text,
-      pages: result.numpages,
-      ...(text.length < 20 ? { note: 'No text layer: this PDF is probably a scanned image, so its contents cannot be read.' } : {}),
-    };
-  }
+  if (format === 'pdf') return extractPdfText(await fs.readFile(filePath));
   if (format === 'docx') {
     const mammoth = require('mammoth') as { extractRawText(input: { path: string }): Promise<{ value: string }> };
     return { format, text: (await mammoth.extractRawText({ path: filePath })).value.trim() };
