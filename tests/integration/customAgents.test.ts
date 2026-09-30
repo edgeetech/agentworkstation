@@ -28,7 +28,7 @@ const saul = {
   instructions: '# Saul Goodman\n\nYou help with legal questions. Research current law before answering.',
   rules: '- You are not a substitute for a licensed lawyer.\n- Never invent statutes or cases.',
   starters: ['My landlord kept my deposit. What can I do?'],
-  capabilities: { webResearch: true, readFiles: true, gitHistory: false, proposeFileChanges: false },
+  capabilities: { webResearch: true, readFiles: true, gitHistory: false, proposeFileChanges: false, consultSpecialists: true },
   intelligence: ['claude'],
 };
 
@@ -42,7 +42,7 @@ describe('custom agents', () => {
   });
 
   it('maps capabilities to tool policies with writes still behind approval', () => {
-    expect(toolPoliciesFor({ webResearch: true, readFiles: false, gitHistory: true, proposeFileChanges: true })).toEqual({
+    expect(toolPoliciesFor({ webResearch: true, readFiles: false, gitHistory: true, proposeFileChanges: true, consultSpecialists: false })).toEqual({
       'web.search': 'allow',
       'web.read': 'allow',
       'git.log': 'allow',
@@ -63,7 +63,7 @@ describe('custom agents', () => {
     const agent = catalog.get('saul-goodman');
     expect(agent).toMatchObject({ name: 'Saul Goodman', custom: true, intelligence: ['claude'] });
     expect(agent.toolPolicies).toEqual({
-      'web.search': 'allow', 'web.read': 'allow', 'filesystem.read': 'allow', 'filesystem.readSharedPath': 'allow',
+      'web.search': 'allow', 'web.read': 'allow', 'filesystem.read': 'allow', 'filesystem.readSharedPath': 'allow', 'agents.consult': 'allow',
     });
     expect(agent.systemPrompt).toContain('Research current law');
     expect(agent.systemPrompt).toContain('Never invent statutes');

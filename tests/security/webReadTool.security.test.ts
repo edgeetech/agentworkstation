@@ -118,4 +118,14 @@ describe('web.read security', () => {
     expect(isBlockedHostname('openai.com')).toBe(false);
     expect(isBlockedHostname('93.184.216.34')).toBe(false);
   });
+
+  it('reads XHTML pages such as legislation.gov.uk', async () => {
+    const fetchImpl = vi.fn(async () => new Response(
+      '<html><head><title>Companies Act 2006</title></head><body><main>853L Failure to deliver confirmation statement</main></body></html>',
+      { status: 200, headers: { 'content-type': 'application/xhtml+xml;charset=utf-8' } },
+    ));
+    const result = await createWebReadTool(fetchImpl as typeof fetch, publicLookup)
+      .execute({ url: 'https://www.legislation.gov.uk/ukpga/2006/46/section/853L' }, context()) as ToolResult;
+    expect(result.output).toMatchObject({ title: 'Companies Act 2006', content: expect.stringContaining('853L') });
+  });
 });

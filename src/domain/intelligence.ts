@@ -40,6 +40,8 @@ export type ToolMetadata = {
   sideEffect: 'none' | 'propose' | 'external';
   sensitive: boolean;
   requiresWorkspace?: boolean;
+  /** Overrides the runtime's tool timeout for tools that legitimately run long. */
+  timeoutMs?: number;
 };
 
 export type ModelCapabilities = {

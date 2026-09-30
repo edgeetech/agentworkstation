@@ -58,6 +58,13 @@ import { webSearchTool } from '../../../src/infrastructure/network/webSearchTool
 import { renderPublicPage } from './webPageRenderer';
 import { FileSystemCustomAgentStore } from '../../../src/infrastructure/agents/FileSystemCustomAgentStore';
 import { buildCustomAgentDraftRequest, parseCustomAgentDraft } from '../../../src/application/agents/customAgents';
+import {
+  createConsultTool,
+  createSharedMemoryReadTool,
+  mentionsOtherSpecialist,
+  type ConsultationAnswer,
+  type RosterEntry,
+} from '../../../src/application/agents/consultation';
 import { SqlitePersistence } from '../../../src/infrastructure/persistence/sqlite';
 import { SqlitePublicationPersistence } from '../../../src/infrastructure/publication/SqlitePublicationPersistence';
 import { PublicationCoordinator } from '../../../src/application/publication/PublicationCoordinator';
@@ -1308,21 +1315,31 @@ async function prepareChatMessage(
   const nextConversation = [...persistedConversation, { role: 'user' as const, content: message }];
 
   const agent = getAgentCatalog().get(chatSession.agentId);
-  const toolRegistry = new ToolRegistry();
-  if (agent.toolPolicies['web.read']) toolRegistry.register(createWebReadTool(fetch, undefined, renderPublicPage));
-  if (agent.toolPolicies['web.search']) toolRegistry.register(webSearchTool);
-  // Specialist-only tools are offered only to agents whose policy names them.
-  if (agent.toolPolicies['accounting.ukDeadlines']) toolRegistry.register(createUkDeadlinesTool());
-  toolRegistry.register(createSharedPathReadTool(nextConversation
-    .filter((turn) => turn.role === 'user').map((turn) => turn.content)));
-  if (workspaceGateway && selectedWorkspace) {
-    const approvalService = new ApprovalService(db, workspaceGateway);
-    toolRegistry.register(filesystemReadTool);
-    toolRegistry.register(gitStatusTool);
-    toolRegistry.register(gitLogTool);
-    toolRegistry.register(gitDiffTool);
-    toolRegistry.register(createFilesystemProposeWriteTool(approvalService, chatSession.id));
-    if (agent.toolPolicies['accounting.summarizeLedger']) toolRegistry.register(ledgerSummaryTool);
+  const toolRegistry = buildSpecialistTools(
+    agent,
+    nextConversation.filter((turn) => turn.role === 'user').map((turn) => turn.content),
+    chatSession.id,
+    workspaceGateway && selectedWorkspace ? workspaceGateway : undefined,
+  );
+  // Consulting is offered only when the user names another specialist in this message,
+  // so agents never start side conversations on their own.
+  if (agent.toolPolicies['agents.consult']) {
+    const roster = await specialistRoster();
+    if (mentionsOtherSpecialist(message, roster, agent.id)) {
+      toolRegistry.register(createConsultTool({
+        selfId: agent.id,
+        roster,
+        memoryKeys: await sharedMemoryKeys(agent),
+        consult: (targetId, question, memoryRefs, consultSignal) => consultSpecialist({
+          asker: agent,
+          askerName: roster.find((entry) => entry.id === agent.id)?.name ?? agent.name,
+          targetId,
+          question,
+          memoryRefs,
+          workspaceId: selectedWorkspace?.id,
+        }, consultSignal),
+      }));
+    }
   }
 
   const toolExecutor = new ToolExecutor(toolRegistry);
@@ -1372,6 +1389,137 @@ async function prepareChatMessage(
 }
 
 const PAUSED_WITHOUT_SUMMARY = 'I reached the step budget for this turn before finishing.';
+
+function buildSpecialistTools(
+  agent: AgentDefinition,
+  userMessages: readonly string[],
+  chatSessionId: string,
+  workspaceGateway: DefaultWorkspaceGateway | undefined,
+): ToolRegistry {
+  const toolRegistry = new ToolRegistry();
+  if (agent.toolPolicies['web.read']) toolRegistry.register(createWebReadTool(fetch, undefined, renderPublicPage));
+  if (agent.toolPolicies['web.search']) toolRegistry.register(webSearchTool);
+  // Specialist-only tools are offered only to agents whose policy names them.
+  if (agent.toolPolicies['accounting.ukDeadlines']) toolRegistry.register(createUkDeadlinesTool());
+  toolRegistry.register(createSharedPathReadTool(userMessages));
+  if (workspaceGateway) {
+    const approvalService = new ApprovalService(getPersistence(), workspaceGateway);
+    toolRegistry.register(filesystemReadTool);
+    toolRegistry.register(gitStatusTool);
+    toolRegistry.register(gitLogTool);
+    toolRegistry.register(gitDiffTool);
+    toolRegistry.register(createFilesystemProposeWriteTool(approvalService, chatSessionId));
+    if (agent.toolPolicies['accounting.summarizeLedger']) toolRegistry.register(ledgerSummaryTool);
+  }
+  return toolRegistry;
+}
+
+async function specialistRoster(): Promise<RosterEntry[]> {
+  const names = getAgentDisplayNameService();
+  return Promise.all(getAgentCatalog().list().map(async (agent) => ({
+    id: agent.id,
+    name: await names.resolve(agent.id, agent.name),
+    canonicalName: agent.name,
+  })));
+}
+
+/** Memory a specialist can share by reference: confirmed facts and its curated memory files. */
+async function sharedMemoryKeys(agent: AgentDefinition): Promise<string[]> {
+  const confirmed = (await getAgentMemoryStore().getAgentMemory(agent.id))
+    .filter((entry) => entry.confirmationStatus === 'confirmed')
+    .map((entry) => entry.fieldKey);
+  return [...new Set([...confirmed, ...agent.memory.map((file) => file.relativePath)])];
+}
+
+async function readSharedMemory(agent: AgentDefinition, key: string): Promise<string | null> {
+  const entry = await getAgentMemoryStore().getMemoryEntry(agent.id, key);
+  if (entry && entry.confirmationStatus === 'confirmed') return JSON.stringify(entry.value);
+  return agent.memory.find((file) => file.relativePath === key)?.content ?? null;
+}
+
+const CONSULTATION_SESSION_PREFIX = 'Consultation · ';
+
+/**
+ * Runs one specialist on a question from another. The consulted specialist uses its own
+ * instructions, tools and intelligence; shared memory is read live from the asker by
+ * reference and never copied. The exchange is recorded in the consulted specialist's
+ * conversation list so the user can see it there.
+ */
+async function consultSpecialist(input: {
+  asker: AgentDefinition;
+  askerName: string;
+  targetId: string;
+  question: string;
+  memoryRefs: string[];
+  workspaceId: string | undefined;
+}, signal: AbortSignal): Promise<ConsultationAnswer> {
+  const catalog = getAgentCatalog();
+  const target = catalog.get(input.targetId);
+  if (target.id === input.asker.id) throw new Error('A specialist cannot consult itself');
+  const targetName = await getAgentDisplayNameService().resolve(target.id, target.name);
+  const endpoint = await getEndpointConfig();
+  const db = getPersistence();
+
+  const sessionName = `${CONSULTATION_SESSION_PREFIX}${input.askerName}`;
+  const now = new Date().toISOString();
+  const consultationSession: ChatSession = (await db.listChatSessions())
+    .find((candidate) => candidate.agentId === target.id && candidate.name === sessionName)
+    ?? {
+      id: `session-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: sessionName,
+      mode: 'autopilot',
+      workspaceId: input.workspaceId ?? null,
+      agentId: target.id,
+      intelligencePreference: 'auto',
+      permissionMode: 'interactive',
+      isolationMode: 'read_only',
+      createdAt: now,
+      updatedAt: now,
+    };
+  const registrations = await db.listWorkspaces();
+  const workspaceGateway = input.workspaceId
+    ? new DefaultWorkspaceGateway(Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])))
+    : undefined;
+  // Depth one: the consulted specialist gets no consult tool of its own.
+  const toolRegistry = buildSpecialistTools(target, [input.question], consultationSession.id, workspaceGateway);
+  if (input.memoryRefs.length) {
+    toolRegistry.register(createSharedMemoryReadTool({
+      ownerName: input.askerName,
+      keys: input.memoryRefs,
+      read: (key) => readSharedMemory(input.asker, key),
+    }));
+  }
+  const sharedNote = input.memoryRefs.length
+    ? `\n\n${input.askerName} shared these memory entries by reference; read the ones you need with consultation.readSharedMemory: ${input.memoryRefs.join(', ')}.`
+    : '';
+  const prompt = `${input.askerName} (another specialist, working for the same user) asks you:\n\n${input.question}${sharedNote}\n\nAnswer ${input.askerName} directly and completely; it will pass your answer on to the user.`;
+  const executionMode = chatExecutionMode(endpoint);
+  const built = await buildAgentChatContext(
+    consultationSession,
+    [{ role: 'user', content: prompt }],
+    registrations,
+    input.workspaceId,
+    toolRegistry.getModelTools(),
+    executionMode,
+  );
+  // Reading what the asker shared is part of being consulted, whatever the target's own policy lists.
+  const policies = input.memoryRefs.length ? { ...target.toolPolicies, 'consultation.readSharedMemory': 'allow' as const } : target.toolPolicies;
+  const { runtime, router } = createRuntime(endpoint, new ToolExecutor(toolRegistry), workspaceGateway, policies, {
+    pauseWhenBudgetExhausted: true,
+    ...(target.intelligence ? { intelligence: target.intelligence } : {}),
+  });
+  const result = await runtime.runWithTrace(built.request, {
+    modelId: endpoint.modelId,
+    executionMode,
+    workspaceId: input.workspaceId,
+    taskKind: 'chat',
+  }, signal);
+  const answer = result.content.trim() || PAUSED_WITHOUT_SUMMARY;
+  await db.saveChatSession({ ...consultationSession, updatedAt: new Date().toISOString() });
+  const shownQuestion = `**${input.askerName}:** ${input.question}${input.memoryRefs.length ? `\n\n_Shared memory: ${input.memoryRefs.join(', ')}_` : ''}`;
+  await appendChatPair(consultationSession.id, shownQuestion, 'autopilot', answer, result.sourceReferences, router?.getLastDecision() ?? simulatedRoute());
+  return { agentName: targetName, answer, sourceReferences: result.sourceReferences, partial: Boolean(result.paused) };
+}
 
 function toChatPause(paused: RunBudgetPause): ChatPause {
   return { reason: paused.reason, stepsUsed: paused.stepsUsed, toolCallsUsed: paused.toolCallsUsed };

@@ -11,6 +11,8 @@ export const customAgentCapabilitiesSchema = z.object({
   gitHistory: z.boolean(),
   /** Propose file changes; each one still needs the user's approval. */
   proposeFileChanges: z.boolean(),
+  /** Ask other specialists when the user requests it. */
+  consultSpecialists: z.boolean().default(false),
 });
 
 export const customAgentInputSchema = z.object({
@@ -52,6 +54,7 @@ export function toolPoliciesFor(capabilities: CustomAgentCapabilities): Record<s
   if (capabilities.readFiles) Object.assign(policies, { 'filesystem.read': 'allow', 'filesystem.readSharedPath': 'allow' });
   if (capabilities.gitHistory) Object.assign(policies, { 'git.log': 'allow', 'git.status': 'allow', 'git.diff': 'allow' });
   if (capabilities.proposeFileChanges) policies['filesystem.proposeWrite'] = 'require_approval';
+  if (capabilities.consultSpecialists) policies['agents.consult'] = 'allow';
   return policies;
 }
 
@@ -62,6 +65,7 @@ export function capabilitiesFrom(policies: Readonly<Record<string, AgentToolPoli
     readFiles: allowed('filesystem.read') || allowed('filesystem.readSharedPath'),
     gitHistory: allowed('git.log'),
     proposeFileChanges: allowed('filesystem.proposeWrite'),
+    consultSpecialists: allowed('agents.consult'),
   };
 }
 

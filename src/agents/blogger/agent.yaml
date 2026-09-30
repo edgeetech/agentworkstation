@@ -69,6 +69,7 @@ onboarding:
 toolPolicies:
   web.read: allow
   web.search: allow
+  agents.consult: allow
   filesystem.read: allow
   filesystem.readSharedPath: allow
   git.log: allow

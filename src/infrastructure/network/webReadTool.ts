@@ -165,7 +165,8 @@ export function createWebReadTool(
           throw new Error(`web.read request failed with HTTP ${response.status}`);
         }
         const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
-        if (contentType && !contentType.includes('text/') && !contentType.includes('json')) {
+        // legislation.gov.uk and similar sites serve pages as application/xhtml+xml.
+        if (contentType && !contentType.includes('text/') && !contentType.includes('json') && !contentType.includes('xml')) {
           throw new Error(`web.read cannot process content type ${contentType}`);
         }
         const declaredLength = Number(response.headers.get('content-length') ?? 0);

@@ -18,6 +18,7 @@ const DEFAULT_CAPABILITIES: CustomAgentCapabilities = {
   readFiles: true,
   gitHistory: false,
   proposeFileChanges: false,
+  consultSpecialists: true,
 };
 
 const messageOf = (value: unknown): string => (value instanceof Error ? value.message : String(value))
@@ -176,7 +177,7 @@ export function CustomAgentWizard({
             <>
               <fieldset className="agent-wizard-choices">
                 <legend>{t('wizard.capabilities')}</legend>
-                {(['webResearch', 'readFiles', 'gitHistory', 'proposeFileChanges'] as const).map((key) => (
+                {(['webResearch', 'readFiles', 'gitHistory', 'consultSpecialists', 'proposeFileChanges'] as const).map((key) => (
                   <label key={key} className="agent-wizard-choice">
                     <input type="checkbox" checked={capabilities[key]} onChange={() => toggleCapability(key)} />
                     <span>
