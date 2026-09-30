@@ -46,6 +46,8 @@ describe('Blogger Agent loader integration', () => {
       'web.search': 'allow',
       'agents.consult': 'allow',
       'filesystem.read': 'allow',
+      'filesystem.list': 'allow',
+      'filesystem.search': 'allow',
       'filesystem.readSharedPath': 'allow',
       'git.log': 'allow',
       'git.status': 'allow',

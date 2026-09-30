@@ -5,6 +5,7 @@ import type {
   ModelResponse,
   RoutingDecision,
   RoutingPolicy,
+  TokenUsage,
 } from '@domain/intelligence';
 
 export type RoutingCandidate = {
@@ -29,7 +30,13 @@ export type RoutedModelResponse = {
 
 /** Duck-typed: adapters that ran a real billed turn (e.g. ClaudeAgentSdkAdapter) expose this. */
 interface UsageReportingIntelligence {
-  getLastUsage(): { totalCostUsd: number | null; model?: string | null } | null;
+  getLastUsage(): { totalCostUsd: number | null; model?: string | null; tokens?: TokenUsage | null } | null;
+}
+
+function readLastTokens(intelligence: IntelligencePort): TokenUsage | null {
+  const reporter = intelligence as Partial<UsageReportingIntelligence>;
+  if (typeof reporter.getLastUsage !== 'function') return null;
+  return reporter.getLastUsage?.()?.tokens ?? null;
 }
 
 function readLastCostUsd(intelligence: IntelligencePort): number | null {
@@ -59,6 +66,7 @@ export function promptNeedsStrongerReasoning(request: ModelRequest): boolean {
 
 export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
   private lastDecision: RoutingDecision | null = null;
+  private turnTokens: TokenUsage | null = null;
 
   constructor(
     private readonly policy: RoutingPolicy,
@@ -118,9 +126,21 @@ export class AdaptiveRoutingIntelligenceAdapter implements IntelligencePort {
         );
         if (response.type === 'error') throw new Error(response.error);
         this.onAttempt?.({ candidate, status: 'available' });
-        const route = this.decisionFor(
-          candidate, context, index > 0, readLastCostUsd(candidate.intelligence), readLastReportedModel(candidate.intelligence),
-        );
+        const tokens = readLastTokens(candidate.intelligence);
+        // One router serves one chat turn, so the badge shows what the whole turn used.
+        if (tokens) {
+          this.turnTokens = {
+            input: (this.turnTokens?.input ?? 0) + tokens.input,
+            cachedInput: (this.turnTokens?.cachedInput ?? 0) + tokens.cachedInput,
+            output: (this.turnTokens?.output ?? 0) + tokens.output,
+          };
+        }
+        const route = {
+          ...this.decisionFor(
+            candidate, context, index > 0, readLastCostUsd(candidate.intelligence), readLastReportedModel(candidate.intelligence),
+          ),
+          ...(this.turnTokens ? { tokens: this.turnTokens } : {}),
+        };
         this.lastDecision = route;
         return { response, route };
       } catch (error) {

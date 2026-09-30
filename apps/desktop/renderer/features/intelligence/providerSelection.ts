@@ -51,11 +51,21 @@ export function formatCostUsd(costUsd: number): string {
  * routes, or a provider that did not report one), so the user is never left guessing.
  */
 export function routeCostLabel(
-  route: Pick<RoutingDecision, 'costUsd'>,
+  route: Pick<RoutingDecision, 'costUsd' | 'tokens'>,
   costTemplate: (cost: string) => string,
   naLabel: string,
+  tokensTemplate?: (tokens: string) => string,
 ): string {
-  return route.costUsd ? costTemplate(formatCostUsd(route.costUsd)) : naLabel;
+  if (route.costUsd) return costTemplate(formatCostUsd(route.costUsd));
+  // Subscription CLIs such as Codex report tokens but no price; show what was used.
+  if (route.tokens && tokensTemplate) return tokensTemplate(formatTokenCount(route.tokens.input + route.tokens.output));
+  return naLabel;
+}
+
+export function formatTokenCount(tokens: number): string {
+  if (tokens < 1_000) return String(tokens);
+  if (tokens < 1_000_000) return `${(tokens / 1_000).toFixed(tokens < 10_000 ? 1 : 0)}K`;
+  return `${(tokens / 1_000_000).toFixed(1)}M`;
 }
 
 /** Full model badge text: `<provider> · <model> · <cost>`. */
@@ -65,8 +75,9 @@ export function routeBadgeLabel(
   simulatedModel: string,
   costTemplate: (cost: string) => string,
   naLabel: string,
+  tokensTemplate?: (tokens: string) => string,
 ): string {
-  return `${routeDisplayLabel(route, providerSelectedModel, simulatedModel)} · ${routeCostLabel(route, costTemplate, naLabel)}`;
+  return `${routeDisplayLabel(route, providerSelectedModel, simulatedModel)} · ${routeCostLabel(route, costTemplate, naLabel, tokensTemplate)}`;
 }
 
 /** Model badge tooltip: routing reason, cost, and (when applicable) a provider auth disclosure. */
@@ -74,7 +85,8 @@ export function routeBadgeTooltip(
   route: RoutingDecision,
   costTemplate: (cost: string) => string,
   naLabel: string,
+  tokensTemplate?: (tokens: string) => string,
 ): string {
-  const base = `${route.reason} · ${routeCostLabel(route, costTemplate, naLabel)}`;
+  const base = `${route.reason} · ${routeCostLabel(route, costTemplate, naLabel, tokensTemplate)}`;
   return route.authDisclosure ? `${base} · ${route.authDisclosure}` : base;
 }

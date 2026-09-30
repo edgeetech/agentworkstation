@@ -78,3 +78,34 @@ describe('delegated CLI intelligence adapter', () => {
     expect(run.mock.calls[0][2]).toContain('Do not use your own tools');
   });
 });
+
+describe('Codex JSON output', () => {
+  const jsonl = [
+    '{"type":"thread.started","thread_id":"t1"}',
+    '{"type":"turn.started"}',
+    '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"{\\"type\\":\\"text\\",\\"content\\":\\"ok\\"}"}}',
+    '{"type":"turn.completed","usage":{"input_tokens":13921,"cached_input_tokens":11776,"cache_write_input_tokens":0,"output_tokens":13,"reasoning_output_tokens":7}}',
+  ].join('\r\n');
+
+  it('runs Codex in JSON mode and reads the final agent message and token usage', async () => {
+    const run = vi.fn(async (_command: string, _args: string[], _stdin: string, _signal: AbortSignal) => ({ stdout: jsonl, stderr: '', exitCode: 0 }));
+    const adapter = new DelegatedCliIntelligenceAdapter(getDelegatedProvider('codex'), { run });
+    await expect(adapter.execute(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      { modelId: 'default', executionMode: 'provider_allowed' },
+      new AbortController().signal,
+    )).resolves.toEqual({ type: 'text', content: 'ok' });
+    expect(run.mock.calls[0]?.[1]).toContain('--json');
+    expect(adapter.getLastUsage()).toEqual({ totalCostUsd: null, model: null, tokens: { input: 13921, cachedInput: 11776, output: 20 } });
+  });
+
+  it('fails clearly when Codex produced no agent message', async () => {
+    const run = vi.fn(async () => ({ stdout: '{"type":"turn.completed","usage":{}}', stderr: '', exitCode: 0 }));
+    const adapter = new DelegatedCliIntelligenceAdapter(getDelegatedProvider('codex'), { run });
+    await expect(adapter.execute(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      { modelId: 'default', executionMode: 'provider_allowed' },
+      new AbortController().signal,
+    )).rejects.toThrow('returned no message');
+  });
+});

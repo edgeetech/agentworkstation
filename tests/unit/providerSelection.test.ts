@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   moveProvider,
   providerModelLabel,
+  formatTokenCount,
   routeBadgeLabel,
   routeBadgeTooltip,
   routeDisplayLabel,
@@ -63,5 +64,15 @@ describe('provider selection policy', () => {
       { ...base, authDisclosure: 'Uses your local Claude Code login.' },
       (cost) => `cost ${cost}`, 'cost n/a',
     )).toBe('preferred · cost n/a · Uses your local Claude Code login.');
+  });
+
+  it('shows token usage for subscription routes that report tokens but no cost', () => {
+    const route = { policy: 'adaptive' as const, location: 'external' as const, providerId: 'codex', providerLabel: 'OpenAI Codex', modelId: 'default', reason: 'r', fallback: false, costUsd: null, tokens: { input: 13_921, cachedInput: 11_776, output: 20 } };
+    expect(routeBadgeLabel(route, 'provider-selected model', 'Simulated demo', (cost) => `cost ${cost}`, 'cost n/a', (tokens) => `${tokens} tokens · subscription`))
+      .toBe('OpenAI Codex · provider-selected model · 14K tokens · subscription');
+    expect(routeBadgeLabel(route, 'provider-selected model', 'Simulated demo', (cost) => `cost ${cost}`, 'cost n/a')).toContain('cost n/a');
+    expect(formatTokenCount(950)).toBe('950');
+    expect(formatTokenCount(245_000)).toBe('245K');
+    expect(formatTokenCount(1_250_000)).toBe('1.3M');
   });
 });

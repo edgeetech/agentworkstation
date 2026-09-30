@@ -41,7 +41,7 @@ const sourceLabel = (source: ChatExchange['sourceReferences'][number], t: Transl
 const routeLabel = (route: NonNullable<ChatExchange['route']>, t: Translator): string =>
   routeBadgeLabel(
     route, t('chat.providerSelectedModel'), t('chat.simulatedModel'),
-    (cost) => t('chat.modelCost', { cost }), t('chat.modelCostNA'),
+    (cost) => t('chat.modelCost', { cost }), t('chat.modelCostNA'), (tokens) => t('chat.modelTokens', { tokens }),
   );
 
 const confirmationEcho = /^Şunu anladım:\n([\s\S]*)\n\nDoğru mu\? Lütfen evet veya hayır diye yanıtla\.$/;
@@ -281,7 +281,11 @@ export function ChatView({
     });
   };
 
-  const onboardingCard = onboardingActive && !pending ? (
+  // Setup questions show only while the conversation is on them; once the user moves on
+  // to real work, the specialist answers instead (the main process applies the same rule).
+  const lastTurn = history.at(-1);
+  const onSetupTurn = !lastTurn || localizeOnboardingEcho(lastTurn.assistantMessage, agent, t) !== null;
+  const onboardingCard = onboardingActive && onSetupTurn && !pending ? (
     <section className={`onboarding-card ${empty ? 'as-greeting' : ''}`} aria-label={`${agentName} setup question`}>
       {empty ? <SpecialistAvatar agentId={agentId} name={agentName} large /> : null}
       {onboardingStep.kind === 'question' ? (
@@ -380,7 +384,7 @@ export function ChatView({
                         <div
                           className="model-status"
                           aria-label={t('chat.modelUsed', { model: routeLabel(exchange.route, t) })}
-                          title={routeBadgeTooltip(exchange.route, (cost) => t('chat.modelCost', { cost }), t('chat.modelCostNA'))}
+                          title={routeBadgeTooltip(exchange.route, (cost) => t('chat.modelCost', { cost }), t('chat.modelCostNA'), (tokens) => t('chat.modelTokens', { tokens }))}
                         >
                           <i aria-hidden="true" />
                           <span>{routeLabel(exchange.route, t)}</span>

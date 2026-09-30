@@ -70,6 +70,10 @@ export class DefaultWorkspaceGateway implements WorkspaceGateway {
     await fs.rename(tempPath, resolved);
   }
 
+  async resolveExisting(workspaceId: string, relativePath: string): Promise<string> {
+    return this.resolve(workspaceId, relativePath);
+  }
+
   private async resolve(
     workspaceId: string,
     relativePath: string,

@@ -4,6 +4,7 @@ import type {
   IntelligencePort,
   ModelRequest,
   ModelResponse,
+  TokenUsage,
 } from '@domain/intelligence';
 
 export type DelegatedProviderDefinition = {
@@ -13,6 +14,8 @@ export type DelegatedProviderDefinition = {
   defaultModel: string;
   buildArgs(modelId: string): string[];
   parseOutput(stdout: string): string;
+  /** Token usage from the CLI output, for providers that report tokens but no cost. */
+  parseUsage?(stdout: string): TokenUsage | null;
   statusArgs?: string[];
   promptTransport?: 'stdin' | 'argument';
   discoverDefaultModel?(statusOutput: string): string | undefined;
@@ -83,6 +86,24 @@ const safeModel = (modelId: string): string => {
 const providerCommand = (name: string, windowsSuffix: '.cmd' | '.exe'): string =>
   process.platform === 'win32' ? `${name}${windowsSuffix}` : name;
 
+type CodexEvent = {
+  type?: string;
+  item?: { type?: string; text?: unknown };
+  usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number; reasoning_output_tokens?: number };
+};
+
+function codexEvents(stdout: string): CodexEvent[] {
+  return stdout.split(/\r?\n/).flatMap((line) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) return [];
+    try {
+      return [JSON.parse(trimmed) as CodexEvent];
+    } catch {
+      return [];
+    }
+  });
+}
+
 export const delegatedProviders: DelegatedProviderDefinition[] = [
   {
     id: 'codex',
@@ -90,11 +111,27 @@ export const delegatedProviders: DelegatedProviderDefinition[] = [
     command: providerCommand('codex', '.cmd'),
     defaultModel: 'default',
     statusArgs: ['login', 'status'],
+    // --json emits JSONL events; it is the only way Codex reports token usage.
     buildArgs: (modelId) => [
-      'exec', '--ephemeral', '--sandbox', 'read-only', '--skip-git-repo-check',
+      'exec', '--json', '--ephemeral', '--sandbox', 'read-only', '--skip-git-repo-check',
       '--ignore-user-config', '--ignore-rules',
       ...(modelId === 'default' ? [] : ['--model', safeModel(modelId)]), '-'],
-    parseOutput: (stdout) => stdout.trim(),
+    parseOutput: (stdout) => {
+      const messages = codexEvents(stdout)
+        .filter((event) => event.type === 'item.completed' && event.item?.type === 'agent_message' && typeof event.item.text === 'string')
+        .map((event) => event.item!.text as string);
+      if (messages.length === 0) throw new Error('OpenAI Codex returned no message');
+      return messages.at(-1)!.trim();
+    },
+    parseUsage: (stdout) => {
+      const turns = codexEvents(stdout).filter((event) => event.type === 'turn.completed' && event.usage);
+      if (turns.length === 0) return null;
+      return turns.reduce<TokenUsage>((total, event) => ({
+        input: total.input + (event.usage!.input_tokens ?? 0),
+        cachedInput: total.cachedInput + (event.usage!.cached_input_tokens ?? 0),
+        output: total.output + (event.usage!.output_tokens ?? 0) + (event.usage!.reasoning_output_tokens ?? 0),
+      }), { input: 0, cachedInput: 0, output: 0 });
+    },
   },
   {
     id: 'copilot',
@@ -185,10 +222,17 @@ export function parseDelegatedModelResponse(value: string): ModelResponse {
 }
 
 export class DelegatedCliIntelligenceAdapter implements IntelligencePort {
+  private lastTokens: TokenUsage | null = null;
+
   constructor(
     private readonly provider: DelegatedProviderDefinition,
     private readonly runner: CliProcessRunner,
   ) {}
+
+  /** Read by the router after each turn; delegated CLIs report tokens at best, never cost. */
+  getLastUsage(): { totalCostUsd: null; model: null; tokens: TokenUsage | null } {
+    return { totalCostUsd: null, model: null, tokens: this.lastTokens };
+  }
 
   async execute(
     request: ModelRequest,
@@ -199,6 +243,7 @@ export class DelegatedCliIntelligenceAdapter implements IntelligencePort {
       throw new Error('Delegated provider blocked by local_only policy');
     }
     const prompt = buildProviderPrompt(request);
+    this.lastTokens = null;
     const result = await this.runner.run(
       this.provider.command,
       [
@@ -211,6 +256,7 @@ export class DelegatedCliIntelligenceAdapter implements IntelligencePort {
     if (result.exitCode !== 0) {
       throw new Error(`${this.provider.label} failed: ${result.stderr.trim() || `exit ${result.exitCode}`}`);
     }
+    this.lastTokens = this.provider.parseUsage?.(result.stdout) ?? null;
     return parseDelegatedModelResponse(this.provider.parseOutput(result.stdout));
   }
 }

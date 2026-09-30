@@ -53,7 +53,13 @@ export function toolPoliciesFor(capabilities: CustomAgentCapabilities): Record<s
   const policies: Record<string, AgentToolPolicy> = { 'accounting.ukDeadlines': 'allow' };
   if (capabilities.webResearch) Object.assign(policies, { 'web.search': 'allow', 'web.read': 'allow' });
   if (capabilities.readFiles) {
-    Object.assign(policies, { 'filesystem.read': 'allow', 'filesystem.readSharedPath': 'allow', 'accounting.summarizeLedger': 'allow' });
+    Object.assign(policies, {
+      'filesystem.read': 'allow',
+      'filesystem.list': 'allow',
+      'filesystem.search': 'allow',
+      'filesystem.readSharedPath': 'allow',
+      'accounting.summarizeLedger': 'allow',
+    });
   }
   if (capabilities.gitHistory) Object.assign(policies, { 'git.log': 'allow', 'git.status': 'allow', 'git.diff': 'allow' });
   if (capabilities.proposeFileChanges) policies['filesystem.proposeWrite'] = 'require_approval';

@@ -56,6 +56,19 @@ export function inferJustInTimeIntent(message: string): OnboardingIntent | null 
 }
 
 const skipCommand = /^(?:skip|skip for now|not now|later|atla|şimdilik atla|simdilik atla|geç|gec|sonra)[.!]?$/i;
+const controlReply = /^(?:evet|yes|doğru|dogru|onaylıyorum|onayliyorum|ok|okay|hayır|hayir|no|yanlış|yanlis|reddet)[.!]?$/i;
+
+/**
+ * Onboarding may only take a message that answers what it just asked (or presses one of
+ * its buttons). Anything else is a real request for the specialist, even when setup is
+ * unfinished: a stale setup question must never swallow a task.
+ */
+export function isReplyToOnboarding(step: OnboardingStep, message: string, lastAssistantMessage: string | undefined): boolean {
+  if (step.kind === 'complete') return true;
+  const text = message.trim();
+  if (skipCommand.test(text) || controlReply.test(text)) return true;
+  return lastAssistantMessage?.trim() === renderOnboardingStep(step).trim();
+}
 
 /**
  * True when a message reads as a task or question for the agent rather than an
@@ -191,6 +204,14 @@ export class AgentOnboardingService {
       if (entry.confirmationStatus === 'pending') return { kind: 'confirmation', question, memory: entry };
     }
     return { kind: 'complete', intent };
+  }
+
+  /** The setup step the next message would answer: unfinished initial setup, else any active just-in-time intent. */
+  async pendingStep(agentId: string): Promise<OnboardingStep> {
+    const initial = await this.getStep(agentId, 'initial');
+    if (initial.kind !== 'complete') return initial;
+    const activeIntent = await this.memory.getActiveOnboardingIntent(agentId);
+    return activeIntent ? this.getStep(agentId, activeIntent) : initial;
   }
 
   async handleMessage(agentId: string, message: string, signal: AbortSignal): Promise<OnboardingReply | null> {
