@@ -13,11 +13,13 @@ type Step = 'identity' | 'instructions' | 'abilities';
 
 const STEPS: Step[] = ['identity', 'instructions', 'abilities'];
 
+// Everything is on by default: a specialist's instructions define its domain, and
+// these switches exist only to restrict one on purpose.
 const DEFAULT_CAPABILITIES: CustomAgentCapabilities = {
   webResearch: true,
   readFiles: true,
-  gitHistory: false,
-  proposeFileChanges: false,
+  gitHistory: true,
+  proposeFileChanges: true,
   consultSpecialists: true,
 };
 
@@ -177,6 +179,7 @@ export function CustomAgentWizard({
             <>
               <fieldset className="agent-wizard-choices">
                 <legend>{t('wizard.capabilities')}</legend>
+                <small>{t('wizard.capabilitiesHelp')}</small>
                 {(['webResearch', 'readFiles', 'gitHistory', 'consultSpecialists', 'proposeFileChanges'] as const).map((key) => (
                   <label key={key} className="agent-wizard-choice">
                     <input type="checkbox" checked={capabilities[key]} onChange={() => toggleCapability(key)} />

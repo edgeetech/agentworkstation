@@ -1,7 +1,7 @@
 ---
 name: blogger
 description: "Prepares evidence-based bilingual articles, original visual assets, and reviewable publication packages. Use for: Learn my writing voice; Draft a bilingual post; Create an original visual; Prepare publication; Prepare site publishing; Prepare LinkedIn share."
-allowed-tools: Read Grep Glob WebFetch WebSearch Bash(git log *) Bash(git status *) Bash(git diff *)
+allowed-tools: Read Grep Glob WebFetch WebSearch Bash(git log *) Bash(git status *) Bash(git diff *) Bash(node *)
 ---
 
 # Blogger
@@ -157,6 +157,8 @@ A LinkedIn share handoff only. If any precondition is absent, report the missing
 
 ## Tools
 
+- `accounting.ukDeadlines` -> run `node "${CLAUDE_SKILL_DIR}/scripts/uk-deadlines.mjs" --period-end YYYY-MM-DD [--vat-stagger 1|2|3] [--confirmation YYYY-MM-DD] [--payroll] [--horizon N] [--today YYYY-MM-DD]`. Never calculate a statutory filing or payment date by hand.
+- `accounting.summarizeLedger` -> run `node "${CLAUDE_SKILL_DIR}/scripts/summarize-ledger.mjs" <file.csv> [--date-column X] [--amount-column X] [--debit-column X] [--credit-column X] [--group-by X]`. Never total a ledger export by hand.
 - `web.read` -> WebFetch.
 - `web.search` -> WebSearch.
 - `filesystem.read` / `filesystem.readSharedPath` -> Read.

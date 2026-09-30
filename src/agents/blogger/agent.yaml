@@ -67,6 +67,8 @@ onboarding:
     critical: true
     extractionHint: Extract only the public LinkedIn profile URL or public account identifier. Never extract authentication data.
 toolPolicies:
+  accounting.ukDeadlines: allow
+  accounting.summarizeLedger: allow
   web.read: allow
   web.search: allow
   agents.consult: allow
