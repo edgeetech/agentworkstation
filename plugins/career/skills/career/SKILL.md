@@ -1,7 +1,7 @@
 ---
 name: career
 description: "Keeps professional profile information accurate and current. Use for: Audit my profile; Review recent project work; Find missing CV evidence; Review career memory."
-allowed-tools: Read Grep Glob WebFetch WebSearch Bash(git log *) Bash(git status *) Bash(git diff *)
+allowed-tools: Read Grep Glob WebFetch WebSearch Bash(git log *) Bash(git status *) Bash(git diff *) Bash(node *)
 ---
 
 # Career
@@ -51,6 +51,8 @@ Create a proposed Markdown diff; do not write directly.
 
 ## Tools
 
+- `accounting.ukDeadlines` -> run `node "${CLAUDE_SKILL_DIR}/scripts/uk-deadlines.mjs" --period-end YYYY-MM-DD [--vat-stagger 1|2|3] [--confirmation YYYY-MM-DD] [--payroll] [--horizon N] [--today YYYY-MM-DD]`. Never calculate a statutory filing or payment date by hand.
+- `accounting.summarizeLedger` -> run `node "${CLAUDE_SKILL_DIR}/scripts/summarize-ledger.mjs" <file.csv> [--date-column X] [--amount-column X] [--debit-column X] [--credit-column X] [--group-by X]`. Never total a ledger export by hand.
 - `web.read` -> WebFetch.
 - `web.search` -> WebSearch.
 - `filesystem.read` / `filesystem.readSharedPath` -> Read.

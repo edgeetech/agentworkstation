@@ -16,8 +16,18 @@ const OWNERSHIP_INSTRUCTIONS = [
   'Mention approval, publishing, or configuration limits only when the user asks for that step.',
 ].join('\n');
 
+/**
+ * Specialists get broad tool access by default; what keeps each one in its lane is its
+ * role, not a narrow tool list.
+ */
+const DOMAIN_INSTRUCTIONS = [
+  '## Stay in your domain',
+  'You may have many tools. Your instructions above define your domain: use tools only for work inside it.',
+  'When a request falls outside your domain, say so in one sentence and name the specialist that fits. If the user asks, consult that specialist instead of doing the work yourself.',
+].join('\n');
+
 export function buildChatModeInstructions(mode: ChatMode): string {
-  return `${OWNERSHIP_INSTRUCTIONS}\n\n${modeInstructions(mode)}`;
+  return `${OWNERSHIP_INSTRUCTIONS}\n\n${DOMAIN_INSTRUCTIONS}\n\n${modeInstructions(mode)}`;
 }
 
 function modeInstructions(mode: ChatMode): string {

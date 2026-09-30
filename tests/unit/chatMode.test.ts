@@ -27,4 +27,10 @@ describe('chat mode instructions', () => {
       expect(instructions).toContain('Do not offer numbered menus');
     }
   });
+
+  it('keeps broadly equipped specialists inside their own domain', () => {
+    const instructions = buildChatModeInstructions('autopilot');
+    expect(instructions).toContain('use tools only for work inside it');
+    expect(instructions).toContain('name the specialist that fits');
+  });
 });

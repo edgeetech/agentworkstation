@@ -63,11 +63,13 @@ export function generatePluginArtifacts(repoRoot: string): GeneratedFile[] {
       files.push({ relativePath: `${pluginRoot}/commands/${action.id}.md`, content: buildCommandMarkdown(action, materials.id) });
     }
 
-    if (materials.id === 'accountant') {
+    if (materials.toolPolicies['accounting.ukDeadlines']) {
       files.push({
         relativePath: `${skillRoot}/scripts/uk-deadlines.mjs`,
         content: bundleCliScript(path.join(repoRoot, 'scripts/plugin-export/cli-uk-deadlines.ts')),
       });
+    }
+    if (materials.toolPolicies['accounting.summarizeLedger']) {
       files.push({
         relativePath: `${skillRoot}/scripts/summarize-ledger.mjs`,
         content: bundleCliScript(path.join(repoRoot, 'scripts/plugin-export/cli-summarize-ledger.ts')),

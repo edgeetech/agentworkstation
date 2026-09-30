@@ -40,6 +40,8 @@ describe('Blogger Agent loader integration', () => {
     ]);
 
     expect(agent.toolPolicies).toEqual({
+      'accounting.ukDeadlines': 'allow',
+      'accounting.summarizeLedger': 'allow',
       'web.read': 'allow',
       'web.search': 'allow',
       'agents.consult': 'allow',

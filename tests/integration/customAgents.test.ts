@@ -43,6 +43,7 @@ describe('custom agents', () => {
 
   it('maps capabilities to tool policies with writes still behind approval', () => {
     expect(toolPoliciesFor({ webResearch: true, readFiles: false, gitHistory: true, proposeFileChanges: true, consultSpecialists: false })).toEqual({
+      'accounting.ukDeadlines': 'allow',
       'web.search': 'allow',
       'web.read': 'allow',
       'git.log': 'allow',
@@ -63,6 +64,7 @@ describe('custom agents', () => {
     const agent = catalog.get('saul-goodman');
     expect(agent).toMatchObject({ name: 'Saul Goodman', custom: true, intelligence: ['claude'] });
     expect(agent.toolPolicies).toEqual({
+      'accounting.ukDeadlines': 'allow', 'accounting.summarizeLedger': 'allow',
       'web.search': 'allow', 'web.read': 'allow', 'filesystem.read': 'allow', 'filesystem.readSharedPath': 'allow', 'agents.consult': 'allow',
     });
     expect(agent.systemPrompt).toContain('Research current law');

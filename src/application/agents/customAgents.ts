@@ -49,9 +49,12 @@ export function customAgentIdFor(name: string, takenIds: Iterable<string>): stri
 }
 
 export function toolPoliciesFor(capabilities: CustomAgentCapabilities): Record<string, AgentToolPolicy> {
-  const policies: Record<string, AgentToolPolicy> = {};
+  // The deadline calculator reads no data, so every specialist may use it.
+  const policies: Record<string, AgentToolPolicy> = { 'accounting.ukDeadlines': 'allow' };
   if (capabilities.webResearch) Object.assign(policies, { 'web.search': 'allow', 'web.read': 'allow' });
-  if (capabilities.readFiles) Object.assign(policies, { 'filesystem.read': 'allow', 'filesystem.readSharedPath': 'allow' });
+  if (capabilities.readFiles) {
+    Object.assign(policies, { 'filesystem.read': 'allow', 'filesystem.readSharedPath': 'allow', 'accounting.summarizeLedger': 'allow' });
+  }
   if (capabilities.gitHistory) Object.assign(policies, { 'git.log': 'allow', 'git.status': 'allow', 'git.diff': 'allow' });
   if (capabilities.proposeFileChanges) policies['filesystem.proposeWrite'] = 'require_approval';
   if (capabilities.consultSpecialists) policies['agents.consult'] = 'allow';
