@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgentOnboardingService, inferJustInTimeIntent } from '../../src/application/onboarding/AgentOnboardingService';
+import { AgentOnboardingService, inferJustInTimeIntent, isReplyToOnboarding } from '../../src/application/onboarding/AgentOnboardingService';
 import type { IntelligencePort, ModelResponse, RoutingDecision } from '../../src/domain/intelligence';
 import type { AgentMemoryEntry, AgentMemoryStore, OnboardingQuestion } from '../../src/domain/onboarding';
 import { looksLikeRequestNotAnswer, renderOnboardingStep } from '../../src/application/onboarding/AgentOnboardingService';
@@ -375,5 +375,19 @@ describe('AgentOnboardingService', () => {
     expect(looksLikeRequestNotAnswer('https://github.com/asozyurt?tab=repositories')).toBe(false);
     expect(looksLikeRequestNotAnswer('Can you use C:\\cv\\resume.docx?')).toBe(false);
     expect(looksLikeRequestNotAnswer('I will describe it myself')).toBe(false);
+  });
+
+  it('lets onboarding take only replies to what it just asked, never a later task', () => {
+    const question = {
+      id: 'choose-company', prompt: 'Hangi şirketin defterini tutuyoruz?', memoryKey: 'accountant.company',
+      intent: 'initial' as const, critical: true, required: true, extractionHint: 'company',
+    };
+    const step = { kind: 'question' as const, question };
+    const task = 'Organized EdgeeTech klasöründe FY2025-26 klasörünü listele, anomali görürsen haber ver. Türkçe cevap ver.';
+    expect(isReplyToOnboarding(step, task, 'Türkçe devam edeceğim. Klasörü inceleyemedim.')).toBe(false);
+    expect(isReplyToOnboarding(step, 'EdgeeTech Ltd, 12345678', question.prompt)).toBe(true);
+    expect(isReplyToOnboarding(step, 'Şimdilik atla', 'something else')).toBe(true);
+    expect(isReplyToOnboarding(step, 'evet', 'something else')).toBe(true);
+    expect(isReplyToOnboarding({ kind: 'complete', intent: 'initial' }, task, undefined)).toBe(true);
   });
 });

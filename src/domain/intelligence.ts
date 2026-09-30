@@ -2,6 +2,8 @@ export type ExecutionMode = 'local_only' | 'provider_allowed';
 export type RoutingPolicy = 'local_only' | 'local_first' | 'adaptive';
 export type TaskKind = 'chat' | 'audit' | 'proposal' | 'connection_test' | 'onboarding_extraction';
 
+export type TokenUsage = { input: number; cachedInput: number; output: number };
+
 export type RoutingDecision = {
   policy: RoutingPolicy;
   location: 'local' | 'external' | 'simulated';
@@ -11,6 +13,8 @@ export type RoutingDecision = {
   reason: string;
   fallback: boolean;
   costUsd?: number | null;
+  /** Tokens the provider reported for this turn, for providers that bill by subscription and report no cost. */
+  tokens?: TokenUsage | null;
   /** The model the provider actually reported (e.g. the Claude adapter's `getLastUsage().model`); null when unknown. */
   reportedModel?: string | null;
   /** ToS-relevant note surfaced in the UI, e.g. when a provider route uses a

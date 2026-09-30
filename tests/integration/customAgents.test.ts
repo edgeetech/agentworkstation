@@ -65,7 +65,8 @@ describe('custom agents', () => {
     expect(agent).toMatchObject({ name: 'Saul Goodman', custom: true, intelligence: ['claude'] });
     expect(agent.toolPolicies).toEqual({
       'accounting.ukDeadlines': 'allow', 'accounting.summarizeLedger': 'allow',
-      'web.search': 'allow', 'web.read': 'allow', 'filesystem.read': 'allow', 'filesystem.readSharedPath': 'allow', 'agents.consult': 'allow',
+      'web.search': 'allow', 'web.read': 'allow', 'filesystem.read': 'allow', 'filesystem.list': 'allow', 'filesystem.search': 'allow',
+      'filesystem.readSharedPath': 'allow', 'agents.consult': 'allow',
     });
     expect(agent.systemPrompt).toContain('Research current law');
     expect(agent.systemPrompt).toContain('Never invent statutes');

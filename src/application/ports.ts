@@ -13,6 +13,8 @@ export interface WorkspaceGateway {
   readFileIfExists(workspaceId: string, relativePath: string): Promise<{ content: string; source: string } | null>;
   writeFileAtomic(workspaceId: string, relativePath: string, content: string): Promise<void>;
   getWorkspaceRoot(workspaceId: string): string;
+  /** Absolute path of an existing entry inside the workspace, after the same safety checks as reads. */
+  resolveExisting?(workspaceId: string, relativePath: string): Promise<string>;
 }
 
 export interface PersistencePort {

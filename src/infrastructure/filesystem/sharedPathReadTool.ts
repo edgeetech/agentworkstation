@@ -3,6 +3,7 @@ import { isAbsolute as isPosixAbsolute } from 'node:path/posix';
 import { isAbsolute as isWindowsAbsolute } from 'node:path/win32';
 import { z } from 'zod';
 import type { AgentTool, ToolResult } from '@application/tools';
+import { documentFormatFor, extractDocumentText } from './documentText';
 
 const maximumBytes = 48 * 1024;
 
@@ -22,7 +23,7 @@ function isExplicitPath(message: string, path: string): boolean {
 export function createSharedPathReadTool(userMessages: readonly string[]): AgentTool<{ path: string }, ToolResult> {
   return {
     id: 'filesystem.readSharedPath',
-    description: 'Read a text file at an absolute path explicitly written by the user in this conversation. No workspace setup is required.',
+    description: 'Read a text, PDF, Word (.docx) or Excel (.xlsx) file at an absolute path explicitly written by the user in this conversation. No workspace setup is required.',
     inputSchema: z.object({ path: z.string().min(1).max(2048) }),
     inputJsonSchema: {
       type: 'object',
@@ -38,6 +39,15 @@ export function createSharedPathReadTool(userMessages: readonly string[]): Agent
       }
       const details = await stat(input.path);
       if (!details.isFile()) throw new Error('The shared path is not a file');
+      const format = documentFormatFor(input.path);
+      if (format === 'pdf' || format === 'docx' || format === 'xlsx') {
+        const document = await extractDocumentText(input.path);
+        context.signal.throwIfAborted();
+        return {
+          output: { format, ...(document.note ? { note: document.note } : {}), text: document.text.slice(0, 40_000), truncated: document.text.length > 40_000 },
+          sourceReferences: [{ type: 'file', label: input.path }],
+        };
+      }
       if (details.size > maximumBytes) throw new Error('The shared file is too large to read in chat');
       const content = await readFile(input.path, 'utf8');
       context.signal.throwIfAborted();

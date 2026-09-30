@@ -11,6 +11,22 @@ const candidate = (
 const request = { messages: [{ role: 'user' as const, content: 'hello' }] };
 
 describe('adaptive intelligence routing', () => {
+  it('adds up the tokens a subscription provider reported across a turn', async () => {
+    let call = 0;
+    const codex = {
+      id: 'codex', label: 'OpenAI Codex', location: 'external' as const, modelId: 'default',
+      intelligence: {
+        execute: vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'ok' })),
+        getLastUsage: () => ({ totalCostUsd: null, tokens: call++ === 0 ? { input: 1000, cachedInput: 800, output: 10 } : { input: 1200, cachedInput: 1000, output: 30 } }),
+      },
+    };
+    const router = new AdaptiveRoutingIntelligenceAdapter('adaptive', [], [codex]);
+    const context = { modelId: 'ignored', executionMode: 'provider_allowed' as const, taskKind: 'chat' as const };
+    await router.execute(request, context, new AbortController().signal);
+    await router.execute(request, context, new AbortController().signal);
+    expect(router.getLastDecision()).toMatchObject({ providerId: 'codex', costUsd: null, tokens: { input: 2200, cachedInput: 1800, output: 40 } });
+  });
+
   it('enforces local only without invoking the external candidate', async () => {
     const local = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'local' }));
     const external = vi.fn(async (): Promise<ModelResponse> => ({ type: 'text', content: 'cloud' }));

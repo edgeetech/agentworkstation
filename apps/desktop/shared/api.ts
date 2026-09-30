@@ -83,6 +83,8 @@ export type RoutingDecision = {
   reason: string;
   fallback: boolean;
   costUsd?: number | null;
+  /** Tokens reported by subscription CLIs (Codex) that report no cost. */
+  tokens?: { input: number; cachedInput: number; output: number } | null;
   reportedModel?: string | null;
   authDisclosure?: string;
 };

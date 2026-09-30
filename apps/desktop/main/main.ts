@@ -17,7 +17,7 @@ import { buildChatModeInstructions } from '../../../src/application/chatMode';
 import { ContextBuilder } from '../../../src/application/context';
 import { AgentRuntime, type AgentRunObserver, type RunBudgetPause } from '../../../src/application/intelligence';
 import type { AgentDefinition } from '../../../src/application/agents/types';
-import { AgentOnboardingService, renderOnboardingStep } from '../../../src/application/onboarding/AgentOnboardingService';
+import { AgentOnboardingService, isReplyToOnboarding, renderOnboardingStep } from '../../../src/application/onboarding/AgentOnboardingService';
 import { AgentDisplayNameService } from '../../../src/application/agents/AgentDisplayNameService';
 import { AdaptiveRoutingIntelligenceAdapter, type RoutingAttempt } from '../../../src/application/intelligenceRouting';
 import { AgentPolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
@@ -35,7 +35,7 @@ import type {
 import type { ChatMode, ChatSession } from '../../../src/domain/sessions';
 import { tallyProposals } from '../../../src/domain/actions';
 import { FileSystemAgentCatalog } from '../../../src/infrastructure/agents/FileSystemAgentCatalog';
-import { createFilesystemProposeWriteTool, filesystemReadTool } from '../../../src/infrastructure/filesystem/filesystemTools';
+import { createFilesystemProposeWriteTool, filesystemListTool, filesystemReadTool, filesystemSearchTool } from '../../../src/infrastructure/filesystem/filesystemTools';
 import { DefaultWorkspaceGateway } from '../../../src/infrastructure/filesystem/workspaceGateway';
 import { gitDiffTool, gitLogTool, gitStatusTool } from '../../../src/infrastructure/git/gitTools';
 import { createUkDeadlinesTool, ledgerSummaryTool } from '../../../src/infrastructure/accounting/accountingTools';
@@ -1287,7 +1287,11 @@ async function prepareChatMessage(
   if (!chatSession) throw new Error(`Unknown chat session: ${sessionId}`);
   const endpoint = await getEndpointConfig();
   const checkpoint = resume ? chatRunCheckpoints.get(chatSession.id) : undefined;
-  const onboarding = checkpoint ? null : await createOnboardingService(endpoint).handleMessage(chatSession.agentId, message, signal);
+  const onboardingService = createOnboardingService(endpoint);
+  const lastAssistantMessage = (await getChatConversation(chatSession.id)).filter((turn) => turn.role === 'assistant').at(-1)?.content;
+  const onboarding = checkpoint || !isReplyToOnboarding(await onboardingService.pendingStep(chatSession.agentId), message, lastAssistantMessage)
+    ? null
+    : await onboardingService.handleMessage(chatSession.agentId, message, signal);
   if (onboarding) {
     return {
       sessionId: chatSession.id,
@@ -1405,6 +1409,8 @@ function buildSpecialistTools(
   if (workspaceGateway) {
     const approvalService = new ApprovalService(getPersistence(), workspaceGateway);
     toolRegistry.register(filesystemReadTool);
+    if (agent.toolPolicies['filesystem.list']) toolRegistry.register(filesystemListTool);
+    if (agent.toolPolicies['filesystem.search']) toolRegistry.register(filesystemSearchTool);
     toolRegistry.register(gitStatusTool);
     toolRegistry.register(gitLogTool);
     toolRegistry.register(gitDiffTool);
