@@ -84,7 +84,7 @@ import {
   cancelChatRequest,
   parseApprovePendingActionInput,
   parseAgentOnboardingInput,
-  parseRenameAgentDisplayNameInput,
+  parseSaveAgentProfileInput,
   parseCustomAgentIdInput,
   parseDraftCustomAgentInput,
   parseUpdateCustomAgentInput,
@@ -305,9 +305,12 @@ function getAgentDisplayNameService(): AgentDisplayNameService {
 }
 
 async function toAgentSummary(agent: AgentDefinition): Promise<AgentSummary> {
+  const tagline = await getAgentDisplayNameService().resolveTagline(agent.id);
   return {
     id: agent.id,
     name: await getAgentDisplayNameService().resolve(agent.id, agent.name),
+    defaultName: agent.name,
+    ...(tagline ? { tagline } : {}),
     description: agent.description,
     quickActions: agent.quickActions,
     onboarding: agent.onboarding,
@@ -2030,10 +2033,12 @@ function registerIpcHandlers(): void {
     return Promise.all(getAgentCatalog().list().map(toAgentSummary));
   });
 
-  ipcMain.handle(IPC_CHANNELS.renameAgentDisplayName, async (_event, payload: unknown) => {
-    const { agentId, displayName } = parseRenameAgentDisplayNameInput(payload);
+  ipcMain.handle(IPC_CHANNELS.saveAgentProfile, async (_event, payload: unknown) => {
+    const { agentId, displayName, tagline } = parseSaveAgentProfileInput(payload);
     const agent = getAgentCatalog().get(agentId);
-    await getAgentDisplayNameService().save(agentId, displayName);
+    const profiles = getAgentDisplayNameService();
+    await profiles.save(agentId, displayName === agent.name ? null : displayName);
+    await profiles.saveTagline(agentId, tagline);
     return toAgentSummary(agent);
   });
 

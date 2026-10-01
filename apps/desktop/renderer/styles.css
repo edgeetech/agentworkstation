@@ -1457,6 +1457,18 @@ label small, .form small { color: var(--ink-3); font-size: 12px; }
 .agent-wizard-footer { display: flex; justify-content: space-between; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--line); }
 .agent-wizard-footer button { display: inline-flex; align-items: center; gap: 6px; }
 
+.agent-profile { width: min(460px, 100% - 48px); }
+.agent-profile .agent-wizard-header small { color: var(--ink-3); font-size: 12.5px; }
+.agent-profile-preview { display: grid; gap: 6px; padding: 12px; border-radius: var(--radius-m); background: var(--agent-soft); }
+.agent-profile-preview-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); }
+.agent-profile-preview .agent-switch { pointer-events: none; }
+.agent-profile-preview small.placeholder { font-style: italic; }
+.agent-profile-field-head { display: flex; justify-content: space-between; align-items: baseline; }
+.agent-profile-field-head em { font-style: normal; font-weight: 400; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.agent-profile-reset { justify-self: start; margin-top: -8px; padding: 2px 6px; font-size: 12.5px; }
+.agent-profile-footer { margin: 4px -18px -16px; align-items: center; }
+.agent-profile-actions { display: inline-flex; gap: 8px; }
+
 /* Motion ----------------------------------------------------------------- */
 
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

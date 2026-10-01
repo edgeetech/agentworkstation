@@ -15,7 +15,7 @@ export const IPC_CHANNELS = {
   saveEndpointConfig: 'agentWorkstation:saveEndpointConfig',
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
   listAgents: 'agentWorkstation:listAgents',
-  renameAgentDisplayName: 'agentWorkstation:renameAgentDisplayName',
+  saveAgentProfile: 'agentWorkstation:saveAgentProfile',
   getCustomAgentSetup: 'agentWorkstation:getCustomAgentSetup',
   draftCustomAgent: 'agentWorkstation:draftCustomAgent',
   getCustomAgent: 'agentWorkstation:getCustomAgent',
@@ -162,13 +162,18 @@ export function parseUpdateCustomAgentInput(value: unknown): { agentId: string; 
   return { agentId, input };
 }
 
-const renameAgentDisplayNameSchema = z.object({
+const saveAgentProfileSchema = z.object({
   agentId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
   displayName: z.string()
     .trim()
     .min(1)
     .max(48)
     .refine((value) => !/\p{Cc}/u.test(value), 'Agent display name cannot contain control characters')
+    .nullable(),
+  tagline: z.string()
+    .trim()
+    .max(60)
+    .refine((value) => !/\p{Cc}/u.test(value), 'Agent title cannot contain control characters')
     .nullable(),
 }).strict();
 
@@ -179,8 +184,8 @@ export function parseAgentOnboardingInput(value: unknown): {
   return agentOnboardingSchema.parse(value);
 }
 
-export function parseRenameAgentDisplayNameInput(value: unknown): { agentId: string; displayName: string | null } {
-  return renameAgentDisplayNameSchema.parse(value);
+export function parseSaveAgentProfileInput(value: unknown): { agentId: string; displayName: string | null; tagline: string | null } {
+  return saveAgentProfileSchema.parse(value);
 }
 
 const workspacePathSchema = z.object({

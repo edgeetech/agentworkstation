@@ -16,7 +16,7 @@ const IPC_CHANNELS = {
   saveEndpointConfig: 'agentWorkstation:saveEndpointConfig',
   testEndpointConnection: 'agentWorkstation:testEndpointConnection',
   listAgents: 'agentWorkstation:listAgents',
-  renameAgentDisplayName: 'agentWorkstation:renameAgentDisplayName',
+  saveAgentProfile: 'agentWorkstation:saveAgentProfile',
   getCustomAgentSetup: 'agentWorkstation:getCustomAgentSetup',
   draftCustomAgent: 'agentWorkstation:draftCustomAgent',
   getCustomAgent: 'agentWorkstation:getCustomAgent',
@@ -97,8 +97,8 @@ const api: AgentWorkstationApi = {
   saveEndpointConfig: async (config) => ipcRenderer.invoke(IPC_CHANNELS.saveEndpointConfig, config),
   testEndpointConnection: async (config) => ipcRenderer.invoke(IPC_CHANNELS.testEndpointConnection, config),
   listAgents: async () => ipcRenderer.invoke(IPC_CHANNELS.listAgents),
-  renameAgentDisplayName: async (agentId, displayName) =>
-    ipcRenderer.invoke(IPC_CHANNELS.renameAgentDisplayName, { agentId, displayName }),
+  saveAgentProfile: async (agentId, profile) =>
+    ipcRenderer.invoke(IPC_CHANNELS.saveAgentProfile, { agentId, ...profile }),
   getCustomAgentSetup: async () => ipcRenderer.invoke(IPC_CHANNELS.getCustomAgentSetup),
   draftCustomAgent: async (input) => ipcRenderer.invoke(IPC_CHANNELS.draftCustomAgent, input),
   getCustomAgent: async (agentId) => ipcRenderer.invoke(IPC_CHANNELS.getCustomAgent, { agentId }),

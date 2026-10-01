@@ -4,7 +4,7 @@ import {
   cancelChatRequest,
   parseCancelChatMessageInput,
   parseCreateChatSessionInput,
-  parseRenameAgentDisplayNameInput,
+  parseSaveAgentProfileInput,
   parseRenameChatSessionInput,
   parseSetChatSessionModeInput,
   parseChatMessageInput,
@@ -35,7 +35,7 @@ describe('ipc contract', () => {
     expect(IPC_CHANNELS.approvePendingAction).toBe('agentWorkstation:approvePendingAction');
     expect(IPC_CHANNELS.testEndpointConnection).toBe('agentWorkstation:testEndpointConnection');
     expect(IPC_CHANNELS.listAgents).toBe('agentWorkstation:listAgents');
-    expect(IPC_CHANNELS.renameAgentDisplayName).toBe('agentWorkstation:renameAgentDisplayName');
+    expect(IPC_CHANNELS.saveAgentProfile).toBe('agentWorkstation:saveAgentProfile');
     expect(IPC_CHANNELS.getAgentOnboarding).toBe('agentWorkstation:getAgentOnboarding');
     expect(IPC_CHANNELS.getAgentMemory).toBe('agentWorkstation:getAgentMemory');
     expect(IPC_CHANNELS.listWorkspaceEntries).toBe('agentWorkstation:listWorkspaceEntries');
@@ -115,12 +115,13 @@ describe('ipc contract', () => {
     });
     expect(parseRenameChatSessionInput({ id: 'chat-1', name: 'Renamed chat' }))
       .toEqual({ id: 'chat-1', name: 'Renamed chat' });
-    expect(parseRenameAgentDisplayNameInput({ agentId: 'career', displayName: '  My Career  ' }))
-      .toEqual({ agentId: 'career', displayName: 'My Career' });
-    expect(parseRenameAgentDisplayNameInput({ agentId: 'career', displayName: null }))
-      .toEqual({ agentId: 'career', displayName: null });
-    expect(() => parseRenameAgentDisplayNameInput({ agentId: 'career', displayName: 'Career\nOverride' })).toThrow();
-    expect(() => parseRenameAgentDisplayNameInput({ agentId: 'career', displayName: 'x'.repeat(49) })).toThrow();
+    expect(parseSaveAgentProfileInput({ agentId: 'career', displayName: '  My Career  ', tagline: '  Cevval muhasebeci ' }))
+      .toEqual({ agentId: 'career', displayName: 'My Career', tagline: 'Cevval muhasebeci' });
+    expect(parseSaveAgentProfileInput({ agentId: 'career', displayName: null, tagline: null }))
+      .toEqual({ agentId: 'career', displayName: null, tagline: null });
+    expect(() => parseSaveAgentProfileInput({ agentId: 'career', displayName: 'Career\nOverride', tagline: null })).toThrow();
+    expect(() => parseSaveAgentProfileInput({ agentId: 'career', displayName: 'x'.repeat(49), tagline: null })).toThrow();
+    expect(() => parseSaveAgentProfileInput({ agentId: 'career', displayName: 'Career', tagline: 'x'.repeat(61) })).toThrow();
     expect(parseSetChatSessionModeInput({ id: 'chat-1', mode: 'autopilot' }))
       .toEqual({ id: 'chat-1', mode: 'autopilot' });
     expect(() => parseSetChatSessionModeInput({ id: 'chat-1', mode: 'unrestricted' })).toThrow();

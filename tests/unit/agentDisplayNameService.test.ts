@@ -48,4 +48,21 @@ describe('agent display name service', () => {
     await expect(names.save('career', 'x'.repeat(49))).rejects.toThrow('at most 48');
     await expect(names.save('../career', 'Career')).rejects.toThrow('Invalid agent id');
   });
+
+  it('stores an optional title per specialist and clears it with null or blank', async () => {
+    const settings = new Map<string, string>();
+    const profiles = new AgentDisplayNameService({
+      async getSetting(key) { return settings.get(key) ?? null; },
+      async setSetting(key, value) { settings.set(key, value); },
+    });
+    await expect(profiles.resolveTagline('accountant')).resolves.toBeNull();
+    await profiles.saveTagline('accountant', '  Cevval muhasebeci  ');
+    await expect(profiles.resolveTagline('accountant')).resolves.toBe('Cevval muhasebeci');
+    await profiles.saveTagline('accountant', '   ');
+    await expect(profiles.resolveTagline('accountant')).resolves.toBeNull();
+    await profiles.saveTagline('accountant', 'Lawyer');
+    await profiles.saveTagline('accountant', null);
+    await expect(profiles.resolveTagline('accountant')).resolves.toBeNull();
+    await expect(profiles.saveTagline('accountant', 'x'.repeat(61))).rejects.toThrow('at most 60');
+  });
 });
