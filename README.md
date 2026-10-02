@@ -6,7 +6,7 @@
 
 ### A local-first hub where specialized AI agents work with real repositories, evidence, and human oversight.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-3b82f6?style=for-the-badge)](./package.json)
+[![Release](https://img.shields.io/github/v/release/edgeetech/agentworkstation?style=for-the-badge&color=3b82f6)](https://github.com/edgeetech/agentworkstation/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/edgeetech/agentworkstation/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/edgeetech/agentworkstation/actions/workflows/ci.yml)
 [![Windows](https://img.shields.io/badge/Windows-MVP-111827?style=for-the-badge&logo=windows11)](#-install-and-run)
 [![Node](https://img.shields.io/badge/Node-20%2B-22c55e?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
@@ -141,7 +141,7 @@ one-click choices; EdgeeTech never bills you.
   </tr>
 </table>
 
-<sub>Captured from the desktop app against a local <code>qwen2.5:3b</code> Ollama model reading this repository.</sub>
+<sub>Captured from the desktop app with OpenAI Codex reading this repository and a demo profile.</sub>
 
 ### Ask about real work, not an isolated prompt
 
@@ -150,9 +150,9 @@ tools. Every response keeps the resolved model and source references visible.
 
 <div align="center">
 
-[![Career Agent chat grounded in a registered README file](./docs/images/career-agent-chat.png)](./docs/images/career-agent-chat.png)
+[![Career Agent chat grounded in the Git history of a registered workspace](./docs/images/career-agent-chat.png)](./docs/images/career-agent-chat.png)
 
-<sub>Real local Ollama response using <code>qwen2.5:3b</code>, with the source file shown in the Evidence inspector. <a href="./docs/images/career-agent-chat.png">Click to enlarge</a>.</sub>
+<sub>Real OpenAI Codex response, with the Git evidence it used shown in the Evidence panel. <a href="./docs/images/career-agent-chat.png">Click to enlarge</a>.</sub>
 
 </div>
 
@@ -161,11 +161,11 @@ tools. Every response keeps the resolved model and source references visible.
 <table>
   <tr>
     <td width="50%" valign="top">
-      <a href="./docs/images/new-session-composer.png"><img src="./docs/images/new-session-composer.png" alt="New Career Agent session composer showing workspace, agent, intelligence, permissions, isolation, and quick actions"></a>
-      <br><strong>Start with explicit context</strong><br>
-      Bind a persistent session to a workspace and agent. Auto intelligence,
-      execution policy, permissions, isolation, and declarative quick actions
-      are visible before the first prompt.
+      <a href="./docs/images/new-session-composer.png"><img src="./docs/images/new-session-composer.png" alt="New Career conversation with suggested starting tasks and the approval notice"></a>
+      <br><strong>Start from a clear brief</strong><br>
+      Each specialist opens with its own starting tasks and a reminder that it
+      can read your registered workspaces, but nothing is written until you
+      approve the exact diff.
     </td>
     <td width="50%" valign="top">
       <a href="./docs/images/evidence-first-audit.png"><img src="./docs/images/evidence-first-audit.png" alt="Career Audit with structured file, memory, Git commit, and Git status evidence"></a>
@@ -175,11 +175,17 @@ tools. Every response keeps the resolved model and source references visible.
     </td>
   </tr>
   <tr>
-    <td colspan="2" valign="top">
+    <td width="50%" valign="top">
       <a href="./docs/images/human-approval.png"><img src="./docs/images/human-approval.png" alt="Proposed profile update shown as an exact diff with approve and reject controls"></a>
       <br><strong>Review the diff; keep control of the write</strong><br>
       The model proposes. Agent Workstation creates a PendingAction. Only the
       application can write after explicit human approval.
+    </td>
+    <td width="50%" valign="top">
+      <a href="./docs/images/specialist-profile.png"><img src="./docs/images/specialist-profile.png" alt="Specialist profile dialog editing a specialist's name and title with a live sidebar preview"></a>
+      <br><strong>Make each specialist yours</strong><br>
+      Rename any specialist and give it a title, such as "Sharp accountant".
+      The sidebar preview updates as you type.
     </td>
   </tr>
 </table>
