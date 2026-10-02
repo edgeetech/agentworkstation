@@ -10,21 +10,21 @@
       "name": "accountant",
       "source": "./plugins/accountant",
       "description": "Keeps a small UK company's books, deadlines, and filings in order from your own exports.",
-      "version": "0.4.3",
+      "version": "0.4.4",
       "category": "finance"
     },
     {
       "name": "blogger",
       "source": "./plugins/blogger",
       "description": "Prepares evidence-based bilingual articles, original visual assets, and reviewable publication packages.",
-      "version": "0.4.3",
+      "version": "0.4.4",
       "category": "writing"
     },
     {
       "name": "career",
       "source": "./plugins/career",
       "description": "Keeps professional profile information accurate and current.",
-      "version": "0.4.3",
+      "version": "0.4.4",
       "category": "productivity"
     }
   ]
