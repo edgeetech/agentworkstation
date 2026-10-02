@@ -3,15 +3,27 @@ const controlCharacter = /\p{Cc}/u;
 
 export const maximumAgentDisplayNameLength = 48;
 export const agentDisplayNameSettingPrefix = 'agent.displayName.';
+export const maximumAgentTaglineLength = 60;
+export const agentTaglineSettingPrefix = 'agent.tagline.';
 
 export interface AgentDisplayNameSettings {
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
 }
 
-function settingKey(agentId: string): string {
+function settingKey(agentId: string, prefix = agentDisplayNameSettingPrefix): string {
   if (!validAgentId.test(agentId)) throw new Error(`Invalid agent id: ${agentId}`);
-  return `${agentDisplayNameSettingPrefix}${agentId}`;
+  return `${prefix}${agentId}`;
+}
+
+/** The short title shown under a specialist's name, such as "Lawyer"; empty means none. */
+export function normalizeAgentTagline(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length > maximumAgentTaglineLength) {
+    throw new Error(`Agent title must be at most ${maximumAgentTaglineLength} characters`);
+  }
+  if (controlCharacter.test(normalized)) throw new Error('Agent title cannot contain control characters');
+  return normalized;
 }
 
 export function normalizeAgentDisplayName(value: string): string {
@@ -41,5 +53,19 @@ export class AgentDisplayNameService {
 
   async save(agentId: string, name: string | null): Promise<void> {
     await this.settings.setSetting(settingKey(agentId), name === null ? '' : normalizeAgentDisplayName(name));
+  }
+
+  async resolveTagline(agentId: string): Promise<string | null> {
+    const stored = await this.settings.getSetting(settingKey(agentId, agentTaglineSettingPrefix));
+    if (!stored) return null;
+    try {
+      return normalizeAgentTagline(stored) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveTagline(agentId: string, tagline: string | null): Promise<void> {
+    await this.settings.setSetting(settingKey(agentId, agentTaglineSettingPrefix), tagline === null ? '' : normalizeAgentTagline(tagline));
   }
 }

@@ -54,9 +54,8 @@ export function SessionsSidebar({
   theme,
   onCycleTheme,
   onOpenAgent,
-  onRenameAgent,
+  onEditProfile,
   onCreateAgent,
-  onEditAgent,
   onDeleteAgent,
   onNavigate,
   onNewSession,
@@ -79,9 +78,8 @@ export function SessionsSidebar({
   theme: ThemePreference;
   onCycleTheme: () => void;
   onOpenAgent: (agentId: string) => void;
-  onRenameAgent: (agentId: string, name: string) => void;
+  onEditProfile: (agentId: string) => void;
   onCreateAgent: () => void;
-  onEditAgent: (agentId: string) => void;
   onDeleteAgent: (agentId: string) => void;
   onNavigate: (view: AgentView) => void;
   onNewSession: () => void;
@@ -92,8 +90,6 @@ export function SessionsSidebar({
 }): JSX.Element {
   const { locale, setLocale, t } = useI18n();
   const [menuId, setMenuId] = useState<string | null>(null);
-  const [agentRenameId, setAgentRenameId] = useState<string | null>(null);
-  const [agentRenameValue, setAgentRenameValue] = useState('');
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -123,13 +119,6 @@ export function SessionsSidebar({
     onRenameSession(session.id, value);
     setRenameId(null);
     setRenameValue('');
-  };
-  const submitAgentRename = (agent: AgentSummary): void => {
-    const value = agentRenameValue.trim();
-    if (!value) return;
-    onRenameAgent(agent.id, value);
-    setAgentRenameId(null);
-    setAgentRenameValue('');
   };
 
   return (
@@ -173,24 +162,7 @@ export function SessionsSidebar({
               const active = agent.id === activeAgent?.id;
               return (
                 <li className={`agent-roster-item agent-tone-${agent.id}`} key={agent.id}>
-                  {agentRenameId === agent.id ? (
-                    <form className="agent-rename-form" onSubmit={(event) => { event.preventDefault(); submitAgentRename(agent); }}>
-                      <SpecialistAvatar agentId={agent.id} name={agent.name} />
-                      <input
-                        aria-label={t('sidebar.rename', { name: agent.name })}
-                        autoFocus
-                        maxLength={48}
-                        value={agentRenameValue}
-                        onChange={(event) => setAgentRenameValue(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Escape') { setAgentRenameId(null); setAgentRenameValue(''); }
-                        }}
-                      />
-                      <button type="submit" aria-label={t('sidebar.saveName', { name: agent.name })} disabled={!agentRenameValue.trim()}><Icon name="check" size={14} /></button>
-                      <button type="button" aria-label={t('sidebar.cancelRename', { name: agent.name })} onClick={() => { setAgentRenameId(null); setAgentRenameValue(''); }}><Icon name="x" size={14} /></button>
-                    </form>
-                  ) : (
-                    <>
+                  <>
                       <button
                         className={`agent-switch ${active ? 'active' : ''}`}
                         type="button"
@@ -202,37 +174,27 @@ export function SessionsSidebar({
                         <SpecialistAvatar agentId={agent.id} name={agent.name} />
                         <span className="agent-switch-copy">
                           <strong>{agent.name}</strong>
-                          <small>{latest?.name ?? t('sidebar.firstConversation')}</small>
+                          <small>{agent.tagline ?? latest?.name ?? t('sidebar.firstConversation')}</small>
                         </span>
                         {index < 9 ? <kbd className="agent-shortcut">{shortcutLabel(String(index + 1))}</kbd> : null}
                       </button>
                       <button
                         type="button"
                         className="agent-rename-trigger"
-                        aria-label={t('sidebar.rename', { name: agent.name })}
-                        title={t('sidebar.rename', { name: agent.name })}
-                        onClick={() => { setAgentRenameId(agent.id); setAgentRenameValue(agent.name); }}
+                        aria-label={t('sidebar.editProfile', { name: agent.name })}
+                        title={t('sidebar.editProfile', { name: agent.name })}
+                        onClick={() => onEditProfile(agent.id)}
                       ><Icon name="pencil" size={14} /></button>
                       {agent.custom ? (
-                        <>
-                          <button
-                            type="button"
-                            className="agent-rename-trigger"
-                            aria-label={t('sidebar.editSpecialist', { name: agent.name })}
-                            title={t('sidebar.editSpecialist', { name: agent.name })}
-                            onClick={() => onEditAgent(agent.id)}
-                          ><Icon name="settings" size={14} /></button>
-                          <button
-                            type="button"
-                            className="agent-rename-trigger agent-delete-trigger"
-                            aria-label={t('sidebar.deleteSpecialist', { name: agent.name })}
-                            title={t('sidebar.deleteSpecialist', { name: agent.name })}
-                            onClick={() => onDeleteAgent(agent.id)}
-                          ><Icon name="x" size={14} /></button>
-                        </>
+                        <button
+                          type="button"
+                          className="agent-rename-trigger agent-delete-trigger"
+                          aria-label={t('sidebar.deleteSpecialist', { name: agent.name })}
+                          title={t('sidebar.deleteSpecialist', { name: agent.name })}
+                          onClick={() => onDeleteAgent(agent.id)}
+                        ><Icon name="x" size={14} /></button>
                       ) : null}
-                    </>
-                  )}
+                  </>
                 </li>
               );
             })}

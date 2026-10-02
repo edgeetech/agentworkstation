@@ -31,6 +31,7 @@ import { MessageContent } from "./features/chat/MessageContent";
 import { ChatView, type FailedChat, type PendingChat } from "./features/chat/ChatView";
 import { CommandPalette, type PaletteItem } from "./features/shell/CommandPalette";
 import { CustomAgentWizard } from "./features/agents/CustomAgentWizard";
+import { AgentProfileDialog } from "./features/agents/AgentProfileDialog";
 import { ConnectPanel } from "./features/intelligence/ConnectPanel";
 import { Icon } from "./features/shell/icons";
 import { detectPlatform, useTheme } from "./features/shell/theme";
@@ -490,14 +491,12 @@ function App(): JSX.Element {
     });
   };
 
-  const saveAgentName = (agentId: string, nextName: string): void => {
-    const name = nextName.trim();
-    if (!name) return;
-    void task("chat", async () => {
-      await api.renameAgentDisplayName(agentId, name);
-      setAgents(await api.listAgents());
-      setNotice(t('app.nameChanged', { name }));
-    });
+  const [profileAgentId, setProfileAgentId] = useState<string | null>(null);
+  const profileAgent = agents.find((agent) => agent.id === profileAgentId) ?? null;
+  const saveAgentProfile = async (agentId: string, profile: { displayName: string | null; tagline: string | null }): Promise<void> => {
+    const saved = await api.saveAgentProfile(agentId, profile);
+    setAgents(await api.listAgents());
+    setNotice(t('profile.saved', { name: saved.name }));
   };
 
   const startChatWith = async (agent: AgentSummary): Promise<void> => {
@@ -1737,9 +1736,8 @@ function App(): JSX.Element {
         theme={theme.preference}
         onCycleTheme={theme.cycle}
         onOpenAgent={openAgent}
-        onRenameAgent={saveAgentName}
+        onEditProfile={setProfileAgentId}
         onCreateAgent={() => setAgentWizard({})}
-        onEditAgent={editAgent}
         onDeleteAgent={deleteAgent}
         onNavigate={go}
         onNewSession={() => createNewChat(selectedAgent?.id)}
@@ -1845,6 +1843,15 @@ function App(): JSX.Element {
         onError={setError}
       />
       {paletteOpen ? <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} /> : null}
+      {profileAgent ? (
+        <AgentProfileDialog
+          key={profileAgent.id}
+          agent={profileAgent}
+          onSave={(profile) => saveAgentProfile(profileAgent.id, profile)}
+          onClose={() => setProfileAgentId(null)}
+          {...(profileAgent.custom ? { onEditInstructions: () => { setProfileAgentId(null); editAgent(profileAgent.id); } } : {})}
+        />
+      ) : null}
       {agentWizard ? (
         <CustomAgentWizard
           {...(agentWizard.editing ? { editing: agentWizard.editing } : {})}

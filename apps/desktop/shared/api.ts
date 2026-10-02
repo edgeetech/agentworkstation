@@ -174,6 +174,10 @@ export type AgentSummary = {
   onboarding: OnboardingQuestion[];
   /** Created by the user with the specialist wizard. */
   custom?: boolean;
+  /** Short title the user gave the specialist, such as "Lawyer"; shown under its name. */
+  tagline?: string;
+  /** The packaged name, so the profile editor can offer a reset. */
+  defaultName: string;
 };
 
 export type CustomAgentCapabilities = {
@@ -370,7 +374,8 @@ export type AgentWorkstationApi = {
   saveEndpointConfig: (config: EndpointConfig) => Promise<void>;
   testEndpointConnection: (config: EndpointConfig) => Promise<{ ok: true; message: string }>;
   listAgents: () => Promise<AgentSummary[]>;
-  renameAgentDisplayName: (agentId: string, displayName: string | null) => Promise<AgentSummary>;
+  /** A null name resets it to the packaged one; a null or blank title clears it. */
+  saveAgentProfile: (agentId: string, profile: { displayName: string | null; tagline: string | null }) => Promise<AgentSummary>;
   getCustomAgentSetup: () => Promise<CustomAgentSetup>;
   draftCustomAgent: (input: { name: string; brief: string; language: 'tr' | 'en' }) => Promise<CustomAgentDraft>;
   getCustomAgent: (agentId: string) => Promise<CustomAgentInput>;
