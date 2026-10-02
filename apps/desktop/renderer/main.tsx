@@ -431,6 +431,8 @@ function App(): JSX.Element {
     setView(next);
     setError(null);
     setNotice(null);
+    // Agents propose changes from chat, so the list can be stale by the time it opens.
+    if (next === "changes") void loadActions().catch((value: unknown) => setError(messageOf(value)));
   };
 
   const createNewChat = (agentId?: string): void => {
@@ -626,6 +628,8 @@ function App(): JSX.Element {
         setPendingChatInput((current) => current?.requestId === requestId ? null : current);
         // Refresh in the background so the composer is usable the moment the reply lands.
         void loadChat().catch((value: unknown) => setError(messageOf(value)));
+        // A turn may have proposed a file change; keep the review badge and list current.
+        void loadActions().catch((value: unknown) => setError(messageOf(value)));
       } catch (value) {
         const message = chatErrorMessage(value);
         if (/abort|cancel/i.test(message)) {
