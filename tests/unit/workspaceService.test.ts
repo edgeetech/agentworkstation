@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { WorkspaceGateway } from '../../src/application/ports';
 import {
   buildWorkspaceAccessInstructions,
+  isProfileSource,
+  sourceIdFor,
+  sourceKind,
   WorkspaceService,
   type WorkspaceRegistration,
   type WorkspaceRegistryPort,
@@ -27,40 +30,48 @@ function makeRegistry(): WorkspaceRegistryPort {
 }
 
 describe('WorkspaceService', () => {
-  it('keeps ordinary conversation available when no local workspace exists', () => {
+  it('keeps ordinary conversation available when a specialist has no sources', () => {
     const instructions = buildWorkspaceAccessInstructions([]);
 
     expect(instructions).toContain('Continue normal conversation and reasoning without local files');
-    expect(instructions).toContain('ask the user to add a folder from Workspaces');
-    expect(instructions).toContain('Never present missing workspace access as a failed message');
+    expect(instructions).toContain('ask the user to add it on your Sources page');
+    expect(instructions).toContain('Never present missing sources as a failed message');
   });
 
-  it('builds trusted ID-to-root instructions for workspace-aware tool calls', () => {
+  it('lists local sources with notes for tool calls and web sources for web.read', () => {
     const instructions = buildWorkspaceAccessInstructions([
-      { id: 'site-profile', rootPath: 'C:\\Workspace\\profile', kind: 'profile' },
-      { id: 'site', rootPath: 'C:\\Workspace\\site' },
+      { id: 'books', rootPath: 'C:/Accounts', note: 'Payroll and HMRC records' },
+      { id: 'site', rootPath: 'C:/Workspace/site' },
+      { id: 'pricing', rootPath: 'https://taksim.dev/pricing', note: 'Live pricing page' },
     ], 'site');
 
-    expect(instructions).toContain('Selected workspace ID: "site"');
-    expect(instructions).toContain('"id":"site-profile","rootPath":"C:\\\\Workspace\\\\profile","purpose":"profile"');
-    expect(instructions).toContain('"id":"site","rootPath":"C:\\\\Workspace\\\\site","purpose":"project"');
-    expect(instructions).toContain('workspace-relative path');
-    expect(instructions).toContain('Do not claim a mapped workspace is unavailable');
-    expect(instructions.indexOf('workspace-relative path')).toBeLessThan(instructions.indexOf('Registered mappings'));
+    expect(instructions).toContain('Primary local source ID: "site"');
+    expect(instructions).toContain('"id":"books","rootPath":"C:/Accounts","note":"Payroll and HMRC records"');
+    expect(instructions).toContain('"id":"site","rootPath":"C:/Workspace/site"}');
+    expect(instructions).toContain('Web sources: [{"url":"https://taksim.dev/pricing","note":"Live pricing page"}]');
+    expect(instructions).not.toContain('"id":"pricing"');
+    expect(instructions).toContain('read it with relativePath "."');
+    expect(instructions).toContain('gave these sources to you alone');
   });
 
-  it('bounds workspace mappings while prioritizing the selected workspace', () => {
-    const registrations = Array.from({ length: 40 }, (_, index) => ({
-      id: `workspace-${index}`,
-      rootPath: `C:\\Workspace\\${index}`,
-      kind: 'project' as const,
-    }));
-
+  it('bounds local sources while putting the primary one first', () => {
+    const registrations = Array.from({ length: 40 }, (_, index) => ({ id: `workspace-${index}`, rootPath: `C:/Workspace/${index}` }));
     const instructions = buildWorkspaceAccessInstructions(registrations, 'workspace-39');
 
-    expect(instructions).toContain('Registered mappings (32 of 40)');
+    expect(instructions).toContain('Local sources (32 of 40)');
     expect(instructions.indexOf('workspace-39')).toBeLessThan(instructions.indexOf('workspace-0'));
     expect(new TextEncoder().encode(instructions).byteLength).toBeLessThan(10 * 1024);
+  });
+
+  it('derives readable unique source IDs and spots CV or profile sources from their notes', () => {
+    expect(sourceKind('https://example.com')).toBe('web');
+    expect(sourceKind('C:/work')).toBe('local');
+    expect(sourceIdFor('C:/Users/me/OneDrive/Organized EdgeeTech', [])).toBe('organized-edgeetech');
+    expect(sourceIdFor('C:/a/Organized EdgeeTech/', ['organized-edgeetech'])).toBe('organized-edgeetech-2');
+    expect(sourceIdFor('https://www.taksim.dev/pricing/', [])).toBe('taksim-dev-pricing');
+    expect(isProfileSource({ id: 'a', rootPath: 'C:/cv', note: 'My current CV' })).toBe(true);
+    expect(isProfileSource({ id: 'b', rootPath: 'C:/p', kind: 'profile' })).toBe(true);
+    expect(isProfileSource({ id: 'c', rootPath: 'C:/books', note: 'Payroll records' })).toBe(false);
   });
 
   it('normalizes registrations and delegates deterministic selection', async () => {

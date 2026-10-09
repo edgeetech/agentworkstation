@@ -32,11 +32,11 @@ test('Career Agent reaches a real Ollama model through the desktop UI', async ()
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [workspacePath] });
     }, profileRepo);
 
-    await page.locator('nav').getByRole('button', { name: /Workspaces/ }).click();
-    await page.getByLabel('Workspace name').fill('profile');
-    await page.getByLabel('Purpose').selectOption('profile');
-    await page.getByRole('button', { name: 'Choose folder and add' }).click();
-    await expect(page.locator('.workspace').filter({ hasText: 'profile' })).toBeVisible();
+    await page.locator('nav').getByRole('button', { name: /Sources/ }).click();
+    await page.getByRole('button', { name: 'Choose folder…' }).click();
+    await page.getByLabel('Note (optional)').fill('My professional profile');
+    await page.getByRole('button', { name: 'Add source' }).click();
+    await expect(page.locator('.source-list').getByText(profileRepo, { exact: true })).toBeVisible();
 
     await page.locator('.settings-link').click();
     await expect(page.getByRole('heading', { name: 'Choose what Career Agent may use' })).toBeVisible();

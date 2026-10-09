@@ -4,8 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-function createRepo(name: string): string {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
+/** A Git repo in a folder named exactly `folderName`, so its source ID is predictable. */
+function createRepo(name: string, folderName = name): string {
+  const directory = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aw-e2e-repo-')), folderName);
+  fs.mkdirSync(directory);
   execFileSync('git', ['init'], { cwd: directory });
   execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: directory });
   execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: directory });
@@ -129,8 +131,8 @@ test('continues normal conversation without requiring a workspace', async () => 
 });
 
 test('Windows MVP critical path is usable through the Electron UI', async () => {
-  const profileRepo = createRepo('profile-repo');
-  const projectRepo = createRepo('project-repo');
+  const profileRepo = createRepo('profile-repo', 'profile');
+  const projectRepo = createRepo('project-repo', 'project');
   const appDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-e2e-appdata-'));
   const launch = async () => electron.launch({
     args: ['.'], cwd: path.resolve('.'),
@@ -201,16 +203,27 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [paths[nextPath++]] });
     }, [profileRepo, projectRepo]);
 
-    await page.locator('nav').getByRole('button', { name: /Workspaces/ }).click();
-    const nameInput = page.getByLabel('Workspace name');
-    await nameInput.fill('profile');
-    await page.getByLabel('Purpose').selectOption('profile');
-    await page.getByRole('button', { name: 'Choose folder and add' }).click();
-    await expect(page.getByRole('heading', { name: 'profile', exact: true })).toBeVisible();
-    await nameInput.fill('project');
-    await page.getByLabel('Purpose').selectOption('project');
-    await page.getByRole('button', { name: 'Choose folder and add' }).click();
-    await expect(page.getByRole('heading', { name: 'project', exact: true })).toBeVisible();
+    await page.locator('nav').getByRole('button', { name: /Sources/ }).click();
+    await expect(page.getByRole('heading', { name: "Career's sources" })).toBeVisible();
+    await page.getByRole('button', { name: 'Choose folder…' }).click();
+    await expect(page.getByLabel('Folder, file, or web address')).toHaveValue(profileRepo);
+    await page.getByLabel('Note (optional)').fill('My professional profile');
+    await page.getByRole('button', { name: 'Add source' }).click();
+    const careerSources = page.locator('.source-list').first();
+    await expect(careerSources.getByText(profileRepo, { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Choose folder…' }).click();
+    await page.getByRole('button', { name: 'Add source' }).click();
+    await expect(careerSources.getByText(projectRepo, { exact: true })).toBeVisible();
+    await page.getByLabel('Folder, file, or web address').fill('https://example.com/about');
+    await page.getByRole('button', { name: 'Add source' }).click();
+    await expect(careerSources.getByText('https://example.com/about', { exact: true })).toBeVisible();
+
+    // Sources belong to one specialist: Writer starts with none of Career's.
+    await sidebar.getByRole('button', { name: 'Open Writer' }).click();
+    await page.locator('nav').getByRole('button', { name: /Sources/ }).click();
+    await expect(page.getByRole('heading', { name: "Writer's sources" })).toBeVisible();
+    await expect(page.getByText('Writer has no sources yet.')).toBeVisible();
+    await sidebar.getByRole('button', { name: 'Open Career' }).click();
 
     await sidebar.getByRole('button', { name: 'Open Writer' }).click();
     await page.locator('nav').getByRole('button', { name: /Publishing/ }).click();
@@ -394,9 +407,11 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
     await expect(sidebar.getByRole('button', { name: 'Open Blogger' })).toBeVisible();
     await expect(sidebar.getByRole('button', { name: 'Open Blogger' })).not.toContainText('Essayist');
     await expect(page.getByText('Simulated demo is configured but inactive')).toBeVisible();
-    await page.locator('nav').getByRole('button', { name: /Workspaces/ }).click();
-    await expect(page.getByRole('heading', { name: 'profile', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'project', exact: true })).toBeVisible();
+    await sidebar.getByRole('button', { name: 'Open Career' }).click();
+    await page.locator('nav').getByRole('button', { name: /Sources/ }).click();
+    await expect(page.getByText(profileRepo, { exact: true })).toBeVisible();
+    await expect(page.getByText(projectRepo, { exact: true })).toBeVisible();
+    await expect(page.getByLabel(`Note for ${profileRepo}`)).toHaveValue('My professional profile');
 
     await sidebar.getByRole('button', { name: 'Open Blogger' }).click();
     await page.locator('nav').getByRole('button', { name: /Publishing/ }).click();
@@ -424,7 +439,7 @@ test('Windows MVP critical path is usable through the Electron UI', async () => 
 });
 
 test('provider usage limits are shown inside the chat transcript', async () => {
-  const workspace = createRepo('quota-profile');
+  const workspace = createRepo('quota-profile', 'profile');
   const appDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aw-quota-appdata-'));
   const app = await electron.launch({
     args: ['.'],
@@ -445,11 +460,10 @@ test('provider usage limits are shown inside the chat transcript', async () => {
     await app.evaluate(({ dialog }, workspacePath: string) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [workspacePath] });
     }, workspace);
-    await page.locator('nav').getByRole('button', { name: /Workspaces/ }).click();
-    await page.getByLabel('Workspace name').fill('profile');
-    await page.getByLabel('Purpose').selectOption('profile');
-    await page.getByRole('button', { name: 'Choose folder and add' }).click();
-    await expect(page.getByRole('heading', { name: 'profile', exact: true })).toBeVisible();
+    await page.locator('nav').getByRole('button', { name: /Sources/ }).click();
+    await page.getByRole('button', { name: 'Choose folder…' }).click();
+    await page.getByRole('button', { name: 'Add source' }).click();
+    await expect(page.getByText(workspace, { exact: true })).toBeVisible();
     await page.locator('.settings-link').click();
     await page.getByText('Offline demo for testing').click();
     await page.getByRole('button', { name: 'Configure simulated demo' }).click();

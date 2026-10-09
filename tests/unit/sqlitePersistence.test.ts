@@ -35,16 +35,16 @@ describe('sqlite persistence', () => {
     await db.saveWorkspace({ id: 'alpha', rootPath: 'C:\\work\\alpha-lower' });
 
     await expect(db.listWorkspaces()).resolves.toEqual([
-      { id: 'Alpha', rootPath: 'C:\\work\\alpha', kind: 'project' },
-      { id: 'alpha', rootPath: 'C:\\work\\alpha-lower', kind: 'project' },
-      { id: 'zeta', rootPath: 'C:\\work\\zeta', kind: 'project' },
+      { id: 'Alpha', rootPath: 'C:\\work\\alpha', kind: 'project', note: '' },
+      { id: 'alpha', rootPath: 'C:\\work\\alpha-lower', kind: 'project', note: '' },
+      { id: 'zeta', rootPath: 'C:\\work\\zeta', kind: 'project', note: '' },
     ]);
 
     await db.selectWorkspace('zeta');
-    await expect(db.getSelectedWorkspace()).resolves.toEqual({ id: 'zeta', rootPath: 'C:\\work\\zeta', kind: 'project' });
+    await expect(db.getSelectedWorkspace()).resolves.toEqual({ id: 'zeta', rootPath: 'C:\\work\\zeta', kind: 'project', note: '' });
 
     const reopened = new SqlitePersistence(file);
-    await expect(reopened.getSelectedWorkspace()).resolves.toEqual({ id: 'zeta', rootPath: 'C:\\work\\zeta', kind: 'project' });
+    await expect(reopened.getSelectedWorkspace()).resolves.toEqual({ id: 'zeta', rootPath: 'C:\\work\\zeta', kind: 'project', note: '' });
   });
 
   it('rejects selection of an unknown workspace without clearing the current selection', async () => {
@@ -54,7 +54,7 @@ describe('sqlite persistence', () => {
     await db.selectWorkspace('known');
 
     await expect(db.selectWorkspace('missing')).rejects.toThrow('Unknown workspace: missing');
-    await expect(db.getSelectedWorkspace()).resolves.toEqual({ id: 'known', rootPath: 'C:\\work\\known', kind: 'project' });
+    await expect(db.getSelectedWorkspace()).resolves.toEqual({ id: 'known', rootPath: 'C:\\work\\known', kind: 'project', note: '' });
   });
 
   it('re-selects another workspace when removing the selected workspace', async () => {
@@ -66,8 +66,34 @@ describe('sqlite persistence', () => {
 
     await db.removeWorkspace('b');
 
-    await expect(db.getSelectedWorkspace()).resolves.toEqual({ id: 'a', rootPath: 'C:\\work\\a', kind: 'project' });
-    await expect(db.listWorkspaces()).resolves.toEqual([{ id: 'a', rootPath: 'C:\\work\\a', kind: 'project' }]);
+    await expect(db.getSelectedWorkspace()).resolves.toEqual({ id: 'a', rootPath: 'C:\\work\\a', kind: 'project', note: '' });
+    await expect(db.listWorkspaces()).resolves.toEqual([{ id: 'a', rootPath: 'C:\\work\\a', kind: 'project', note: '' }]);
+  });
+
+  it('gives each specialist its own sources and forgets assignments with the source', async () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aw-')), 'app.db');
+    const db = new SqlitePersistence(file);
+    await db.saveWorkspace({ id: 'books', rootPath: 'C:\books', note: 'Payroll and HMRC records' });
+    await db.saveWorkspace({ id: 'taksim', rootPath: 'C:\taksim' });
+    await db.saveWorkspace({ id: 'site', rootPath: 'https://taksim.dev/pricing' });
+    await db.assignSource('accountant', 'books');
+    await db.assignSource('siyo', 'taksim');
+    await db.assignSource('siyo', 'site');
+    await db.assignSource('siyo', 'books');
+    await db.assignSource('siyo', 'books');
+
+    await expect(db.listAgentSources('accountant')).resolves.toEqual([{ id: 'books', rootPath: 'C:\books', kind: 'project', note: 'Payroll and HMRC records' }]);
+    expect((await db.listAgentSources('siyo')).map((source) => source.id)).toEqual(['books', 'site', 'taksim']);
+    await expect(db.listAgentSources('career')).resolves.toEqual([]);
+
+    await db.unassignSource('siyo', 'books');
+    expect((await db.listAgentSources('siyo')).map((source) => source.id)).toEqual(['site', 'taksim']);
+    await db.setWorkspaceNote('taksim', 'Product repo');
+    expect((await db.listAgentSources('siyo')).find((source) => source.id === 'taksim')?.note).toBe('Product repo');
+
+    await db.removeWorkspace('books');
+    await expect(db.listAgentSources('accountant')).resolves.toEqual([]);
+    expect(await db.listSourceAssignments()).toEqual([{ agentId: 'siyo', workspaceId: 'site' }, { agentId: 'siyo', workspaceId: 'taksim' }]);
   });
 
   it('stores and reads endpoint settings', async () => {

@@ -4,10 +4,13 @@ import type { AgentWorkstationApi } from '../shared/api';
 const IPC_CHANNELS = {
   getDemoAudit: 'agentWorkstation:getDemoAudit',
   pickWorkspaceDirectory: 'agentWorkstation:pickWorkspaceDirectory',
-  registerWorkspace: 'agentWorkstation:registerWorkspace',
+  pickSourceFile: 'agentWorkstation:pickSourceFile',
   listWorkspaces: 'agentWorkstation:listWorkspaces',
-  selectWorkspace: 'agentWorkstation:selectWorkspace',
   removeWorkspace: 'agentWorkstation:removeWorkspace',
+  listAgentSources: 'agentWorkstation:listAgentSources',
+  addAgentSource: 'agentWorkstation:addAgentSource',
+  removeAgentSource: 'agentWorkstation:removeAgentSource',
+  setSourceNote: 'agentWorkstation:setSourceNote',
   listWorkspaceEntries: 'agentWorkstation:listWorkspaceEntries',
   readWorkspaceFile: 'agentWorkstation:readWorkspaceFile',
   getEndpointConfig: 'agentWorkstation:getEndpointConfig',
@@ -82,10 +85,14 @@ declare global {
 const api: AgentWorkstationApi = {
   getDemoAudit: async () => ipcRenderer.invoke(IPC_CHANNELS.getDemoAudit),
   pickWorkspaceDirectory: async () => ipcRenderer.invoke(IPC_CHANNELS.pickWorkspaceDirectory),
-  registerWorkspace: async (input) => ipcRenderer.invoke(IPC_CHANNELS.registerWorkspace, input),
+  pickSourceFile: async () => ipcRenderer.invoke(IPC_CHANNELS.pickSourceFile),
   listWorkspaces: async () => ipcRenderer.invoke(IPC_CHANNELS.listWorkspaces),
-  selectWorkspace: async (id) => ipcRenderer.invoke(IPC_CHANNELS.selectWorkspace, { id }),
   removeWorkspace: async (id) => ipcRenderer.invoke(IPC_CHANNELS.removeWorkspace, { id }),
+  listAgentSources: async (agentId) => ipcRenderer.invoke(IPC_CHANNELS.listAgentSources, { agentId }),
+  addAgentSource: async (agentId, location, note) =>
+    ipcRenderer.invoke(IPC_CHANNELS.addAgentSource, { agentId, location, ...(note ? { note } : {}) }),
+  removeAgentSource: async (agentId, sourceId) => ipcRenderer.invoke(IPC_CHANNELS.removeAgentSource, { agentId, sourceId }),
+  setSourceNote: async (sourceId, note) => ipcRenderer.invoke(IPC_CHANNELS.setSourceNote, { sourceId, note }),
   listWorkspaceEntries: async (workspaceId, relativePath) =>
     ipcRenderer.invoke(IPC_CHANNELS.listWorkspaceEntries, { workspaceId, relativePath }),
   readWorkspaceFile: async (workspaceId, relativePath) =>

@@ -109,6 +109,18 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
       )
     `);
     this.db.exec('create unique index if not exists one_selected_workspace on workspace_registrations(selected) where selected = 1');
+    const workspaceColumns = this.db.prepare('pragma table_info(workspace_registrations)').all() as Array<{ name: string }>;
+    if (!workspaceColumns.some((column) => column.name === 'note')) {
+      this.db.exec("alter table workspace_registrations add column note text not null default ''");
+    }
+    // Each specialist works only with the sources assigned to it.
+    this.db.exec(`
+      create table if not exists agent_sources (
+        agentId text not null,
+        workspaceId text not null references workspace_registrations(id) on delete cascade,
+        primary key (agentId, workspaceId)
+      )
+    `);
     this.db.exec('create table if not exists app_settings (key text primary key, value text not null)');
     this.db.exec(`
       create table if not exists chat_sessions (
@@ -228,23 +240,51 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
 
   async saveWorkspace(workspace: WorkspaceRegistration): Promise<void> {
     this.db.prepare(`
-      insert into workspace_registrations (id, rootPath, kind)
-      values (?, ?, ?)
+      insert into workspace_registrations (id, rootPath, kind, note)
+      values (?, ?, ?, ?)
       on conflict(id) do update set
         rootPath = excluded.rootPath,
-        kind = excluded.kind
-    `).run(workspace.id, workspace.rootPath, workspace.kind ?? 'project');
+        kind = excluded.kind,
+        note = excluded.note
+    `).run(workspace.id, workspace.rootPath, workspace.kind ?? 'project', workspace.note ?? '');
   }
 
   async getWorkspace(id: string): Promise<WorkspaceRegistration | null> {
-    const row = this.db.prepare('select id, rootPath, kind from workspace_registrations where id = ?')
+    const row = this.db.prepare('select id, rootPath, kind, note from workspace_registrations where id = ?')
       .get(id) as WorkspaceRegistration | undefined;
     return row ?? null;
   }
 
   async listWorkspaces(): Promise<WorkspaceRegistration[]> {
-    return this.db.prepare('select id, rootPath, kind from workspace_registrations order by lower(id), id')
+    return this.db.prepare('select id, rootPath, kind, note from workspace_registrations order by lower(id), id')
       .all() as WorkspaceRegistration[];
+  }
+
+  async setWorkspaceNote(id: string, note: string): Promise<void> {
+    this.db.prepare('update workspace_registrations set note = ? where id = ?').run(note, id);
+  }
+
+  /** The sources assigned to one specialist. */
+  async listAgentSources(agentId: string): Promise<WorkspaceRegistration[]> {
+    return this.db.prepare(`
+      select w.id, w.rootPath, w.kind, w.note
+      from agent_sources a join workspace_registrations w on w.id = a.workspaceId
+      where a.agentId = ?
+      order by lower(w.id), w.id
+    `).all(agentId) as WorkspaceRegistration[];
+  }
+
+  async listSourceAssignments(): Promise<Array<{ agentId: string; workspaceId: string }>> {
+    return this.db.prepare('select agentId, workspaceId from agent_sources order by agentId, workspaceId')
+      .all() as Array<{ agentId: string; workspaceId: string }>;
+  }
+
+  async assignSource(agentId: string, workspaceId: string): Promise<void> {
+    this.db.prepare('insert or ignore into agent_sources (agentId, workspaceId) values (?, ?)').run(agentId, workspaceId);
+  }
+
+  async unassignSource(agentId: string, workspaceId: string): Promise<void> {
+    this.db.prepare('delete from agent_sources where agentId = ? and workspaceId = ?').run(agentId, workspaceId);
   }
 
   async selectWorkspace(id: string): Promise<void> {
@@ -258,7 +298,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
   }
 
   async getSelectedWorkspace(): Promise<WorkspaceRegistration | null> {
-    const row = this.db.prepare('select id, rootPath, kind from workspace_registrations where selected = 1')
+    const row = this.db.prepare('select id, rootPath, kind, note from workspace_registrations where selected = 1')
       .get() as WorkspaceRegistration | undefined;
     return row ?? null;
   }
@@ -268,6 +308,7 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
       const selectedRow = this.db.prepare('select selected from workspace_registrations where id = ?')
         .get(workspaceId) as { selected: number } | undefined;
       if (!selectedRow) return;
+      this.db.prepare('delete from agent_sources where workspaceId = ?').run(workspaceId);
       this.db.prepare('delete from workspace_registrations where id = ?').run(workspaceId);
       if (selectedRow.selected === 1) {
         const replacement = this.db.prepare('select id from workspace_registrations order by lower(id), id limit 1')

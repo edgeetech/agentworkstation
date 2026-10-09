@@ -40,8 +40,22 @@ export type ProposalTally = {
 export type WorkspaceRecord = {
   id: string;
   rootPath: string;
-  kind: 'profile' | 'project' | 'cv';
-  selected: boolean;
+  note: string;
+};
+
+/** A folder, file, or web page the owner gave to one or more specialists. */
+export type AgentSource = {
+  id: string;
+  location: string;
+  note: string;
+  kind: 'folder' | 'file' | 'web' | 'missing';
+};
+
+export type AgentSourceList = {
+  /** Sources this specialist may use. */
+  assigned: AgentSource[];
+  /** Registered sources no specialist uses yet. */
+  unassigned: AgentSource[];
 };
 
 export type EndpointConfig = {
@@ -362,10 +376,15 @@ export type ChatActivity = { requestId: string } & (
 export type AgentWorkstationApi = {
   getDemoAudit: () => Promise<DemoAudit>;
   pickWorkspaceDirectory: () => Promise<string | null>;
-  registerWorkspace: (input: { id: string; rootPath: string; kind: 'profile' | 'project' | 'cv' }) => Promise<void>;
+  pickSourceFile: () => Promise<string | null>;
   listWorkspaces: () => Promise<WorkspaceRecord[]>;
-  selectWorkspace: (id: string) => Promise<void>;
+  /** Forgets an unassigned source entirely. Files are never deleted. */
   removeWorkspace: (id: string) => Promise<void>;
+  listAgentSources: (agentId: string) => Promise<AgentSourceList>;
+  /** A path becomes a local source and an http(s) URL a web source. */
+  addAgentSource: (agentId: string, location: string, note?: string) => Promise<AgentSourceList>;
+  removeAgentSource: (agentId: string, sourceId: string) => Promise<AgentSourceList>;
+  setSourceNote: (sourceId: string, note: string) => Promise<void>;
   listWorkspaceEntries: (workspaceId: string, relativePath: string) => Promise<WorkspaceEntry[]>;
   readWorkspaceFile: (workspaceId: string, relativePath: string) => Promise<WorkspaceFilePreview>;
   getEndpointConfig: () => Promise<EndpointConfig>;

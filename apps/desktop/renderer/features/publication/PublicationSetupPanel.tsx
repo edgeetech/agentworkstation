@@ -110,7 +110,7 @@ export function PublicationSetupPanel({ api, workspaces, onError, onNotice }: Pr
   const applySetup = useCallback((next: PublicationSetup): void => {
     setSetup(next);
     setDisplayDomain(next.siteTarget?.displayDomain ?? "");
-    setWorkspaceId(next.siteTarget?.workspaceId ?? workspaces.find((item) => item.selected)?.id ?? workspaces[0]?.id ?? "");
+    setWorkspaceId(next.siteTarget?.workspaceId ?? workspaces[0]?.id ?? "");
     setContentDirectory(next.siteTarget?.contentDirectory ?? "src/content/writing");
     setPublishBranch(next.siteTarget?.publishBranch ?? "main");
     setApprovedAssetDirectories(next.siteTarget?.approvedAssetDirectories?.join("\n") ?? "");

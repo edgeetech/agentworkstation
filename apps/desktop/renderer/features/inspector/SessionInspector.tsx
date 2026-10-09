@@ -106,7 +106,7 @@ export function SessionInspector({
       >
         {tab === 'files' ? (
           <FilesPanel
-            workspaceId={requestedFile?.workspaceId ?? session.workspaceId}
+            workspaceId={requestedFile?.workspaceId ?? workspace?.id ?? null}
             listEntries={listEntries}
             readFile={readFile}
             requestedFile={requestedFile?.relativePath}
