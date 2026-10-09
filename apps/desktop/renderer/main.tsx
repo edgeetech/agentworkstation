@@ -32,6 +32,7 @@ import { ChatView, type FailedChat, type PendingChat } from "./features/chat/Cha
 import { CommandPalette, type PaletteItem } from "./features/shell/CommandPalette";
 import { CustomAgentWizard } from "./features/agents/CustomAgentWizard";
 import { AgentProfileDialog } from "./features/agents/AgentProfileDialog";
+import { InstructionsDialog } from "./features/agents/InstructionsDialog";
 import { SourcesPage } from "./features/sources/SourcesPage";
 import { ConnectPanel } from "./features/intelligence/ConnectPanel";
 import { Icon } from "./features/shell/icons";
@@ -505,6 +506,8 @@ function App(): JSX.Element {
   };
 
   const [profileAgentId, setProfileAgentId] = useState<string | null>(null);
+  const [instructionsAgentId, setInstructionsAgentId] = useState<string | null>(null);
+  const instructionsAgent = agents.find((agent) => agent.id === instructionsAgentId) ?? null;
   const profileAgent = agents.find((agent) => agent.id === profileAgentId) ?? null;
   const saveAgentProfile = async (agentId: string, profile: { displayName: string | null; tagline: string | null }): Promise<void> => {
     const saved = await api.saveAgentProfile(agentId, profile);
@@ -1760,7 +1763,20 @@ function App(): JSX.Element {
           agent={profileAgent}
           onSave={(profile) => saveAgentProfile(profileAgent.id, profile)}
           onClose={() => setProfileAgentId(null)}
-          {...(profileAgent.custom ? { onEditInstructions: () => { setProfileAgentId(null); editAgent(profileAgent.id); } } : {})}
+          onEditInstructions={() => {
+            setProfileAgentId(null);
+            if (profileAgent.custom) editAgent(profileAgent.id);
+            else setInstructionsAgentId(profileAgent.id);
+          }}
+        />
+      ) : null}
+      {instructionsAgent ? (
+        <InstructionsDialog
+          key={instructionsAgent.id}
+          api={api}
+          agent={instructionsAgent}
+          onClose={() => setInstructionsAgentId(null)}
+          onSaved={setNotice}
         />
       ) : null}
       {agentWizard ? (

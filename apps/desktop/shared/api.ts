@@ -51,6 +51,16 @@ export type AgentSource = {
   kind: 'folder' | 'file' | 'web' | 'missing';
 };
 
+/** A shipped specialist's instructions as the owner sees and edits them. */
+export type BuiltInInstructions = {
+  instructions: string;
+  rules: string;
+  /** The packaged text, for comparison and reset. */
+  original: { instructions: string; rules: string };
+  /** True when the owner's version replaces the packaged one. */
+  edited: boolean;
+};
+
 export type AgentSourceList = {
   /** Sources this specialist may use. */
   assigned: AgentSource[];
@@ -385,6 +395,10 @@ export type AgentWorkstationApi = {
   addAgentSource: (agentId: string, location: string, note?: string) => Promise<AgentSourceList>;
   removeAgentSource: (agentId: string, sourceId: string) => Promise<AgentSourceList>;
   setSourceNote: (sourceId: string, note: string) => Promise<void>;
+  getBuiltInInstructions: (agentId: string) => Promise<BuiltInInstructions>;
+  saveBuiltInInstructions: (agentId: string, instructions: string, rules: string) => Promise<BuiltInInstructions>;
+  /** Drops the owner's version so the packaged instructions apply again. */
+  resetBuiltInInstructions: (agentId: string) => Promise<BuiltInInstructions>;
   listWorkspaceEntries: (workspaceId: string, relativePath: string) => Promise<WorkspaceEntry[]>;
   readWorkspaceFile: (workspaceId: string, relativePath: string) => Promise<WorkspaceFilePreview>;
   getEndpointConfig: () => Promise<EndpointConfig>;

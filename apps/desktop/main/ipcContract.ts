@@ -22,6 +22,9 @@ export const IPC_CHANNELS = {
   getCustomAgentSetup: 'agentWorkstation:getCustomAgentSetup',
   draftCustomAgent: 'agentWorkstation:draftCustomAgent',
   getCustomAgent: 'agentWorkstation:getCustomAgent',
+  getBuiltInInstructions: 'agentWorkstation:getBuiltInInstructions',
+  saveBuiltInInstructions: 'agentWorkstation:saveBuiltInInstructions',
+  resetBuiltInInstructions: 'agentWorkstation:resetBuiltInInstructions',
   createCustomAgent: 'agentWorkstation:createCustomAgent',
   updateCustomAgent: 'agentWorkstation:updateCustomAgent',
   deleteCustomAgent: 'agentWorkstation:deleteCustomAgent',
@@ -337,6 +340,16 @@ export function parseAgentSourceInput(value: unknown): { agentId: string; source
 
 export function parseSetSourceNoteInput(value: unknown): { sourceId: string; note: string } {
   return setSourceNoteSchema.parse(value);
+}
+
+const builtInInstructionsSchema = z.object({
+  agentId: agentIdSchema,
+  instructions: z.string().trim().min(1).max(64 * 1024),
+  rules: z.string().max(64 * 1024),
+}).strict();
+
+export function parseSaveBuiltInInstructionsInput(value: unknown): { agentId: string; instructions: string; rules: string } {
+  return builtInInstructionsSchema.parse(value);
 }
 
 export function parseListAgentSourcesInput(value: unknown): { agentId: string } {

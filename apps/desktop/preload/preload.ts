@@ -23,6 +23,9 @@ const IPC_CHANNELS = {
   getCustomAgentSetup: 'agentWorkstation:getCustomAgentSetup',
   draftCustomAgent: 'agentWorkstation:draftCustomAgent',
   getCustomAgent: 'agentWorkstation:getCustomAgent',
+  getBuiltInInstructions: 'agentWorkstation:getBuiltInInstructions',
+  saveBuiltInInstructions: 'agentWorkstation:saveBuiltInInstructions',
+  resetBuiltInInstructions: 'agentWorkstation:resetBuiltInInstructions',
   createCustomAgent: 'agentWorkstation:createCustomAgent',
   updateCustomAgent: 'agentWorkstation:updateCustomAgent',
   deleteCustomAgent: 'agentWorkstation:deleteCustomAgent',
@@ -93,6 +96,10 @@ const api: AgentWorkstationApi = {
     ipcRenderer.invoke(IPC_CHANNELS.addAgentSource, { agentId, location, ...(note ? { note } : {}) }),
   removeAgentSource: async (agentId, sourceId) => ipcRenderer.invoke(IPC_CHANNELS.removeAgentSource, { agentId, sourceId }),
   setSourceNote: async (sourceId, note) => ipcRenderer.invoke(IPC_CHANNELS.setSourceNote, { sourceId, note }),
+  getBuiltInInstructions: async (agentId) => ipcRenderer.invoke(IPC_CHANNELS.getBuiltInInstructions, { agentId }),
+  saveBuiltInInstructions: async (agentId, instructions, rules) =>
+    ipcRenderer.invoke(IPC_CHANNELS.saveBuiltInInstructions, { agentId, instructions, rules }),
+  resetBuiltInInstructions: async (agentId) => ipcRenderer.invoke(IPC_CHANNELS.resetBuiltInInstructions, { agentId }),
   listWorkspaceEntries: async (workspaceId, relativePath) =>
     ipcRenderer.invoke(IPC_CHANNELS.listWorkspaceEntries, { workspaceId, relativePath }),
   readWorkspaceFile: async (workspaceId, relativePath) =>

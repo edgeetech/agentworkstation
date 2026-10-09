@@ -32,17 +32,24 @@ const agentConfigSchema = z.object({
   intelligence: z.array(z.string().min(1)).optional(),
 });
 
+/** The instruction files an owner may rewrite for a shipped specialist. */
+export const EDITABLE_INSTRUCTION_FILES = ['AGENT.md', 'RULES.md'] as const;
+
 export class FileSystemAgentDefinitionSource implements AgentDefinitionSource {
   private readonly root: string;
 
-  constructor(agentDirectory: string) {
+  /**
+   * @param overrideDirectory the owner's rewritten instruction files for a shipped
+   *   specialist; an editable file found there replaces the packaged one.
+   */
+  constructor(agentDirectory: string, private readonly overrideDirectory?: string) {
     this.root = fs.realpathSync(agentDirectory);
   }
 
   load(): AgentDefinitionMaterials {
     const configFile = this.readFile('agent.yaml');
     const config = agentConfigSchema.parse(parse(configFile.content));
-    const instructions = config.instructions.map((relativePath) => this.readFile(relativePath));
+    const instructions = config.instructions.map((relativePath) => this.readInstruction(relativePath));
     const workflows = config.workflows.map((relativePath) => this.readFile(relativePath));
     const memory = config.memory ? this.readDirectory(config.memory.directory) : [];
 
@@ -66,6 +73,16 @@ export class FileSystemAgentDefinitionSource implements AgentDefinitionSource {
       .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
       .map((entry) => this.readFile(path.posix.join(relativeDirectory.replaceAll('\\', '/'), entry.name)))
       .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  }
+
+  private readInstruction(relativePath: string): AgentContentFile {
+    if (this.overrideDirectory && (EDITABLE_INSTRUCTION_FILES as readonly string[]).includes(relativePath)) {
+      const overridePath = path.join(this.overrideDirectory, relativePath);
+      if (fs.existsSync(overridePath) && fs.statSync(overridePath).isFile()) {
+        return { relativePath, content: fs.readFileSync(overridePath, 'utf8') };
+      }
+    }
+    return this.readFile(relativePath);
   }
 
   private readFile(relativePath: string): AgentContentFile {
