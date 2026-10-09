@@ -3,6 +3,8 @@ import type { WorkspaceGateway } from '../../src/application/ports';
 import {
   buildWorkspaceAccessInstructions,
   isProfileSource,
+  localRoots,
+  sameSourceLocation,
   sourceIdFor,
   sourceKind,
   WorkspaceService,
@@ -61,6 +63,18 @@ describe('WorkspaceService', () => {
     expect(instructions).toContain('Local sources (32 of 40)');
     expect(instructions.indexOf('workspace-39')).toBeLessThan(instructions.indexOf('workspace-0'));
     expect(new TextEncoder().encode(instructions).byteLength).toBeLessThan(10 * 1024);
+  });
+
+  it('keeps web sources out of filesystem roots and matches duplicate locations safely', () => {
+    expect(localRoots([
+      { id: 'books', rootPath: 'C:/books' },
+      { id: 'pricing', rootPath: 'https://taksim.dev/pricing' },
+    ])).toEqual({ books: 'C:/books' });
+    expect(sameSourceLocation('C:/Books/', 'c:/books')).toBe(true);
+    expect(sameSourceLocation(String.raw`C:\Users\me\Books\\`, 'c:/users/me/books')).toBe(true);
+    expect(sameSourceLocation('https://taksim.dev/Pricing', 'https://taksim.dev/pricing')).toBe(false);
+    expect(sameSourceLocation('https://taksim.dev/pricing', 'https://taksim.dev/pricing')).toBe(true);
+    expect(sameSourceLocation('C:/books', 'https://books')).toBe(false);
   });
 
   it('derives readable unique source IDs and spots CV or profile sources from their notes', () => {

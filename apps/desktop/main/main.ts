@@ -32,6 +32,8 @@ import { AgentPolicyGate, ToolExecutor, ToolRegistry } from '../../../src/applic
 import {
   buildWorkspaceAccessInstructions,
   isProfileSource,
+  localRoots,
+  sameSourceLocation,
   sourceIdFor,
   sourceKind,
   type WorkspaceRegistration,
@@ -468,9 +470,7 @@ async function getPublicationCandidates() {
   if (!workspaces.some((workspace) => workspace.id === target.workspaceId)) {
     throw new Error('The configured publication workspace is no longer registered');
   }
-  const gateway = new DefaultWorkspaceGateway(
-    Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace.rootPath])),
-  );
+  const gateway = new DefaultWorkspaceGateway(localRoots(workspaces));
   return discoverPublicationCandidates({
     actions: await db.listPendingActions(),
     sessions: await db.listChatSessions(),
@@ -638,7 +638,7 @@ async function assignLegacySourcesOnce(): Promise<void> {
   const marker = 'sources.assignedToSpecialists';
   if (await db.getSetting(marker)) return;
   const registrations = await db.listWorkspaces();
-  if (registrations.length > 0 && (await db.listSourceAssignments()).length === 0) {
+  if (registrations.length > 0) {
     const evidence = new Map<string, string[]>();
     for (const agent of getAgentCatalog().list()) evidence.set(agent.id, await db.listAgentSourceReferences(agent.id));
     for (const assignment of planLegacySourceAssignments(evidence, registrations, isProfileSource)) {
@@ -653,8 +653,11 @@ async function normalizeSourceLocation(location: string): Promise<string> {
   const trimmed = location.trim().replace(/^"(.*)"$/, '$1');
   if (sourceKind(trimmed) === 'web') {
     const url = new URL(trimmed);
+    // The address goes into the specialist's instructions, so it must not carry a login.
+    if (url.username || url.password) throw new Error('Remove the user name and password from the web address');
     return url.toString();
   }
+  if (/^[\\/]{2}/.test(trimmed)) throw new Error('Network share paths are not supported; copy the files to a local folder');
   if (!isAbsolute(trimmed)) throw new Error('Give a full folder or file path, or a web address starting with https://');
   try {
     await fsPromises.stat(trimmed);
@@ -697,7 +700,7 @@ async function ensureWorkspaceSelection(preferredWorkspaceId?: string | null): P
     ?? workspaces[0];
   if (!selected) throw new Error('No workspace configured');
   const all = await db.listWorkspaces();
-  const roots = Object.fromEntries(all.map((workspace) => [workspace.id, workspace.rootPath]));
+  const roots = localRoots(all);
   return { selectedWorkspaceId: selected.id, registrations: all, gateway: new DefaultWorkspaceGateway(roots) };
 }
 
@@ -1411,7 +1414,6 @@ async function prepareChatMessage(
           targetId,
           question,
           memoryRefs,
-          workspaceId: selectedWorkspace?.id,
         }, consultSignal),
       }));
     }
@@ -1533,7 +1535,6 @@ async function consultSpecialist(input: {
   targetId: string;
   question: string;
   memoryRefs: string[];
-  workspaceId: string | undefined;
 }, signal: AbortSignal): Promise<ConsultationAnswer> {
   const catalog = getAgentCatalog();
   const target = catalog.get(input.targetId);
@@ -1657,9 +1658,12 @@ async function runCareerAudit(): Promise<{
   const endpoint = await getEndpointConfig();
   await assertEndpointWorkflowCompatible(endpoint);
   const careerSources = (await specialistSources('career'));
-  if (!careerSources.gateway) throw new Error('Career audit needs at least one folder on the Career Sources page.');
+  if (!careerSources.gateway) {
+    throw new Error('Career audit needs a folder. Add one on the Career Sources page, or give it one of the unassigned sources listed there.');
+  }
   const workspaceContext = { gateway: careerSources.gateway };
-  const approvalContext = await approvals();
+  // Proposing a write reads the current file, so it must not reach other specialists' sources.
+  const approvalContext = { service: new ApprovalService(getPersistence(), careerSources.gateway) };
   const db = getPersistence();
   const chatSession = await ensureChatSession();
 
@@ -1899,7 +1903,7 @@ function registerIpcHandlers(): void {
     const db = getPersistence();
     const normalized = await normalizeSourceLocation(location);
     const registrations = await db.listWorkspaces();
-    const existing = registrations.find((workspace) => workspace.rootPath.toLowerCase() === normalized.toLowerCase());
+    const existing = registrations.find((workspace) => sameSourceLocation(workspace.rootPath, normalized));
     const id = existing?.id ?? sourceIdFor(normalized, registrations.map((workspace) => workspace.id));
     if (!existing) await db.saveWorkspace({ id, rootPath: normalized, kind: 'project', note: note ?? '' });
     else if (note !== undefined && note !== (existing.note ?? '')) await db.setWorkspaceNote(id, note);
@@ -2084,19 +2088,13 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.listWorkspaceEntries, async (_event, payload: unknown) => {
     const { workspaceId, relativePath } = parseWorkspacePathInput(payload);
-    const registrations = await getPersistence().listWorkspaces();
-    const gateway = new DefaultWorkspaceGateway(
-      Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])),
-    );
+    const gateway = new DefaultWorkspaceGateway(localRoots(await getPersistence().listWorkspaces()));
     return gateway.listDirectoryEntries(workspaceId, relativePath);
   });
 
   ipcMain.handle(IPC_CHANNELS.readWorkspaceFile, async (_event, payload: unknown) => {
     const { workspaceId, relativePath } = parseWorkspacePathInput(payload);
-    const registrations = await getPersistence().listWorkspaces();
-    const gateway = new DefaultWorkspaceGateway(
-      Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])),
-    );
+    const gateway = new DefaultWorkspaceGateway(localRoots(await getPersistence().listWorkspaces()));
     const result = await gateway.readFile(workspaceId, relativePath);
     const maximumPreviewBytes = 64 * 1024;
     const encoded = Buffer.from(result.content, 'utf8');

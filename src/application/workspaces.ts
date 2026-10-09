@@ -16,6 +16,21 @@ export function sourceKind(location: string): SourceKind {
   return /^https?:\/\//i.test(location.trim()) ? 'web' : 'local';
 }
 
+/** Filesystem roots for the local sources only; web sources are never paths. */
+export function localRoots(registrations: readonly WorkspaceRegistration[]): Record<string, string> {
+  return Object.fromEntries(registrations
+    .filter((workspace) => sourceKind(workspace.rootPath) === 'local')
+    .map((workspace) => [workspace.id, workspace.rootPath]));
+}
+
+/** Same source? Local paths compare case-insensitively, ignoring slash style and a trailing slash; URLs compare exactly. */
+export function sameSourceLocation(left: string, right: string): boolean {
+  if (sourceKind(left) !== sourceKind(right)) return false;
+  if (sourceKind(left) === 'web') return left === right;
+  const normalize = (value: string): string => value.trim().replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase();
+  return normalize(left) === normalize(right);
+}
+
 /** A source the owner described as a CV or professional profile, which the Career audit reads as such. */
 export function isProfileSource(workspace: WorkspaceRegistration): boolean {
   return workspace.kind === 'profile' || workspace.kind === 'cv'
