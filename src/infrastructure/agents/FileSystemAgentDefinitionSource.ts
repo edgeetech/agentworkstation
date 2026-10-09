@@ -78,8 +78,12 @@ export class FileSystemAgentDefinitionSource implements AgentDefinitionSource {
   private readInstruction(relativePath: string): AgentContentFile {
     if (this.overrideDirectory && (EDITABLE_INSTRUCTION_FILES as readonly string[]).includes(relativePath)) {
       const overridePath = path.join(this.overrideDirectory, relativePath);
-      if (fs.existsSync(overridePath) && fs.statSync(overridePath).isFile()) {
-        return { relativePath, content: fs.readFileSync(overridePath, 'utf8') };
+      try {
+        if (fs.existsSync(overridePath) && fs.statSync(overridePath).isFile()) {
+          return { relativePath, content: fs.readFileSync(overridePath, 'utf8') };
+        }
+      } catch {
+        // An unreadable override must not hide the specialist; the packaged text applies.
       }
     }
     return this.readFile(relativePath);

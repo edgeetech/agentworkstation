@@ -525,6 +525,11 @@ function getAgentCatalog(): FileSystemAgentCatalog {
   return new FileSystemAgentCatalog(getAgentsDirectory(), undefined, getCustomAgentsDirectory(), getAgentOverridesDirectory());
 }
 
+/** A text box always reports LF line endings, while packaged files may use CRLF. */
+function normalizeLineEndings(text: string): string {
+  return text.replace(/\r\n/g, '\n');
+}
+
 /** Reads a shipped specialist's packaged and owner-edited instructions. */
 async function readBuiltInInstructions(agentId: string): Promise<BuiltInInstructions> {
   const catalog = getAgentCatalog();
@@ -533,7 +538,7 @@ async function readBuiltInInstructions(agentId: string): Promise<BuiltInInstruct
   const overrides = catalog.overrideDirectoryFor(packaged) as string;
   const read = async (directory: string, file: string): Promise<string | null> => {
     try {
-      return await fsPromises.readFile(join(directory, file), 'utf8');
+      return normalizeLineEndings(await fsPromises.readFile(join(directory, file), 'utf8'));
     } catch {
       return null;
     }
@@ -2180,7 +2185,7 @@ function registerIpcHandlers(): void {
       ['RULES.md', rules, current.original.rules],
     ] as const) {
       const target = join(overrides, file);
-      if (text === original) await fsPromises.rm(target, { force: true });
+      if (normalizeLineEndings(text) === original) await fsPromises.rm(target, { force: true });
       else await fsPromises.writeFile(target, text, 'utf8');
     }
     return readBuiltInInstructions(agentId);

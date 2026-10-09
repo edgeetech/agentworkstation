@@ -70,11 +70,11 @@ export function InstructionsDialog({
         <div className="agent-wizard-body">
           <label>
             <span>{t('instructions.instructions')}</span>
-            <textarea className="mono" rows={14} value={instructions} onChange={(event) => setInstructions(event.target.value)} disabled={!loaded} />
+            <textarea className="mono" rows={14} maxLength={65536} value={instructions} onChange={(event) => setInstructions(event.target.value)} disabled={!loaded} />
           </label>
           <label>
             <span>{t('instructions.rules')}</span>
-            <textarea className="mono" rows={8} value={rules} onChange={(event) => setRules(event.target.value)} disabled={!loaded} />
+            <textarea className="mono" rows={8} maxLength={65536} value={rules} onChange={(event) => setRules(event.target.value)} disabled={!loaded} />
             <small>{t('instructions.help')}</small>
           </label>
           {error ? <div className="agent-wizard-error" role="alert">{error}</div> : null}

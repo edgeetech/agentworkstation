@@ -344,7 +344,8 @@ export function parseSetSourceNoteInput(value: unknown): { sourceId: string; not
 
 const builtInInstructionsSchema = z.object({
   agentId: agentIdSchema,
-  instructions: z.string().trim().min(1).max(64 * 1024),
+  // Kept exactly as typed: trimming would make an unchanged file look edited.
+  instructions: z.string().max(64 * 1024).refine((value) => value.trim().length > 0, 'Instructions cannot be empty'),
   rules: z.string().max(64 * 1024),
 }).strict();
 
