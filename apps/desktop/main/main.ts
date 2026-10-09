@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme,
 import { autoUpdater } from 'electron-updater';
 import { randomUUID } from 'node:crypto';
 import { promises as fsPromises } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { wireUpdateNotifications } from '../../../src/infrastructure/updates/updateNotifier';
 import { EditableAgentMemoryStore } from '../../../src/infrastructure/persistence/EditableAgentMemoryStore';
 import { createSharedPathReadTool } from '../../../src/infrastructure/filesystem/sharedPathReadTool';
@@ -19,6 +19,7 @@ import {
   buildUserKnowledgeMemory,
   createRememberTool,
   groundingCheckMessage,
+  planLegacySourceAssignments,
   summarizeAgentFolders,
 } from '../../../src/application/agents/userKnowledge';
 import { ContextBuilder } from '../../../src/application/context';
@@ -28,7 +29,15 @@ import { AgentOnboardingService, isReplyToOnboarding, renderOnboardingStep } fro
 import { AgentDisplayNameService } from '../../../src/application/agents/AgentDisplayNameService';
 import { AdaptiveRoutingIntelligenceAdapter, type RoutingAttempt } from '../../../src/application/intelligenceRouting';
 import { AgentPolicyGate, ToolExecutor, ToolRegistry } from '../../../src/application/tools';
-import { buildWorkspaceAccessInstructions, type WorkspaceRegistration } from '../../../src/application/workspaces';
+import {
+  buildWorkspaceAccessInstructions,
+  isProfileSource,
+  localRoots,
+  sameSourceLocation,
+  sourceIdFor,
+  sourceKind,
+  type WorkspaceRegistration,
+} from '../../../src/application/workspaces';
 import type {
   ExecutionMode,
   IntelligencePort,
@@ -108,7 +117,10 @@ import {
   parseStartPublicationInput,
   parseStartPublicationCandidateInput,
   parseProposeProfileUpdateInput,
-  parseRegisterWorkspaceInput,
+  parseAddAgentSourceInput,
+  parseAgentSourceInput,
+  parseListAgentSourcesInput,
+  parseSetSourceNoteInput,
   parseWorkspacePathInput,
   parseRenameChatSessionInput,
   parseSetChatSessionModeInput,
@@ -122,7 +134,7 @@ import {
   releaseChatRequest,
 } from './ipcContract';
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
-import type { AgentSummary, ChatPause, CustomAgentDraft, CustomAgentSetup, IntelligenceOption, PublicationSetup, ReminderSettings } from '../shared/api';
+import type { AgentSource, AgentSourceList, AgentSummary, ChatPause, CustomAgentDraft, CustomAgentSetup, IntelligenceOption, PublicationSetup, ReminderSettings } from '../shared/api';
 import { discoverOllamaModels, inspectOllamaModel, isOllamaCloudModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
 import { buildApprovalRecord, buildModelTurnRecord, classifyErrorKind } from '../../../src/application/usage/usageLedger';
 import { JsonlUsageLedger, hashSessionKey } from '../../../src/infrastructure/usage/JsonlUsageLedger';
@@ -458,9 +470,7 @@ async function getPublicationCandidates() {
   if (!workspaces.some((workspace) => workspace.id === target.workspaceId)) {
     throw new Error('The configured publication workspace is no longer registered');
   }
-  const gateway = new DefaultWorkspaceGateway(
-    Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace.rootPath])),
-  );
+  const gateway = new DefaultWorkspaceGateway(localRoots(workspaces));
   return discoverPublicationCandidates({
     actions: await db.listPendingActions(),
     sessions: await db.listChatSessions(),
@@ -602,6 +612,76 @@ async function persistInitialOnboardingPrompt(chatSession: ChatSession): Promise
   });
 }
 
+/** A specialist's own sources, and a gateway that reaches only its local ones. */
+async function specialistSources(agentId: string): Promise<{
+  sources: WorkspaceRegistration[];
+  primaryId: string | undefined;
+  gateway: DefaultWorkspaceGateway | undefined;
+}> {
+  const sources = await getPersistence().listAgentSources(agentId);
+  const local = sources.filter((source) => sourceKind(source.rootPath) === 'local');
+  return {
+    sources,
+    primaryId: local[0]?.id,
+    gateway: local.length > 0 ? new DefaultWorkspaceGateway(Object.fromEntries(local.map((source) => [source.id, source.rootPath]))) : undefined,
+  };
+}
+
+/**
+ * Sources used to be shared by every specialist. The first run of this version gives each
+ * specialist the folders its earlier answers drew evidence from (Career also keeps the
+ * folders marked as profile or CV). Folders no specialist used stay registered but
+ * unassigned, so nobody loses anything and the owner can assign them.
+ */
+async function assignLegacySourcesOnce(): Promise<void> {
+  const db = getPersistence();
+  const marker = 'sources.assignedToSpecialists';
+  if (await db.getSetting(marker)) return;
+  const registrations = await db.listWorkspaces();
+  const evidence = new Map<string, string[]>();
+  for (const agent of getAgentCatalog().list()) evidence.set(agent.id, await db.listAgentSourceReferences(agent.id));
+  await db.assignSourcesOnce(marker, planLegacySourceAssignments(evidence, registrations, isProfileSource));
+}
+
+/** Checks a new source: an http(s) URL as given, or an existing local folder or file as an absolute path. */
+async function normalizeSourceLocation(location: string): Promise<string> {
+  const trimmed = location.trim().replace(/^"(.*)"$/, '$1');
+  if (sourceKind(trimmed) === 'web') {
+    const url = new URL(trimmed);
+    // The address goes into the specialist's instructions, so it must not carry a login.
+    if (url.username || url.password) throw new Error('Remove the user name and password from the web address');
+    return url.toString();
+  }
+  if (/^[\\/]{2}/.test(trimmed)) throw new Error('Network share paths are not supported; copy the files to a local folder');
+  if (!isAbsolute(trimmed)) throw new Error('Give a full folder or file path, or a web address starting with https://');
+  try {
+    await fsPromises.stat(trimmed);
+  } catch {
+    throw new Error(`Nothing exists at ${trimmed}`);
+  }
+  return resolve(trimmed);
+}
+
+async function describeSource(workspace: WorkspaceRegistration): Promise<AgentSource> {
+  const base = { id: workspace.id, location: workspace.rootPath, note: workspace.note ?? '' };
+  if (sourceKind(workspace.rootPath) === 'web') return { ...base, kind: 'web' };
+  try {
+    return { ...base, kind: (await fsPromises.stat(workspace.rootPath)).isDirectory() ? 'folder' : 'file' };
+  } catch {
+    return { ...base, kind: 'missing' };
+  }
+}
+
+async function listAgentSourceView(agentId: string): Promise<AgentSourceList> {
+  const db = getPersistence();
+  const [assigned, all, assignments] = await Promise.all([db.listAgentSources(agentId), db.listWorkspaces(), db.listSourceAssignments()]);
+  const used = new Set(assignments.map((assignment) => assignment.workspaceId));
+  return {
+    assigned: await Promise.all(assigned.map(describeSource)),
+    unassigned: await Promise.all(all.filter((workspace) => !used.has(workspace.id)).map(describeSource)),
+  };
+}
+
 async function ensureWorkspaceSelection(preferredWorkspaceId?: string | null): Promise<{
   selectedWorkspaceId: string;
   registrations: WorkspaceRegistration[];
@@ -615,7 +695,7 @@ async function ensureWorkspaceSelection(preferredWorkspaceId?: string | null): P
     ?? workspaces[0];
   if (!selected) throw new Error('No workspace configured');
   const all = await db.listWorkspaces();
-  const roots = Object.fromEntries(all.map((workspace) => [workspace.id, workspace.rootPath]));
+  const roots = localRoots(all);
   return { selectedWorkspaceId: selected.id, registrations: all, gateway: new DefaultWorkspaceGateway(roots) };
 }
 
@@ -1123,17 +1203,6 @@ async function ensureChatSession(): Promise<ChatSession> {
   return created;
 }
 
-async function bindSelectedSessionToWorkspace(workspaceId: string): Promise<void> {
-  const db = getPersistence();
-  const selectedSession = await db.getSelectedChatSession();
-  if (!selectedSession || selectedSession.workspaceId === workspaceId) return;
-  await db.saveChatSession({
-    ...selectedSession,
-    workspaceId,
-    updatedAt: new Date().toISOString(),
-  });
-}
-
 async function getChatConversation(sessionIdValue: string): Promise<ModelMessage[]> {
   const messages = await getPersistence().listChatMessages(sessionIdValue);
   return messages
@@ -1180,17 +1249,16 @@ async function getChatContextUsage(): Promise<ChatContextUsage> {
   const db = getPersistence();
   const chatSession = await ensureChatSession();
   const executionMode = chatExecutionMode(await getEndpointConfig());
-  const [persistedMessages, conversation, registrations, selectedWorkspace] = await Promise.all([
+  const [persistedMessages, conversation, own] = await Promise.all([
     db.listChatMessages(chatSession.id),
     getChatConversation(chatSession.id),
-    db.listWorkspaces(),
-    db.getSelectedWorkspace(),
+    specialistSources(chatSession.agentId),
   ]);
   return summarizeChatContextUsage(await buildAgentChatContext(
     chatSession,
     conversation,
-    registrations,
-    selectedWorkspace?.id,
+    own.sources,
+    own.primaryId,
     undefined,
     executionMode,
   ), chatContextBudgetFor(executionMode), { hasUserContext: persistedMessages.some((message) => message.role === 'user') });
@@ -1314,13 +1382,8 @@ async function prepareChatMessage(
   }
   await assertEndpointWorkflowCompatible(endpoint);
   const db = getPersistence();
-  const registrations = await db.listWorkspaces();
-  const selectedWorkspace = registrations.find((workspace) => workspace.id === chatSession.workspaceId)
-    ?? await db.getSelectedWorkspace()
-    ?? registrations[0];
-  const workspaceGateway = selectedWorkspace
-    ? new DefaultWorkspaceGateway(Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])))
-    : undefined;
+  const { sources: registrations, primaryId, gateway: workspaceGateway } = await specialistSources(chatSession.agentId);
+  const selectedWorkspace = primaryId ? { id: primaryId } : undefined;
   const persistedConversation = await getChatConversation(chatSession.id);
   const nextConversation = [...persistedConversation, { role: 'user' as const, content: message }];
 
@@ -1329,7 +1392,7 @@ async function prepareChatMessage(
     agent,
     nextConversation.filter((turn) => turn.role === 'user').map((turn) => turn.content),
     chatSession.id,
-    workspaceGateway && selectedWorkspace ? workspaceGateway : undefined,
+    workspaceGateway,
   );
   // Consulting is offered only when the user names another specialist in this message,
   // so agents never start side conversations on their own.
@@ -1346,7 +1409,6 @@ async function prepareChatMessage(
           targetId,
           question,
           memoryRefs,
-          workspaceId: selectedWorkspace?.id,
         }, consultSignal),
       }));
     }
@@ -1468,7 +1530,6 @@ async function consultSpecialist(input: {
   targetId: string;
   question: string;
   memoryRefs: string[];
-  workspaceId: string | undefined;
 }, signal: AbortSignal): Promise<ConsultationAnswer> {
   const catalog = getAgentCatalog();
   const target = catalog.get(input.targetId);
@@ -1485,7 +1546,7 @@ async function consultSpecialist(input: {
       id: `session-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       name: sessionName,
       mode: 'autopilot',
-      workspaceId: input.workspaceId ?? null,
+      workspaceId: null,
       agentId: target.id,
       intelligencePreference: 'auto',
       permissionMode: 'interactive',
@@ -1493,10 +1554,8 @@ async function consultSpecialist(input: {
       createdAt: now,
       updatedAt: now,
     };
-  const registrations = await db.listWorkspaces();
-  const workspaceGateway = input.workspaceId
-    ? new DefaultWorkspaceGateway(Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])))
-    : undefined;
+  // The consulted specialist works only with its own sources, never the asker's.
+  const { sources: registrations, primaryId: targetPrimaryId, gateway: workspaceGateway } = await specialistSources(target.id);
   // Depth one: the consulted specialist gets no consult tool of its own.
   const toolRegistry = buildSpecialistTools(target, [input.question], consultationSession.id, workspaceGateway);
   if (input.memoryRefs.length) {
@@ -1515,7 +1574,7 @@ async function consultSpecialist(input: {
     consultationSession,
     [{ role: 'user', content: prompt }],
     registrations,
-    input.workspaceId,
+    targetPrimaryId,
     toolRegistry.getModelTools(),
     executionMode,
   );
@@ -1528,7 +1587,7 @@ async function consultSpecialist(input: {
   const result = await runtime.runWithTrace(built.request, {
     modelId: endpoint.modelId,
     executionMode,
-    workspaceId: input.workspaceId,
+    workspaceId: targetPrimaryId,
     taskKind: 'chat',
   }, signal);
   const answer = result.content.trim() || PAUSED_WITHOUT_SUMMARY;
@@ -1593,8 +1652,13 @@ async function runCareerAudit(): Promise<{
 }> {
   const endpoint = await getEndpointConfig();
   await assertEndpointWorkflowCompatible(endpoint);
-  const workspaceContext = await ensureWorkspaceSelection();
-  const approvalContext = await approvals();
+  const careerSources = (await specialistSources('career'));
+  if (!careerSources.gateway) {
+    throw new Error('Career audit needs a folder. Add one on the Career Sources page, or give it one of the unassigned sources listed there.');
+  }
+  const workspaceContext = { gateway: careerSources.gateway };
+  // Proposing a write reads the current file, so it must not reach other specialists' sources.
+  const approvalContext = { service: new ApprovalService(getPersistence(), careerSources.gateway) };
   const db = getPersistence();
   const chatSession = await ensureChatSession();
 
@@ -1611,9 +1675,9 @@ async function runCareerAudit(): Promise<{
 
   const evidenceMessages: ModelMessage[] = [];
   const evidenceSources: SourceReference[] = [];
-  const registrations = await db.listWorkspaces();
+  const registrations = careerSources.sources.filter((source) => sourceKind(source.rootPath) === 'local');
   for (const workspace of registrations) {
-    const evidenceRequests = workspace.kind === 'profile' || workspace.kind === 'cv'
+    const evidenceRequests = isProfileSource(workspace)
       ? [{ toolName: 'filesystem.read', input: { workspaceId: workspace.id, relativePath: 'README.md' } }]
       : [
         { toolName: 'git.log', input: { workspaceId: workspace.id, limit: 50 } },
@@ -1643,10 +1707,10 @@ async function runCareerAudit(): Promise<{
     {
       saveWorkspace: (workspace) => db.saveWorkspace(workspace),
       getWorkspace: (id) => db.getWorkspace(id),
-      listWorkspaces: () => db.listWorkspaces(),
+      listWorkspaces: async () => registrations,
       selectWorkspace: (id) => db.selectWorkspace(id),
       removeWorkspace: (id) => db.removeWorkspace(id),
-      getSelectedWorkspace: () => db.getSelectedWorkspace(),
+      getSelectedWorkspace: async () => registrations[0] ?? null,
     },
     runtime,
     new ContextBuilder(),
@@ -1812,33 +1876,45 @@ function registerIpcHandlers(): void {
     return result.filePaths[0] ?? null;
   });
 
-  ipcMain.handle(IPC_CHANNELS.registerWorkspace, async (_event, payload: unknown) => {
-    const input = parseRegisterWorkspaceInput(payload);
-    const db = getPersistence();
-    await db.saveWorkspace(input);
-    const selected = await db.getSelectedWorkspace();
-    if (!selected) {
-      await db.selectWorkspace(input.id);
-      await bindSelectedSessionToWorkspace(input.id);
-    }
+  ipcMain.handle(IPC_CHANNELS.pickSourceFile, async () => {
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const result = await dialog.showOpenDialog(window, { properties: ['openFile'], title: 'Select a file' });
+    if (result.canceled) return null;
+    return result.filePaths[0] ?? null;
   });
 
-  ipcMain.handle(IPC_CHANNELS.listWorkspaces, async () => {
-    const db = getPersistence();
-    const selected = await db.getSelectedWorkspace();
-    const selectedId = selected?.id;
-    const workspaces = await db.listWorkspaces();
-    return workspaces.map((workspace) => ({
-      ...workspace,
-      kind: workspace.kind ?? 'project',
-      selected: workspace.id === selectedId,
-    }));
+  ipcMain.handle(IPC_CHANNELS.listWorkspaces, async () => (await getPersistence().listWorkspaces())
+    .map((workspace) => ({ id: workspace.id, rootPath: workspace.rootPath, note: workspace.note ?? '' })));
+
+  ipcMain.handle(IPC_CHANNELS.listAgentSources, async (_event, payload: unknown) => {
+    const { agentId } = parseListAgentSourcesInput(payload);
+    getAgentCatalog().get(agentId);
+    return listAgentSourceView(agentId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.selectWorkspace, async (_event, payload: unknown) => {
-    const { id } = parseWorkspaceIdInput(payload);
-    await getPersistence().selectWorkspace(id);
-    await bindSelectedSessionToWorkspace(id);
+  ipcMain.handle(IPC_CHANNELS.addAgentSource, async (_event, payload: unknown) => {
+    const { agentId, location, note } = parseAddAgentSourceInput(payload);
+    getAgentCatalog().get(agentId);
+    const db = getPersistence();
+    const normalized = await normalizeSourceLocation(location);
+    const registrations = await db.listWorkspaces();
+    const existing = registrations.find((workspace) => sameSourceLocation(workspace.rootPath, normalized));
+    const id = existing?.id ?? sourceIdFor(normalized, registrations.map((workspace) => workspace.id));
+    if (!existing) await db.saveWorkspace({ id, rootPath: normalized, kind: 'project', note: note ?? '' });
+    else if (note !== undefined && note !== (existing.note ?? '')) await db.setWorkspaceNote(id, note);
+    await db.assignSource(agentId, id);
+    return listAgentSourceView(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.removeAgentSource, async (_event, payload: unknown) => {
+    const { agentId, sourceId } = parseAgentSourceInput(payload);
+    await getPersistence().unassignSource(agentId, sourceId);
+    return listAgentSourceView(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.setSourceNote, async (_event, payload: unknown) => {
+    const { sourceId, note } = parseSetSourceNoteInput(payload);
+    await getPersistence().setWorkspaceNote(sourceId, note);
   });
 
   ipcMain.handle(IPC_CHANNELS.removeWorkspace, async (_event, payload: unknown) => {
@@ -2007,19 +2083,13 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.listWorkspaceEntries, async (_event, payload: unknown) => {
     const { workspaceId, relativePath } = parseWorkspacePathInput(payload);
-    const registrations = await getPersistence().listWorkspaces();
-    const gateway = new DefaultWorkspaceGateway(
-      Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])),
-    );
+    const gateway = new DefaultWorkspaceGateway(localRoots(await getPersistence().listWorkspaces()));
     return gateway.listDirectoryEntries(workspaceId, relativePath);
   });
 
   ipcMain.handle(IPC_CHANNELS.readWorkspaceFile, async (_event, payload: unknown) => {
     const { workspaceId, relativePath } = parseWorkspacePathInput(payload);
-    const registrations = await getPersistence().listWorkspaces();
-    const gateway = new DefaultWorkspaceGateway(
-      Object.fromEntries(registrations.map((workspace) => [workspace.id, workspace.rootPath])),
-    );
+    const gateway = new DefaultWorkspaceGateway(localRoots(await getPersistence().listWorkspaces()));
     const result = await gateway.readFile(workspaceId, relativePath);
     const maximumPreviewBytes = 64 * 1024;
     const encoded = Buffer.from(result.content, 'utf8');
@@ -2521,6 +2591,8 @@ app.whenReady().then(() => {
     else focusWindow(win);
   });
   registerIpcHandlers();
+  // A failed assignment leaves every source unassigned and visible on the Sources page.
+  void assignLegacySourcesOnce().catch(() => undefined);
   scheduleDeadlineReminders();
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({

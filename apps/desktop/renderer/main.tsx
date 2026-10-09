@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import type {
   ChatActivity,
@@ -32,6 +32,7 @@ import { ChatView, type FailedChat, type PendingChat } from "./features/chat/Cha
 import { CommandPalette, type PaletteItem } from "./features/shell/CommandPalette";
 import { CustomAgentWizard } from "./features/agents/CustomAgentWizard";
 import { AgentProfileDialog } from "./features/agents/AgentProfileDialog";
+import { SourcesPage } from "./features/sources/SourcesPage";
 import { ConnectPanel } from "./features/intelligence/ConnectPanel";
 import { Icon } from "./features/shell/icons";
 import { detectPlatform, useTheme } from "./features/shell/theme";
@@ -76,6 +77,8 @@ const bloggerNav = (t: Translator): AgentNavigationItem[] => [
 ];
 const messageOf = (value: unknown): string =>
   value instanceof Error ? value.message : String(value);
+/** Web sources are pages, so they can never be the target of a file proposal. */
+const isWebSource = (workspace: WorkspaceRecord): boolean => /^https?:\/\//i.test(workspace.rootPath);
 const chatErrorMessage = (value: unknown): string => {
   const message = messageOf(value);
   const httpError = message.match(/HTTP\s+\d{3}\b[\s\S]*/i);
@@ -143,10 +146,6 @@ function App(): JSX.Element {
   const [auditSessionId, setAuditSessionId] = useState<string | null>(null);
   const [actions, setActions] = useState<PendingAction[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
-  const [workspaceId, setWorkspaceId] = useState("");
-  const [workspaceKind, setWorkspaceKind] = useState<
-    "profile" | "project" | "cv"
-  >("project");
   const [endpoint, setEndpoint] = useState<EndpointConfig>({
     mode: "local",
     baseUrl: "http://localhost:11434",
@@ -243,17 +242,28 @@ function App(): JSX.Element {
     : selectedAgent?.id === "blogger"
       ? bloggerNav(t)
       : generalAgentNav(selectedAgentName, t);
-  const selectedSessionWorkspace = workspaces.find((workspace) => workspace.id === selectedChatSession?.workspaceId);
+  // The context panel browses the conversation's specialist's first local source.
+  const [sessionSourceId, setSessionSourceId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sessionAgent || typeof api.listAgentSources !== "function") {
+      setSessionSourceId(null);
+      return undefined;
+    }
+    let cancelled = false;
+    void api.listAgentSources(sessionAgent.id)
+      .then((list) => {
+        if (!cancelled) setSessionSourceId(list.assigned.find((source) => source.kind === "folder" || source.kind === "file")?.id ?? null);
+      })
+      .catch(() => { if (!cancelled) setSessionSourceId(null); });
+    return () => { cancelled = true; };
+  }, [api, sessionAgent, workspaces]);
+  const selectedSessionWorkspace = workspaces.find((workspace) => workspace.id === sessionSourceId);
   const activeSessionActions = selectedChatSession
     ? actions.filter((action) => action.sessionId === selectedChatSession.id)
     : [];
   const activeAuditSources = audit && auditSessionId === selectedChatSession?.id
     ? audit.result.sourceReferences
     : [];
-  const profileWorkspaces = useMemo(
-    () => workspaces.filter((w) => w.kind !== "project"),
-    [workspaces],
-  );
 
   const task = async (
     name: Exclude<Busy, null>,
@@ -273,12 +283,13 @@ function App(): JSX.Element {
   const chooseProposalWorkspace = (
     records: WorkspaceRecord[],
     current = "",
-  ): string =>
-    records.find((w) => w.id === current)?.id ??
-    records.find((w) => w.kind !== "project")?.id ??
-    records.find((w) => w.selected)?.id ??
-    records[0]?.id ??
-    "";
+  ): string => {
+    const local = records.filter((w) => !isWebSource(w));
+    return local.find((w) => w.id === current)?.id ??
+      local.find((w) => /\b(?:cv|profile|profil|résumé|resume|özgeçmiş)\b/i.test(w.note))?.id ??
+      local[0]?.id ??
+      "";
+  };
   const loadWorkspaces = async (): Promise<void> => {
     const records = await api.listWorkspaces();
     setWorkspaces(records);
@@ -573,22 +584,20 @@ function App(): JSX.Element {
   };
 
   const addFolderFromChat = (): void => {
+    if (!selectedAgent) return;
+    const agentId = selectedAgent.id;
     void task("workspace", async () => {
       const directory = await api.pickWorkspaceDirectory();
       if (!directory) return;
-      const existing = workspaces.find((workspace) => workspace.rootPath.toLowerCase() === directory.toLowerCase());
-      if (existing) {
+      const before = await api.listAgentSources(agentId);
+      if (before.assigned.some((source) => source.location.toLowerCase() === directory.toLowerCase())) {
         setNotice(t('chat.folderAlreadyAdded'));
         return;
       }
-      const name = directory.split(/[\\/]/).filter(Boolean).pop() ?? 'folder';
-      const base = name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '') || 'folder';
-      let id = base;
-      for (let suffix = 2; workspaces.some((workspace) => workspace.id === id); suffix++) id = `${base}-${suffix}`;
-      await api.registerWorkspace({ id, rootPath: directory, kind: 'project' });
+      await api.addAgentSource(agentId, directory);
       await loadWorkspaces();
       await loadChat();
-      setNotice(t('chat.folderAdded', { name }));
+      setNotice(t('chat.folderAdded', { name: directory.split(/[\\/]/).filter(Boolean).pop() ?? directory }));
     });
   };
 
@@ -958,13 +967,11 @@ function App(): JSX.Element {
               value={proposalWorkspace}
               onChange={(e) => setProposalWorkspace(e.target.value)}
             >
-              {(profileWorkspaces.length ? profileWorkspaces : workspaces).map(
-                (w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.id} · {w.kind}
-                  </option>
-                ),
-              )}
+              {workspaces.filter((w) => !isWebSource(w)).map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.note ? `${w.id} · ${w.note}` : w.id}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -1065,116 +1072,16 @@ function App(): JSX.Element {
     </div>
   );
 
-  const Sources = (): JSX.Element => (
-    <div className="page-stack">
-      <Heading
-        eyebrow="Local evidence"
-        title="Workspaces"
-        description="Register only the folders Career may inspect."
-      />
-      <section className="panel form">
-        <div className="form-grid">
-          <label>
-            <span>Workspace name</span>
-            <input
-              value={workspaceId}
-              onChange={(e) => setWorkspaceId(e.target.value)}
-              placeholder="portfolio-site"
-            />
-          </label>
-          <label>
-            <span>Workspace role</span>
-            <select
-              aria-label="Purpose"
-              value={workspaceKind}
-              onChange={(e) =>
-                setWorkspaceKind(e.target.value as typeof workspaceKind)
-              }
-            >
-              <option value="project">Project evidence (default)</option>
-              <option value="profile">Professional profile</option>
-              <option value="cv">CV or résumé</option>
-            </select>
-            <small>This role helps agents distinguish profile content from project evidence.</small>
-          </label>
-        </div>
-        <div className="actions">
-          <button
-            className="primary"
-            data-testid="add-workspace"
-            type="button"
-            disabled={!workspaceId.trim() || busy === "workspace"}
-            onClick={() =>
-              void task("workspace", async () => {
-                const directory = await api.pickWorkspaceDirectory();
-                if (!directory) return;
-                await api.registerWorkspace({
-                  id: workspaceId.trim(),
-                  rootPath: directory,
-                  kind: workspaceKind,
-                });
-                setWorkspaceId("");
-                await loadWorkspaces();
-                await loadChat();
-                setNotice("Workspace registered.");
-              })
-            }
-          >
-            Choose folder and add
-          </button>
-        </div>
-      </section>
-      {workspaces.length === 0 ? (
-        <section className="panel">
-          <Empty
-            title="No workspaces registered"
-            text="Add your profile folder, then projects containing supporting evidence."
-          />
-        </section>
-      ) : (
-        workspaces.map((w) => (
-          <article className="panel workspace" key={w.id}>
-            <div>
-              <span className="pill">{w.kind}</span>
-              <h2>{w.id}</h2>
-              <p>{w.rootPath}</p>
-            </div>
-            <div className="actions">
-              {!w.selected ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    void task("workspace", async () => {
-                      await api.selectWorkspace(w.id);
-                      await loadWorkspaces();
-                      await loadChat();
-                    })
-                  }
-                >
-                  Use by default
-                </button>
-              ) : (
-                <strong className="selected">● Default</strong>
-              )}
-              <button
-                className="danger text"
-                type="button"
-                onClick={() =>
-                  void task("workspace", async () => {
-                    await api.removeWorkspace(w.id);
-                    await loadWorkspaces();
-                    setNotice("Workspace removed. Files were not deleted.");
-                  })
-                }
-              >
-                Remove
-              </button>
-            </div>
-          </article>
-        ))
-      )}
-    </div>
-  );
+  const Sources = (): JSX.Element => selectedAgent ? (
+    <SourcesPage
+      key={selectedAgent.id}
+      api={api}
+      agentId={selectedAgent.id}
+      agentName={selectedAgentName}
+      onChanged={() => { void loadWorkspaces().catch((value: unknown) => setError(messageOf(value))); }}
+      onError={setError}
+    />
+  ) : <Empty title={t('sources.noSpecialist')} text="" />;
 
   const Status = (): JSX.Element => {
     const local = localModels.filter((model) => model.location === "local");

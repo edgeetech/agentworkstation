@@ -5,8 +5,7 @@ import { groupSessionsByRecency, groupSessionsByWorkspace, latestSessionForAgent
 const workspace = (id: string): WorkspaceRecord => ({
   id,
   rootPath: `C:/work/${id}`,
-  kind: 'project',
-  selected: id === 'profile',
+  note: '',
 });
 
 const session = (id: string, workspaceId?: string | null): ChatSessionRecord => ({

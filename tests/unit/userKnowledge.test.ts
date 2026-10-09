@@ -3,6 +3,7 @@ import {
   USER_KNOWLEDGE_INSTRUCTIONS,
   buildUserKnowledgeMemory,
   createRememberTool,
+  planLegacySourceAssignments,
   summarizeAgentFolders,
 } from '../../src/application/agents/userKnowledge';
 import { parseDelegatedModelResponse } from '../../src/infrastructure/intelligence/delegatedCliAdapter';
@@ -132,5 +133,29 @@ describe('grounding check', () => {
     const unchecked = new AgentRuntime(intelligence as never, executor, gate, limits());
     await unchecked.run({ messages: [{ role: 'user', content: 'q' }] }, { modelId: 'm', executionMode: 'provider_allowed' }, new AbortController().signal);
     expect(calls).toBe(1);
+  });
+});
+
+describe('legacy source assignment', () => {
+  it('gives each specialist the folders it used and Career its profile folders, leaving the rest unassigned', () => {
+    const registrations = [
+      { id: 'books', rootPath: 'C:/books' },
+      { id: 'taksim', rootPath: 'C:/taksim' },
+      { id: 'cv', rootPath: 'C:/cv', kind: 'cv' as const },
+      { id: 'old', rootPath: 'C:/old' },
+    ];
+    const plan = planLegacySourceAssignments(new Map([
+      ['accountant', [JSON.stringify([{ workspaceId: 'books' }, { workspaceId: 'books' }])]],
+      ['siyo', [JSON.stringify([{ workspaceId: 'taksim' }]), JSON.stringify([{ workspaceId: 'books' }])]],
+      ['career', [JSON.stringify([{ workspaceId: 'cv' }])]],
+    ]), registrations, (workspace) => workspace.kind === 'cv');
+    expect(plan).toHaveLength(4);
+    expect(plan).toEqual(expect.arrayContaining([
+      { agentId: 'accountant', workspaceId: 'books' },
+      { agentId: 'siyo', workspaceId: 'books' },
+      { agentId: 'siyo', workspaceId: 'taksim' },
+      { agentId: 'career', workspaceId: 'cv' },
+    ]));
+    expect(plan.some((assignment) => assignment.workspaceId === 'old')).toBe(false);
   });
 });

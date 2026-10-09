@@ -3,10 +3,13 @@ import { z } from 'zod';
 export const IPC_CHANNELS = {
   getDemoAudit: 'agentWorkstation:getDemoAudit',
   pickWorkspaceDirectory: 'agentWorkstation:pickWorkspaceDirectory',
-  registerWorkspace: 'agentWorkstation:registerWorkspace',
+  pickSourceFile: 'agentWorkstation:pickSourceFile',
   listWorkspaces: 'agentWorkstation:listWorkspaces',
-  selectWorkspace: 'agentWorkstation:selectWorkspace',
   removeWorkspace: 'agentWorkstation:removeWorkspace',
+  listAgentSources: 'agentWorkstation:listAgentSources',
+  addAgentSource: 'agentWorkstation:addAgentSource',
+  removeAgentSource: 'agentWorkstation:removeAgentSource',
+  setSourceNote: 'agentWorkstation:setSourceNote',
   listWorkspaceEntries: 'agentWorkstation:listWorkspaceEntries',
   readWorkspaceFile: 'agentWorkstation:readWorkspaceFile',
   getEndpointConfig: 'agentWorkstation:getEndpointConfig',
@@ -95,11 +98,18 @@ const workspaceIdSchema = z.object({
   id: z.string().min(1),
 });
 
-const registerWorkspaceSchema = z.object({
-  id: z.string().min(1),
-  rootPath: z.string().min(1),
-  kind: z.enum(['profile', 'project', 'cv']),
-});
+const agentIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+const sourceNoteSchema = z.string().trim().max(200).refine((value) => !/\p{Cc}/u.test(value), 'Source note cannot contain control characters');
+
+const addAgentSourceSchema = z.object({
+  agentId: agentIdSchema,
+  location: z.string().trim().min(1).max(2_048),
+  note: sourceNoteSchema.optional(),
+}).strict();
+
+const agentSourceSchema = z.object({ agentId: agentIdSchema, sourceId: z.string().min(1) }).strict();
+const setSourceNoteSchema = z.object({ sourceId: z.string().min(1), note: sourceNoteSchema }).strict();
+const listAgentSourcesSchema = z.object({ agentId: agentIdSchema }).strict();
 
 const endpointConfigSchema = z.object({
   mode: z.enum(['mock', 'local', 'delegated']),
@@ -317,12 +327,20 @@ export function parseWorkspaceIdInput(value: unknown): { id: string } {
   return workspaceIdSchema.parse(value);
 }
 
-export function parseRegisterWorkspaceInput(value: unknown): {
-  id: string;
-  rootPath: string;
-  kind: 'profile' | 'project' | 'cv';
-} {
-  return registerWorkspaceSchema.parse(value);
+export function parseAddAgentSourceInput(value: unknown): { agentId: string; location: string; note?: string } {
+  return addAgentSourceSchema.parse(value);
+}
+
+export function parseAgentSourceInput(value: unknown): { agentId: string; sourceId: string } {
+  return agentSourceSchema.parse(value);
+}
+
+export function parseSetSourceNoteInput(value: unknown): { sourceId: string; note: string } {
+  return setSourceNoteSchema.parse(value);
+}
+
+export function parseListAgentSourcesInput(value: unknown): { agentId: string } {
+  return listAgentSourcesSchema.parse(value);
 }
 
 export function parseEndpointConfigInput(value: unknown): {

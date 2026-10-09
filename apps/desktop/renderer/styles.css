@@ -1469,6 +1469,22 @@ label small, .form small { color: var(--ink-3); font-size: 12px; }
 .agent-profile-footer { margin: 4px -18px -16px; align-items: center; }
 .agent-profile-actions { display: inline-flex; gap: 8px; }
 
+.source-add { display: grid; gap: 10px; }
+.source-add label { display: grid; gap: 6px; }
+.source-add label > span { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.source-browse { display: flex; gap: 8px; margin-top: -2px; }
+.source-browse button { display: inline-flex; align-items: center; gap: 6px; }
+.source-list { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.source-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-m); }
+.source-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--agent-soft); color: var(--agent); flex: none; }
+.source-missing .source-icon { background: var(--danger-soft); color: var(--danger); }
+.source-main { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.source-main strong { font-weight: 560; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-main input { font-size: 12.5px; min-height: 30px; }
+.source-main input::placeholder { color: var(--ink-3); font-weight: 400; }
+.source-warning { color: var(--danger); font-size: 12px; }
+.source-actions { display: inline-flex; gap: 6px; flex: none; }
+
 /* Motion ----------------------------------------------------------------- */
 
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
