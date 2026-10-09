@@ -1458,6 +1458,8 @@ label small, .form small { color: var(--ink-3); font-size: 12px; }
 .agent-wizard-footer button { display: inline-flex; align-items: center; gap: 6px; }
 
 .agent-profile { width: min(460px, 100% - 48px); }
+.agent-instructions { width: min(820px, 100% - 48px); }
+.agent-instructions .agent-wizard-header small { color: var(--ink-3); font-size: 12.5px; }
 .agent-profile .agent-wizard-header small { color: var(--ink-3); font-size: 12.5px; }
 .agent-profile-preview { display: grid; gap: 6px; padding: 12px; border-radius: var(--radius-m); background: var(--agent-soft); }
 .agent-profile-preview-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); }

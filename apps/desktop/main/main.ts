@@ -120,6 +120,7 @@ import {
   parseAddAgentSourceInput,
   parseAgentSourceInput,
   parseListAgentSourcesInput,
+  parseSaveBuiltInInstructionsInput,
   parseSetSourceNoteInput,
   parseWorkspacePathInput,
   parseRenameChatSessionInput,
@@ -134,7 +135,7 @@ import {
   releaseChatRequest,
 } from './ipcContract';
 import { getContentSecurityPolicy, isAllowedNavigation } from './security';
-import type { AgentSource, AgentSourceList, AgentSummary, ChatPause, CustomAgentDraft, CustomAgentSetup, IntelligenceOption, PublicationSetup, ReminderSettings } from '../shared/api';
+import type { AgentSource, AgentSourceList, AgentSummary, BuiltInInstructions, ChatPause, CustomAgentDraft, CustomAgentSetup, IntelligenceOption, PublicationSetup, ReminderSettings } from '../shared/api';
 import { discoverOllamaModels, inspectOllamaModel, isOllamaCloudModel } from '../../../src/infrastructure/intelligence/ollamaModelDiscovery';
 import { buildApprovalRecord, buildModelTurnRecord, classifyErrorKind } from '../../../src/application/usage/usageLedger';
 import { JsonlUsageLedger, hashSessionKey } from '../../../src/infrastructure/usage/JsonlUsageLedger';
@@ -516,8 +517,44 @@ function getCustomAgentsDirectory(): string {
   return join(app.getPath('userData'), 'custom-agents');
 }
 
+function getAgentOverridesDirectory(): string {
+  return join(app.getPath('userData'), 'agent-overrides');
+}
+
 function getAgentCatalog(): FileSystemAgentCatalog {
-  return new FileSystemAgentCatalog(getAgentsDirectory(), undefined, getCustomAgentsDirectory());
+  return new FileSystemAgentCatalog(getAgentsDirectory(), undefined, getCustomAgentsDirectory(), getAgentOverridesDirectory());
+}
+
+/** A text box always reports LF line endings, while packaged files may use CRLF. */
+function normalizeLineEndings(text: string): string {
+  return text.replace(/\r\n/g, '\n');
+}
+
+/** Reads a shipped specialist's packaged and owner-edited instructions. */
+async function readBuiltInInstructions(agentId: string): Promise<BuiltInInstructions> {
+  const catalog = getAgentCatalog();
+  const packaged = catalog.builtInDirectory(agentId);
+  if (!packaged) throw new Error(`Only shipped specialists have packaged instructions: ${agentId}`);
+  const overrides = catalog.overrideDirectoryFor(packaged) as string;
+  const read = async (directory: string, file: string): Promise<string | null> => {
+    try {
+      return normalizeLineEndings(await fsPromises.readFile(join(directory, file), 'utf8'));
+    } catch {
+      return null;
+    }
+  };
+  const original = {
+    instructions: (await read(packaged, 'AGENT.md')) ?? '',
+    rules: (await read(packaged, 'RULES.md')) ?? '',
+  };
+  const editedInstructions = await read(overrides, 'AGENT.md');
+  const editedRules = await read(overrides, 'RULES.md');
+  return {
+    instructions: editedInstructions ?? original.instructions,
+    rules: editedRules ?? original.rules,
+    original,
+    edited: editedInstructions !== null || editedRules !== null,
+  };
 }
 
 function getCustomAgentStore(): FileSystemCustomAgentStore {
@@ -2128,6 +2165,40 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.draftCustomAgent, async (_event, payload: unknown) => draftCustomAgent(parseDraftCustomAgentInput(payload)));
+
+  ipcMain.handle(IPC_CHANNELS.getBuiltInInstructions, async (_event, payload: unknown) => {
+    const { agentId } = parseListAgentSourcesInput(payload);
+    return readBuiltInInstructions(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.saveBuiltInInstructions, async (_event, payload: unknown) => {
+    const { agentId, instructions, rules } = parseSaveBuiltInInstructionsInput(payload);
+    const catalog = getAgentCatalog();
+    const packaged = catalog.builtInDirectory(agentId);
+    if (!packaged) throw new Error(`Only shipped specialists have packaged instructions: ${agentId}`);
+    const overrides = catalog.overrideDirectoryFor(packaged) as string;
+    const current = await readBuiltInInstructions(agentId);
+    await fsPromises.mkdir(overrides, { recursive: true });
+    // Only files that differ from the package are kept, so unchanged ones follow future updates.
+    for (const [file, text, original] of [
+      ['AGENT.md', instructions, current.original.instructions],
+      ['RULES.md', rules, current.original.rules],
+    ] as const) {
+      const target = join(overrides, file);
+      if (normalizeLineEndings(text) === original) await fsPromises.rm(target, { force: true });
+      else await fsPromises.writeFile(target, text, 'utf8');
+    }
+    return readBuiltInInstructions(agentId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.resetBuiltInInstructions, async (_event, payload: unknown) => {
+    const { agentId } = parseListAgentSourcesInput(payload);
+    const catalog = getAgentCatalog();
+    const packaged = catalog.builtInDirectory(agentId);
+    if (!packaged) throw new Error(`Only shipped specialists have packaged instructions: ${agentId}`);
+    await fsPromises.rm(catalog.overrideDirectoryFor(packaged) as string, { recursive: true, force: true });
+    return readBuiltInInstructions(agentId);
+  });
 
   ipcMain.handle(IPC_CHANNELS.getCustomAgent, async (_event, payload: unknown) => {
     const { agentId } = parseCustomAgentIdInput(payload);

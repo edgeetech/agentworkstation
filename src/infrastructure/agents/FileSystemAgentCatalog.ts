@@ -27,6 +27,8 @@ export class FileSystemAgentCatalog {
     rootDirectory: string,
     private readonly maxMemoryBytes = 64 * 1024,
     customRootDirectory?: string,
+    /** Holds `<agent folder>/AGENT.md` and `RULES.md` the owner rewrote for shipped specialists. */
+    private readonly overridesRoot?: string,
   ) {
     this.root = fs.realpathSync(rootDirectory);
     if (!fs.statSync(this.root).isDirectory()) {
@@ -68,7 +70,7 @@ export class FileSystemAgentCatalog {
   private loadAll(directories: AgentDirectory[]): AgentDefinition[] {
     return directories.flatMap(({ directory, custom }) => {
       try {
-        const agent = this.loadDefinition(directory);
+        const agent = this.loadDefinition(directory, custom ? undefined : this.overrideDirectoryFor(directory));
         return [custom ? { ...agent, custom: true } : agent];
       } catch {
         return [];
@@ -84,9 +86,27 @@ export class FileSystemAgentCatalog {
       .map((directory) => ({ directory, custom }));
   }
 
-  private loadDefinition(agentDirectory: string): AgentDefinition {
+  /** Where the owner's rewritten instructions for a shipped specialist live. */
+  overrideDirectoryFor(agentDirectory: string): string | undefined {
+    return this.overridesRoot ? path.join(this.overridesRoot, path.basename(agentDirectory)) : undefined;
+  }
+
+  /** The packaged folder of a shipped specialist, or undefined for one the user created. */
+  builtInDirectory(id: string): string | undefined {
+    return this.directoriesIn(this.root, false)
+      .map(({ directory }) => directory)
+      .find((directory) => {
+        try {
+          return this.loadDefinition(directory).id === id;
+        } catch {
+          return false;
+        }
+      });
+  }
+
+  private loadDefinition(agentDirectory: string, overrideDirectory?: string): AgentDefinition {
     const agent = new AgentDefinitionLoader(
-      new FileSystemAgentDefinitionSource(agentDirectory),
+      new FileSystemAgentDefinitionSource(agentDirectory, overrideDirectory),
       this.maxMemoryBytes,
     ).load();
     if (!validAgentId.test(agent.id)) throw new Error(`Invalid agent id: ${agent.id}`);
