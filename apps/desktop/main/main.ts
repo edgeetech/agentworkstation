@@ -638,14 +638,9 @@ async function assignLegacySourcesOnce(): Promise<void> {
   const marker = 'sources.assignedToSpecialists';
   if (await db.getSetting(marker)) return;
   const registrations = await db.listWorkspaces();
-  if (registrations.length > 0) {
-    const evidence = new Map<string, string[]>();
-    for (const agent of getAgentCatalog().list()) evidence.set(agent.id, await db.listAgentSourceReferences(agent.id));
-    for (const assignment of planLegacySourceAssignments(evidence, registrations, isProfileSource)) {
-      await db.assignSource(assignment.agentId, assignment.workspaceId);
-    }
-  }
-  await db.setSetting(marker, new Date().toISOString());
+  const evidence = new Map<string, string[]>();
+  for (const agent of getAgentCatalog().list()) evidence.set(agent.id, await db.listAgentSourceReferences(agent.id));
+  await db.assignSourcesOnce(marker, planLegacySourceAssignments(evidence, registrations, isProfileSource));
 }
 
 /** Checks a new source: an http(s) URL as given, or an existing local folder or file as an absolute path. */

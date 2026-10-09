@@ -77,6 +77,8 @@ const bloggerNav = (t: Translator): AgentNavigationItem[] => [
 ];
 const messageOf = (value: unknown): string =>
   value instanceof Error ? value.message : String(value);
+/** Web sources are pages, so they can never be the target of a file proposal. */
+const isWebSource = (workspace: WorkspaceRecord): boolean => /^https?:\/\//i.test(workspace.rootPath);
 const chatErrorMessage = (value: unknown): string => {
   const message = messageOf(value);
   const httpError = message.match(/HTTP\s+\d{3}\b[\s\S]*/i);
@@ -281,11 +283,13 @@ function App(): JSX.Element {
   const chooseProposalWorkspace = (
     records: WorkspaceRecord[],
     current = "",
-  ): string =>
-    records.find((w) => w.id === current)?.id ??
-    records.find((w) => /\b(?:cv|profile|profil|résumé|resume|özgeçmiş)\b/i.test(w.note))?.id ??
-    records[0]?.id ??
-    "";
+  ): string => {
+    const local = records.filter((w) => !isWebSource(w));
+    return local.find((w) => w.id === current)?.id ??
+      local.find((w) => /\b(?:cv|profile|profil|résumé|resume|özgeçmiş)\b/i.test(w.note))?.id ??
+      local[0]?.id ??
+      "";
+  };
   const loadWorkspaces = async (): Promise<void> => {
     const records = await api.listWorkspaces();
     setWorkspaces(records);
@@ -963,7 +967,7 @@ function App(): JSX.Element {
               value={proposalWorkspace}
               onChange={(e) => setProposalWorkspace(e.target.value)}
             >
-              {workspaces.map((w) => (
+              {workspaces.filter((w) => !isWebSource(w)).map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.note ? `${w.id} · ${w.note}` : w.id}
                 </option>

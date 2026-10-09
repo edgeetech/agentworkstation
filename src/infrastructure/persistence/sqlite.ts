@@ -283,6 +283,16 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
     this.db.prepare('insert or ignore into agent_sources (agentId, workspaceId) values (?, ?)').run(agentId, workspaceId);
   }
 
+  /** Applies a one-time assignment and its completion marker together, or neither. */
+  async assignSourcesOnce(marker: string, assignments: ReadonlyArray<{ agentId: string; workspaceId: string }>): Promise<void> {
+    this.db.transaction(() => {
+      if (this.db.prepare('select 1 from app_settings where key = ?').get(marker)) return;
+      const insert = this.db.prepare('insert or ignore into agent_sources (agentId, workspaceId) values (?, ?)');
+      for (const assignment of assignments) insert.run(assignment.agentId, assignment.workspaceId);
+      this.db.prepare('insert into app_settings (key, value) values (?, ?)').run(marker, new Date().toISOString());
+    })();
+  }
+
   async unassignSource(agentId: string, workspaceId: string): Promise<void> {
     this.db.prepare('delete from agent_sources where agentId = ? and workspaceId = ?').run(agentId, workspaceId);
   }

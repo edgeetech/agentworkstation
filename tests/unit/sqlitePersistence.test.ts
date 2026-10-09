@@ -96,6 +96,17 @@ describe('sqlite persistence', () => {
     expect(await db.listSourceAssignments()).toEqual([{ agentId: 'siyo', workspaceId: 'site' }, { agentId: 'siyo', workspaceId: 'taksim' }]);
   });
 
+  it('applies a one-time source assignment exactly once, so later removals stick', async () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aw-')), 'app.db');
+    const db = new SqlitePersistence(file);
+    await db.saveWorkspace({ id: 'books', rootPath: 'C:/books' });
+    await db.assignSourcesOnce('sources.assigned', [{ agentId: 'accountant', workspaceId: 'books' }]);
+    await db.unassignSource('accountant', 'books');
+    await db.assignSourcesOnce('sources.assigned', [{ agentId: 'accountant', workspaceId: 'books' }]);
+    await expect(db.listAgentSources('accountant')).resolves.toEqual([]);
+    await expect(db.getSetting('sources.assigned')).resolves.toEqual(expect.any(String));
+  });
+
   it('stores and reads endpoint settings', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aw-')), 'app.db');
     const db = new SqlitePersistence(file);
