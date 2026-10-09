@@ -448,6 +448,18 @@ export class SqlitePersistence implements PersistencePort, WorkspaceRegistryPort
     };
   }
 
+  /** Evidence lists of a specialist's latest answers, newest first, across all its conversations. */
+  async listAgentSourceReferences(agentId: string, limit = 300): Promise<string[]> {
+    const rows = this.db.prepare(`
+      select m.sourceReferencesJson as json
+      from chat_messages m join chat_sessions s on s.id = m.sessionId
+      where s.agentId = ? and m.role = 'assistant' and m.sourceReferencesJson != '[]'
+      order by m.createdAt desc
+      limit ?
+    `).all(agentId, limit) as Array<{ json: string }>;
+    return rows.map((row) => row.json);
+  }
+
   async listChatMessages(sessionId: string): Promise<ChatMessage[]> {
     return this.db.prepare(`
       select id, sessionId, sequence, role, content, sourceReferencesJson, routingJson, mode, pausedJson, createdAt

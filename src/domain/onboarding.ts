@@ -18,7 +18,7 @@ export type AgentMemoryEntry = {
   fieldKey: string;
   value: unknown;
   provenance: {
-    source: 'user_message';
+    source: 'user_message' | 'agent_learned';
     questionId: string;
     capturedAt: string;
   };

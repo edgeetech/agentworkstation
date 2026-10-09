@@ -8,7 +8,7 @@ import { documentFormatFor, extractDocumentText } from './documentText';
 
 const MAX_READ_CHARACTERS = 40_000;
 const MAX_LIST_ENTRIES = 1_000;
-const MAX_SEARCH_FILES_READ = 400;
+const MAX_SEARCH_FILES_READ = 900;
 const SKIPPED_DIRECTORIES = new Set(['.git', 'node_modules', '.venv', '__pycache__', 'dist', 'build']);
 
 async function resolveInWorkspace(context: ToolExecutionContext, workspaceId: string, relativePath: string): Promise<string> {
@@ -154,7 +154,7 @@ export const filesystemSearchTool: AgentTool<{ workspaceId: string; relativePath
     required: ['workspaceId'],
     additionalProperties: false,
   },
-  metadata: { readOnly: true, sideEffect: 'none', sensitive: true, requiresWorkspace: true, timeoutMs: 180_000 },
+  metadata: { readOnly: true, sideEffect: 'none', sensitive: true, requiresWorkspace: true, timeoutMs: 240_000 },
   async execute(input, context): Promise<ToolResult> {
     const limit = input.maxResults ?? 100;
     const matcher = input.name ? namePattern(input.name) : null;
@@ -166,6 +166,11 @@ export const filesystemSearchTool: AgentTool<{ workspaceId: string; relativePath
       if (entry.kind !== 'file' || (matcher && !matcher.test(entry.name))) return true;
       if (!needle) {
         results.push({ path: entry.relativePath });
+        return results.length < limit;
+      }
+      // A file named after what is searched for is a hit without reading it.
+      if (entry.name.toLowerCase().includes(needle)) {
+        results.push({ path: entry.relativePath, snippet: '(file name matches)' });
         return results.length < limit;
       }
       const format = documentFormatFor(entry.name);

@@ -14,6 +14,13 @@ import {
   type ChatContextUsage,
 } from '../../../src/application/chatContextUsage';
 import { buildChatModeInstructions } from '../../../src/application/chatMode';
+import {
+  USER_KNOWLEDGE_INSTRUCTIONS,
+  buildUserKnowledgeMemory,
+  createRememberTool,
+  groundingCheckMessage,
+  summarizeAgentFolders,
+} from '../../../src/application/agents/userKnowledge';
 import { ContextBuilder } from '../../../src/application/context';
 import { AgentRuntime, type AgentRunObserver, type RunBudgetPause } from '../../../src/application/intelligence';
 import type { AgentDefinition } from '../../../src/application/agents/types';
@@ -1145,15 +1152,11 @@ async function buildAgentChatContext(
   const agent = getAgentCatalog().get(chatSession.agentId);
   const confirmedMemory = (await getAgentMemoryStore().getAgentMemory(chatSession.agentId))
     .filter((entry) => entry.confirmationStatus === 'confirmed');
-  const dynamicMemory = confirmedMemory.length > 0
-    ? `\n\n## Confirmed conversational memory\n\n${confirmedMemory
-      .map((entry) => `- ${entry.fieldKey}: ${JSON.stringify(entry.value)}`)
-      .join('\n')}`
-    : '';
-  const memoryContent = `${agent.memoryContext.content}${dynamicMemory}`;
+  const folders = summarizeAgentFolders(await getPersistence().listAgentSourceReferences(chatSession.agentId), registrations);
+  const memoryContent = `${agent.memoryContext.content}\n\n${buildUserKnowledgeMemory({ memory: confirmedMemory, folders })}`;
   return new ContextBuilder().buildRequest(
     {
-      systemPrompt: `${agent.systemPrompt}\n\n===\n\n${buildWorkspaceAccessInstructions(
+      systemPrompt: `${agent.systemPrompt}\n\n===\n\n${USER_KNOWLEDGE_INSTRUCTIONS}\n\n===\n\n${buildWorkspaceAccessInstructions(
         registrations,
         selectedWorkspaceId,
       )}\n\n===\n\n${buildChatModeInstructions(chatSession.mode)}`,
@@ -1350,9 +1353,13 @@ async function prepareChatMessage(
   }
 
   const toolExecutor = new ToolExecutor(toolRegistry);
+  const knownFolders = workspaceGateway && agent.toolPolicies['filesystem.list']
+    ? summarizeAgentFolders(await db.listAgentSourceReferences(agent.id), registrations)
+    : [];
   const { runtime, router } = createRuntime(endpoint, toolExecutor, workspaceGateway, agent.toolPolicies, {
     pauseWhenBudgetExhausted: true,
     ...(agent.intelligence ? { intelligence: agent.intelligence } : {}),
+    ...(knownFolders.length > 0 ? { groundingCheck: { toolPrefix: 'filesystem.', message: groundingCheckMessage(knownFolders) } } : {}),
   });
   const executionMode = chatExecutionMode(endpoint);
 
@@ -1409,6 +1416,7 @@ function buildSpecialistTools(
   // Specialist-only tools are offered only to agents whose policy names them.
   if (agent.toolPolicies['accounting.ukDeadlines']) toolRegistry.register(createUkDeadlinesTool());
   toolRegistry.register(createSharedPathReadTool(userMessages));
+  toolRegistry.register(createRememberTool(getAgentMemoryStore(), agent.id));
   if (workspaceGateway) {
     const approvalService = new ApprovalService(getPersistence(), workspaceGateway);
     toolRegistry.register(filesystemReadTool);
@@ -1543,7 +1551,7 @@ function createRuntime(
   toolExecutor: ToolExecutor,
   workspaceGateway: DefaultWorkspaceGateway | undefined,
   toolPolicies: Readonly<Record<string, 'allow' | 'require_approval' | 'deny'>>,
-  options: { pauseWhenBudgetExhausted?: boolean; intelligence?: readonly string[] } = {},
+  options: { pauseWhenBudgetExhausted?: boolean; intelligence?: readonly string[]; groundingCheck?: { toolPrefix: string; message: string } } = {},
 ): { runtime: AgentRuntime; router: AdaptiveRoutingIntelligenceAdapter | null } {
   const { intelligence, router } = createRoutingIntelligence(endpoint, options.intelligence);
   const runtime = new AgentRuntime(
@@ -1556,7 +1564,8 @@ function createRuntime(
       }),
       getMetadata: (toolName) => toolExecutor.getMetadata(toolName),
     },
-    new AgentPolicyGate(toolPolicies),
+    // Every specialist may keep notes about its own user; a policy can still deny it.
+    new AgentPolicyGate({ 'memory.remember': 'allow', ...toolPolicies }),
     {
       // Sized for real research (paging git history, reading several pages). Chat runs
       // pause here and ask the user before spending another budget.
@@ -1566,6 +1575,7 @@ function createRuntime(
       modelTimeoutMs: effectiveRoutingPolicy(endpoint) === 'local_only' ? 90_000 : 120_000,
       toolTimeoutMs: 30_000,
       ...(options.pauseWhenBudgetExhausted ? { pauseWhenBudgetExhausted: true } : {}),
+      ...(options.groundingCheck ? { groundingCheck: options.groundingCheck } : {}),
     },
   );
   return { runtime, router };

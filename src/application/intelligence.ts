@@ -12,6 +12,12 @@ export type ExecutionLimits = {
    * the model summarizes its progress and the caller can resume from the checkpoint.
    */
   pauseWhenBudgetExhausted?: boolean;
+  /**
+   * When set, a final answer given before any tool whose name starts with `toolPrefix`
+   * ran is sent back once with `message`, so a specialist checks the user's own
+   * material before answering from general knowledge.
+   */
+  groundingCheck?: { toolPrefix: string; message: string };
 };
 
 export type RunBudgetPause = {
@@ -76,6 +82,8 @@ export class AgentRuntime {
   ): Promise<AgentRunResult> {
     let toolCalls = 0;
     let steps = 0;
+    let grounded = false;
+    let groundingChecked = false;
     const sourceReferences: SourceReference[] = [];
     const emit = (event: AgentRunEvent): void => {
       try { observe?.(event); } catch { /* observers never change the run outcome */ }
@@ -96,7 +104,20 @@ export class AgentRuntime {
         modelAbort,
         'Model timeout exceeded',
       );
-      if (response.type === 'text') return { content: response.content, sourceReferences };
+      if (response.type === 'text') {
+        const check = this.limits.groundingCheck;
+        if (!check || grounded || groundingChecked) return { content: response.content, sourceReferences };
+        groundingChecked = true;
+        request = {
+          ...request,
+          messages: [
+            ...request.messages,
+            { role: 'assistant', content: response.content },
+            { role: 'user', content: check.message },
+          ],
+        };
+        continue;
+      }
       if (response.type === 'error') throw new Error(response.error);
       if (toolCalls >= this.limits.maxToolCalls) {
         if (!this.limits.pauseWhenBudgetExhausted) throw new Error('Max tool calls exceeded');
@@ -136,6 +157,7 @@ export class AgentRuntime {
       if (policy === 'require_approval' && metadata.sideEffect !== 'propose') {
         throw new Error('Tool not allowed');
       }
+      if (this.limits.groundingCheck && response.call.toolName.startsWith(this.limits.groundingCheck.toolPrefix)) grounded = true;
       const target = toolTarget(response.call.input);
       emit({ type: 'tool', step, toolName: response.call.toolName, ...(target ? { target } : {}) });
       const toolAbort = new AbortController();

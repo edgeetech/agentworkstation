@@ -196,6 +196,28 @@ export function buildProviderPrompt(request: ModelRequest): string {
   ].join('\n');
 }
 
+let xmlCallCount = 0;
+
+/**
+ * Some models occasionally answer with a tool call written as XML (`<invoke name="web.read">`)
+ * inside a text reply. Treat that as the tool call it is instead of showing it to the user.
+ */
+function xmlToolCall(content: string): ModelResponse | null {
+  const match = /^\s*(?:<function_calls>\s*)?<invoke name="([\w.-]+)">([\s\S]*?)<\/invoke>/.exec(content);
+  if (!match) return null;
+  const input: Record<string, unknown> = {};
+  for (const parameter of match[2]!.matchAll(/<parameter name="([\w.-]+)">([\s\S]*?)<\/parameter>/g)) {
+    const raw = parameter[2]!.trim();
+    try {
+      input[parameter[1]!] = /^[[{0-9"]|^(?:true|false|null)$/.test(raw) ? JSON.parse(raw) : raw;
+    } catch {
+      input[parameter[1]!] = raw;
+    }
+  }
+  xmlCallCount += 1;
+  return { type: 'tool_call', call: { id: `xml-call-${Date.now()}-${xmlCallCount}`, toolName: match[1]!, input } };
+}
+
 export function parseDelegatedModelResponse(value: string): ModelResponse {
   const unfenced = value.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   let parsed: unknown;
@@ -210,7 +232,7 @@ export function parseDelegatedModelResponse(value: string): ModelResponse {
   if (!parsed || typeof parsed !== 'object') throw new Error('Delegated provider returned an invalid response');
   const response = parsed as Record<string, unknown>;
   if (response.type === 'text' && typeof response.content === 'string') {
-    return { type: 'text', content: response.content };
+    return xmlToolCall(response.content) ?? { type: 'text', content: response.content };
   }
   if (response.type === 'tool_call' && response.call && typeof response.call === 'object') {
     const call = response.call as Record<string, unknown>;

@@ -71,6 +71,12 @@ describe('filesystem toolkit', () => {
     expect((csvOnly.output as { results: Array<{ path: string }> }).results.map((result) => result.path)).toEqual(['FY2025-26/Bank/ledger.csv']);
   });
 
+  it('counts a file named after the searched text as a hit without reading it', async () => {
+    const result = await filesystemSearchTool.execute({ workspaceId: 'books', text: 'ledger' }, context);
+    expect((result.output as { results: Array<{ path: string; snippet?: string }> }).results)
+      .toContainEqual({ path: 'FY2025-26/Bank/ledger.csv', snippet: '(file name matches)' });
+  });
+
   it('classifies document formats by extension', () => {
     expect(documentFormatFor('a.PDF')).toBe('pdf');
     expect(documentFormatFor('a.docx')).toBe('docx');
