@@ -66,5 +66,8 @@ describe('Blogger Agent loader integration', () => {
     expect(agent.systemPrompt).toContain('Never perform direct external side effects');
     expect(agent.systemPrompt).toContain('Never run deployment commands');
     expect(agent.systemPrompt).toContain('Never connect an account');
+    expect(agent.systemPrompt).toContain("the author's personal or working circumstances");
+    expect(agent.systemPrompt).toContain('unless a source states the link');
+    expect(agent.systemPrompt).toContain("ask for the article's local published file");
   });
 });
