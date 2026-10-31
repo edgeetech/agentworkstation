@@ -14,4 +14,4 @@
 
 ## Output
 
-A reviewable voice-profile proposal containing the source set, evidence-backed observations, language-specific guidance, confidence or exceptions, and no unsupported imitation claims. Do not write memory directly.
+A reviewable voice-profile proposal containing the source set, evidence-backed observations, language-specific guidance, confidence or exceptions, and no unsupported imitation claims. Do not write memory directly. Once the human approves the profile, use it for every later draft in the conversation; do not ask where to save it.
