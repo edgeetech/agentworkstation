@@ -28,7 +28,7 @@ const agentConfigSchema = z.object({
     extractionHint: z.string().min(1),
   })).default([]),
   memory: z.object({ directory: z.string().min(1) }).optional(),
-  toolPolicies: z.record(z.enum(['allow', 'require_approval', 'deny'])),
+  toolPolicies: z.record(z.string(), z.enum(['allow', 'require_approval', 'deny'])),
   intelligence: z.array(z.string().min(1)).optional(),
 });
 

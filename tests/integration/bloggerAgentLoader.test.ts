@@ -57,6 +57,12 @@ describe('Blogger Agent loader integration', () => {
 
     expect(agent.systemPrompt).toContain('public URLs or local published articles explicitly selected');
     expect(agent.systemPrompt).toContain('Do not produce literal sentence-by-sentence translations');
+    expect(agent.systemPrompt).toContain('it is the only source for claims about that subject');
+    expect(agent.systemPrompt).toContain('read its content schema');
+    expect(agent.systemPrompt).toContain('draft or unpublished flag switched on');
+    expect(agent.systemPrompt).toContain('Unsourced claims from review');
+    expect(agent.systemPrompt).toContain('never edit the sources yourself');
+    expect(agent.systemPrompt).toContain('do not ask where to save it');
     expect(agent.systemPrompt).toContain('copyright-safe visual concepts and assets');
     expect(agent.systemPrompt).toContain('Record visual provenance');
     expect(agent.systemPrompt).toContain('configured deployment target');
