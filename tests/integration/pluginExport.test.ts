@@ -45,6 +45,19 @@ describe('plugin export generator (freshness)', () => {
     const again = generatePluginArtifacts(repoRoot);
     expect(again).toEqual(generated);
   });
+
+  it('points every skill at the shipped references/ copy of its memory files, not at memory/', () => {
+    const skills = generated.filter((file) => file.relativePath.endsWith('/SKILL.md'));
+    expect(skills.length).toBeGreaterThan(0);
+    for (const skill of skills) {
+      expect(skill.content, skill.relativePath).not.toMatch(/\bmemory\/[\w-]+\.md\b/);
+    }
+
+    const blogger = generated.find((file) => file.relativePath === 'plugins/blogger/skills/blogger/SKILL.md')!;
+    expect(blogger.content).toContain('Propose updates to `references/voice-profile.md`');
+    expect(blogger.content).toContain('Resolve the target only from `references/editorial-preferences.md`');
+    expect(generated.map((file) => file.relativePath)).toContain('plugins/blogger/skills/blogger/references/editorial-preferences.md');
+  });
 });
 
 describe('accountant CLI scripts bundled by the generator', () => {

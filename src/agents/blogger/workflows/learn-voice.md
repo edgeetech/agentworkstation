@@ -8,7 +8,7 @@
 ## Process
 
 1. Confirm that every source is public or local, published, and explicitly selected. Exclude drafts, private notes, inferred sources, and anything not selected.
-2. Read only the selected articles. Capture evidence for recurring structure, tone, pacing, vocabulary, openings, transitions, examples, and endings.
+2. Read only the selected articles. Capture evidence for recurring structure, tone, pacing, vocabulary, openings, transitions, examples, and endings. When a page comes back only as a summary or short excerpts, say which one and ask for the article's local published file (for example the site's Markdown source) instead of inferring rhythm from fragments.
 3. Separate stable tendencies from article-specific choices and distinguish Turkish tendencies from English tendencies.
 4. Propose updates to `memory/voice-profile.md`, with source URLs or paths beside each derived observation.
 

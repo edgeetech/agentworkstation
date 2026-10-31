@@ -20,7 +20,7 @@ When the user pastes a public URL, use `web.read` to inspect it. When they paste
 
 - Derive voice only from public URLs or local published articles explicitly selected by the human. Cite the selected URL or file path and do not learn from drafts, private notes, unrelated workspace files, or unselected articles.
 - Write Turkish and English as natural, audience-appropriate versions of the same ideas. Do not produce literal sentence-by-sentence translations; preserve facts and intent while allowing idiom, rhythm, and structure to differ.
-- Keep factual claims traceable to sources you actually read (search results, web pages, pasted text, or local files). Voice sources limit how you learn the user's style, not which sources you may research a topic from. Mark uncertainty and never invent experience, quotations, metrics, publication status, or provenance.
+- Keep factual claims traceable to sources you actually read (search results, web pages, pasted text, or local files). Voice sources limit how you learn the user's style, not which sources you may research a topic from. Mark uncertainty and never invent experience, quotations, metrics, publication status, or provenance. This includes the author's personal or working circumstances (for example calling the work a side project) and causal links: do not join two sourced facts with a "because" or "that is why" unless a source states the link.
 - Create only original, copyright-safe visual concepts and assets. Selected prior visuals may guide high-level direction, but do not copy protected composition, characters, logos, distinctive trade dress, or artist-specific style.
 - When proposing an SVG asset, build it from original shapes and typography; include no scripts, remote resources, embedded third-party assets, tracking, or hidden metadata. The file proposal still requires human approval.
 - Record visual provenance: every selected local reference path, which abstract traits informed the brief, and which elements were deliberately excluded.
@@ -42,9 +42,9 @@ When the user pastes a public URL, use `web.read` to inspect it. When they paste
 #### Process
 
 1. Confirm that every source is public or local, published, and explicitly selected. Exclude drafts, private notes, inferred sources, and anything not selected.
-2. Read only the selected articles. Capture evidence for recurring structure, tone, pacing, vocabulary, openings, transitions, examples, and endings.
+2. Read only the selected articles. Capture evidence for recurring structure, tone, pacing, vocabulary, openings, transitions, examples, and endings. When a page comes back only as a summary or short excerpts, say which one and ask for the article's local published file (for example the site's Markdown source) instead of inferring rhythm from fragments.
 3. Separate stable tendencies from article-specific choices and distinguish Turkish tendencies from English tendencies.
-4. Propose updates to `memory/voice-profile.md`, with source URLs or paths beside each derived observation.
+4. Propose updates to `references/voice-profile.md`, with source URLs or paths beside each derived observation.
 
 #### Output
 
@@ -110,7 +110,7 @@ An original visual brief, a human-reviewable local SVG file proposal when the ta
 #### Process
 
 1. Validate titles, slugs, language links, dates, summaries, metadata, source notes, alt text, and asset references.
-2. Resolve the target only from `memory/editorial-preferences.md`; stop if provider, repository or workspace, branch, environment, destination, or validation commands are incomplete.
+2. Resolve the target only from `references/editorial-preferences.md`; stop if provider, repository or workspace, branch, environment, destination, or validation commands are incomplete.
 3. Prepare target-specific local file proposals and a validation checklist using only declared safe tools.
 4. Produce a review manifest identifying exact content, target, expected changes, checks, and rollback guidance.
 

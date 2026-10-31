@@ -155,7 +155,15 @@ export function buildSkillMarkdown(materials: AgentDefinitionMaterials): string 
     '---',
   ].join('\n');
 
-  return `${frontmatter}\n\n${sections.join('\n\n')}\n`;
+  return `${frontmatter}\n\n${pointMemoryPathsAtReferences(sections.join('\n\n'), materials.memory)}\n`;
+}
+
+/** The plugin ships memory under `references/`, so instructions that name `memory/<file>` would point the model at a file that does not exist. */
+function pointMemoryPathsAtReferences(markdown: string, memory: AgentContentFile[]): string {
+  return memory.reduce(
+    (text, file) => text.replaceAll(file.relativePath, `references/${path.posix.basename(file.relativePath)}`),
+    markdown,
+  );
 }
 
 export function buildCommandMarkdown(action: AgentQuickAction, agentId: string): string {
