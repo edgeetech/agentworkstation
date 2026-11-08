@@ -23,7 +23,7 @@
     {
       "name": "career",
       "source": "./plugins/career",
-      "description": "Keeps professional profile information accurate and current.",
+      "description": "Keeps professional profile and company page information accurate and current.",
       "version": "0.4.5",
       "category": "productivity"
     }

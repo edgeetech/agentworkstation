@@ -28,7 +28,17 @@ describe('Career Agent loader integration', () => {
       id: 'audit-profile',
       workflow: 'career-audit',
     }));
+    expect(agent.toolPolicies['browser.session']).toBe('require_approval');
+    expect(agent.description).toContain('company page');
+    expect(agent.quickActions).toContainEqual(expect.objectContaining({ id: 'audit-company-page', workflow: 'company-page-audit' }));
+    expect(agent.quickActions).toContainEqual(expect.objectContaining({ id: 'propose-company-page-update', workflow: 'company-page-proposal' }));
+    expect(agent.quickActions).toContainEqual(expect.objectContaining({ id: 'plan-company-posts', workflow: 'company-post-calendar' }));
+    for (const name of ['company-page-audit', 'company-page-proposal', 'company-page-apply', 'company-post-calendar', 'company-cover']) {
+      expect(agent.workflows.some((file) => file.relativePath === `workflows/${name}.md`)).toBe(true);
+    }
+    expect(agent.memory.some((file) => file.relativePath === 'memory/company-page.md')).toBe(true);
     expect(agent.systemPrompt).toContain('Evidence-first');
+    expect(agent.systemPrompt).toContain('source-available (ELv2)');
     expect(agent.systemPrompt).not.toContain('## Career memory');
     expect(agent.workflows.some((file) => file.relativePath === 'workflows/project-evidence.md')).toBe(true);
     expect(agent.memory.some((file) => file.relativePath === 'memory/projects.md')).toBe(true);

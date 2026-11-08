@@ -62,6 +62,10 @@ function buildAllowedTools(toolPolicies: Record<string, string>): string {
   if (present.has('git.status')) tools.push('Bash(git status *)');
   if (present.has('git.diff')) tools.push('Bash(git diff *)');
   if (present.has('accounting.ukDeadlines') || present.has('accounting.summarizeLedger')) tools.push('Bash(node *)');
+  if (present.has('browser.session')) {
+    tools.push('mcp__Claude_Browser__*', 'mcp__claude-in-chrome__*', 'Bash(gh *)', 'Bash(chrome *)', 'Bash(google-chrome *)');
+    if (present.has('filesystem.proposeWrite')) tools.push('Write', 'Edit');
+  }
   return tools.join(' ');
 }
 
@@ -95,6 +99,13 @@ function buildToolsSection(toolPolicies: Record<string, string>): string {
   }
   if (present.has('git.log') || present.has('git.status') || present.has('git.diff')) {
     lines.push('- `git.log` / `git.status` / `git.diff` -> Bash (`git log`, `git status`, `git diff`).');
+  }
+  if (present.has('browser.session')) {
+    lines.push(
+      '- `browser.session` -> Claude browser tools (`mcp__Claude_Browser__*`, `mcp__claude-in-chrome__*`) in a signed-in browser, '
+      + '`gh` for public repository metadata, and headless Chrome for rendering images. '
+      + 'Ask for explicit approval of each exact action before saving a field, posting, scheduling or following.',
+    );
   }
   if (present.has('filesystem.proposeWrite')) {
     lines.push('- `filesystem.proposeWrite` -> show the exact diff and ask before editing any file.');

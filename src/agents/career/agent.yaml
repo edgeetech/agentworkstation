@@ -1,7 +1,7 @@
 schemaVersion: 1
 id: career
 name: Career
-description: Keeps professional profile information accurate and current.
+description: Keeps professional profile and company page information accurate and current.
 instructions:
   - AGENT.md
   - RULES.md
@@ -11,6 +11,11 @@ workflows:
   - workflows/career-audit.md
   - workflows/project-evidence.md
   - workflows/propose-profile-update.md
+  - workflows/company-page-audit.md
+  - workflows/company-page-proposal.md
+  - workflows/company-page-apply.md
+  - workflows/company-post-calendar.md
+  - workflows/company-cover.md
 quickActions:
   - id: audit-profile
     title: Audit my profile
@@ -27,6 +32,18 @@ quickActions:
   - id: review-career-memory
     title: Review career memory
     prompt: Review the Career memory and point out anything outdated, unsupported, or inconsistent with my registered workspaces.
+  - id: audit-company-page
+    title: Audit company page
+    prompt: Audit my LinkedIn company page field by field, including posts, scheduled posts and analytics, and show the current values.
+    workflow: company-page-audit
+  - id: propose-company-page-update
+    title: Propose company page update
+    prompt: Propose company page updates from my company's own public sources, with current text, proposed text and a source for each field.
+    workflow: company-page-proposal
+  - id: plan-company-posts
+    title: Plan company posts
+    prompt: Plan one company page post per active product with dates, text and links, and wait for my approval before scheduling.
+    workflow: company-post-calendar
 onboarding:
   - id: choose-career-sources
     prompt: CV ve kariyer profilin için hangi kaynakları kullanayım? GitHub veya LinkedIn adresi verebilir, CV dosyasını belirtebilir ya da birden fazla kaynak yazabilirsin.
@@ -69,4 +86,5 @@ toolPolicies:
   git.status: allow
   git.diff: allow
   filesystem.proposeWrite: require_approval
+  browser.session: require_approval
 
