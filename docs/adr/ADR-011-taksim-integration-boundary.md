@@ -1,7 +1,9 @@
 # ADR-011 Taksim Integration Boundary
 
 **Date:** 2026-09-10
-**Status:** Accepted
+**Status:** Superseded 2026-11-08. Taksim is no longer a commercial product, so the
+integration described below is retired. The usage ledger remains as a local,
+observational record with no importer. Kept for history.
 
 ## Context
 

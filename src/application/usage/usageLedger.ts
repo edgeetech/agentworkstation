@@ -1,9 +1,8 @@
 /**
- * Privacy-safe, append-only usage ledger records that Taksim imports with
- * `taksim history import --client agentworkstation`. This module only builds
+ * Privacy-safe, append-only local usage ledger records. This module only builds
  * and validates records; it never touches the filesystem (see
  * `@infrastructure/usage/JsonlUsageLedger` for the writer) and never routes,
- * prompts, or otherwise changes agent behaviour. See ADR-011.
+ * prompts, or otherwise changes agent behaviour.
  *
  * Records must never contain prompt text, replies, file paths, workspace
  * names, or any other user content — only shape, cost, and outcome metadata.
