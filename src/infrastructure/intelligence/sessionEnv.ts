@@ -2,8 +2,8 @@
 // process: a CLI spawned while the host machine is itself inside another agent
 // session (messaging socket/session-id env vars) can hang waiting on a handshake
 // with a parent that isn't there, and an ambient ANTHROPIC_BASE_URL/TAKSIM_*
-// override would silently reroute the call through unrelated local tooling
-// (see docs/adr/ADR-011-taksim-integration-boundary.md).
+// override (e.g. left over from a retired local gateway) would silently reroute
+// the call through unrelated local tooling.
 const SESSION_ENV_PREFIXES = ['CLAUDE_CODE_', 'CLAUDE_HOOKS_', 'TAKSIM_'];
 const SESSION_ENV_KEYS = new Set(['CLAUDECODE', 'CLAUDE_PID', 'ANTHROPIC_BASE_URL']);
 

@@ -245,7 +245,7 @@ function fallbackUsageRoute(endpoint: EndpointConfig): {
   };
 }
 
-/** Records one `model_turn` line for Taksim; never throws into the chat path. */
+/** Records one `model_turn` line; never throws into the chat path. */
 async function recordModelTurn(params: {
   sessionId: string;
   agentId: string;
@@ -292,7 +292,7 @@ async function recordModelTurn(params: {
   }
 }
 
-/** Records one `approval` line for Taksim; never throws into the approve/reject path. */
+/** Records one `approval` line; never throws into the approve/reject path. */
 async function recordUsageApproval(params: {
   sessionId: string;
   agentId: string;
