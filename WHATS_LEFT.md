@@ -12,6 +12,14 @@ changelog — history lives in `git log`, not here.
   storage, and the Posts API adapter are implemented, but no LinkedIn
   Developer application or client ID ships with the app. Each user must
   register their own.
+- **Career company page tooling** — the Career agent's company page workflows
+  and the `browser.session` policy are declared, but the desktop app has no
+  matching tools yet. It needs: a signed-in browser tool with per-action
+  approval (`web.read` uses an isolated, cookie-less session), organization
+  posting through the LinkedIn Community Management API
+  (`w_organization_social`; the current adapter posts only as a member),
+  post scheduling, and an image render/upload tool. Until then the agent runs
+  fully only as the Claude Code plugin.
 - **Copilot Agent SDK adapter** — `src/infrastructure/intelligence/copilotAgentSdkAdapter.ts`
   is implemented and unit-tested but not wired into the app. The installed
   `copilot` CLI reports an older JSON-RPC protocol version than the SDK
